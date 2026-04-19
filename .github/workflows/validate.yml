@@ -1,0 +1,28 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "codex/**"
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate release
+        run: node scripts/validate-release.mjs
+
+      - name: Package release
+        run: bash scripts/package-release.sh

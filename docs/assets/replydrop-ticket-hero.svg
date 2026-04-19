@@ -1,0 +1,111 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="640" y1="0" x2="640" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B5E64"/>
+      <stop offset="1" stop-color="#35383D"/>
+    </linearGradient>
+    <linearGradient id="ticket" x1="458" y1="68" x2="458" y2="654" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF1DC"/>
+      <stop offset="1" stop-color="#E9D5AB"/>
+    </linearGradient>
+    <linearGradient id="poster" x1="458" y1="112" x2="458" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A8D0CE"/>
+      <stop offset="0.55" stop-color="#72969D"/>
+      <stop offset="1" stop-color="#324851"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#D8F0EF"/>
+      <stop offset="1" stop-color="#F8FBFB"/>
+    </linearGradient>
+    <linearGradient id="cream" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFF7E6"/>
+      <stop offset="1" stop-color="#F3E1B7"/>
+    </linearGradient>
+    <filter id="shadow" x="210" y="18" width="496" height="676" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#000000" flood-opacity="0.24"/>
+    </filter>
+    <filter id="soft" x="760" y="54" width="270" height="240" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+    <pattern id="grain" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 0H18V18H0Z" fill="transparent"/>
+      <path d="M9 0V18" stroke="#7C6846" stroke-opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <path d="M0 0H1280V720H0V0Z" fill="url(#grain)"/>
+
+  <g opacity="0.18" stroke="#FFFFFF">
+    <path d="M64 72L188 196"/>
+    <path d="M188 72L64 196"/>
+    <path d="M1092 66L1216 190"/>
+    <path d="M1216 66L1092 190"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M248 68C248 50.327 262.327 36 280 36H636C653.673 36 668 50.327 668 68V620C668 637.673 653.673 652 636 652H280C262.327 652 248 637.673 248 620V68Z" fill="url(#ticket)"/>
+    <path d="M248 68C248 50.327 262.327 36 280 36H636C653.673 36 668 50.327 668 68V620C668 637.673 653.673 652 636 652H280C262.327 652 248 637.673 248 620V68Z" stroke="#CDB383" stroke-opacity="0.56" stroke-width="2"/>
+    <circle cx="248" cy="584" r="18" fill="#35383D"/>
+    <circle cx="668" cy="584" r="18" fill="#35383D"/>
+    <circle cx="304" cy="652" r="14" fill="#35383D"/>
+    <circle cx="356" cy="652" r="14" fill="#35383D"/>
+    <circle cx="408" cy="652" r="14" fill="#35383D"/>
+    <circle cx="460" cy="652" r="14" fill="#35383D"/>
+    <circle cx="512" cy="652" r="14" fill="#35383D"/>
+    <circle cx="564" cy="652" r="14" fill="#35383D"/>
+    <circle cx="616" cy="652" r="14" fill="#35383D"/>
+  </g>
+
+  <text x="278" y="92" fill="#5F5240" font-family="'Avenir Next', 'Arial Narrow', sans-serif" font-size="18" font-weight="700" letter-spacing="0.34em">REPLYDROP</text>
+  <rect x="280" y="104" width="356" height="22" rx="0" fill="#F3E6C6"/>
+  <text x="458" y="119" text-anchor="middle" fill="#6B5A44" font-family="Georgia, serif" font-size="14" font-weight="700" letter-spacing="0.24em">POPUP TICKET</text>
+
+  <rect x="280" y="126" width="356" height="184" rx="10" fill="url(#poster)"/>
+  <text x="304" y="264" fill="#F7F0D8" font-family="'Arial Narrow', sans-serif" font-size="74" font-weight="800" letter-spacing="0.08em">REPLYDROP</text>
+  <text x="304" y="290" fill="#F6E9C2" font-family="'Avenir Next', sans-serif" font-size="16" font-weight="700" letter-spacing="0.22em">FIND POSTS WORTH REPLYING TO</text>
+
+  <rect x="520" y="226" width="90" height="54" rx="6" transform="rotate(-6 520 226)" fill="#2D434B" fill-opacity="0.28" stroke="#F6E3BE" stroke-opacity="0.66" stroke-width="2"/>
+  <text x="565" y="248" text-anchor="middle" fill="#F6E8C9" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.16em">LIVE PASS</text>
+  <text x="565" y="264" text-anchor="middle" fill="#F6E8C9" fill-opacity="0.76" font-family="'Avenir Next', sans-serif" font-size="9" font-weight="700" letter-spacing="0.18em">REPLY WINDOW</text>
+
+  <text x="282" y="352" fill="#2C3028" font-family="'Arial Narrow', sans-serif" font-size="36" font-weight="800">ReplyDrop</text>
+  <text x="494" y="352" fill="#2C3028" font-family="'PingFang SC', 'Noto Sans CJK SC', sans-serif" font-size="36" font-weight="700">找到值得回复的帖子</text>
+  <text x="282" y="386" fill="#6D614C" font-family="'Avenir Next', sans-serif" font-size="17">本地优先的 X 回复工作流：候选筛选、排队执行、增长复查。</text>
+
+  <path d="M280 412H636" stroke="#9D8760" stroke-opacity="0.44" stroke-dasharray="5 7"/>
+
+  <text x="282" y="446" fill="#5E5342" font-family="'Avenir Next', sans-serif" font-size="13" font-weight="800" letter-spacing="0.16em">DASHBOARD GATE</text>
+  <rect x="282" y="460" width="354" height="74" rx="20" fill="url(#mint)" stroke="#88A7A4" stroke-opacity="0.48"/>
+  <text x="306" y="492" fill="#224E52" font-family="'Arial Narrow', sans-serif" font-size="30" font-weight="800" letter-spacing="0.05em">OPEN DASHBOARD</text>
+  <text x="306" y="515" fill="#6F644E" font-family="'Avenir Next', sans-serif" font-size="12" font-weight="700" letter-spacing="0.18em">WORKBENCH / OVERVIEW / BOOSTS / KEYWORDS</text>
+  <path d="M554 470V524" stroke="#8F7A57" stroke-opacity="0.38" stroke-dasharray="4 6"/>
+  <circle cx="554" cy="497" r="12" fill="#35383D" fill-opacity="0.18"/>
+  <rect x="576" y="472" width="44" height="50" rx="0" fill="#F5E8C4"/>
+  <text x="598" y="490" text-anchor="middle" fill="#8A734E" font-family="'Avenir Next', sans-serif" font-size="8" font-weight="800" letter-spacing="0.16em">GATE</text>
+  <text x="598" y="513" text-anchor="middle" fill="#214F53" font-family="'Arial Narrow', sans-serif" font-size="22" font-weight="800" letter-spacing="0.08em">D01</text>
+
+  <path d="M280 560H636" stroke="#9D8760" stroke-opacity="0.4" stroke-dasharray="5 7"/>
+  <text x="282" y="590" fill="#8D7750" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.24em">RD-HOME-ENTRY</text>
+
+  <g filter="url(#soft)">
+    <rect x="792" y="86" width="206" height="176" rx="24" fill="#FAF1DD"/>
+    <rect x="792" y="86" width="206" height="176" rx="24" stroke="#CDB383" stroke-opacity="0.48"/>
+    <circle cx="792" cy="196" r="12" fill="#35383D" fill-opacity="0.18"/>
+    <circle cx="998" cy="196" r="12" fill="#35383D" fill-opacity="0.18"/>
+    <text x="826" y="124" fill="#64787A" font-family="'Avenir Next', sans-serif" font-size="12" font-weight="800" letter-spacing="0.18em">GROWTH PULSE</text>
+    <text x="826" y="154" fill="#283029" font-family="'Arial Narrow', sans-serif" font-size="32" font-weight="800">10</text>
+    <text x="826" y="176" fill="#6E624D" font-family="'Avenir Next', sans-serif" font-size="14">Shipped replies today</text>
+    <path d="M824 198H966" stroke="#9D8760" stroke-opacity="0.44" stroke-dasharray="4 6"/>
+    <rect x="824" y="214" width="66" height="26" rx="13" fill="#D6ECEA"/>
+    <rect x="898" y="214" width="76" height="26" rx="13" fill="#F5E7C5"/>
+    <text x="857" y="231" text-anchor="middle" fill="#224E52" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.12em">PICKED UP</text>
+    <text x="936" y="231" text-anchor="middle" fill="#8A734E" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.12em">REVIEW DUE</text>
+  </g>
+
+  <path d="M1112 84C1127 52 1172 52 1187 84L1209 127C1225 160 1201 202 1165 202H1134C1098 202 1074 160 1090 127L1112 84Z" fill="#6FB2FF" stroke="#B9D7FF" stroke-width="4"/>
+  <path d="M1124 92C1136 66 1163 66 1175 92L1194 127C1206 148 1191 176 1167 176H1132C1108 176 1093 148 1105 127L1124 92Z" fill="#3F7DFF"/>
+  <text x="1150" y="134" text-anchor="middle" fill="#F9FBFF" font-family="'Avenir Next', sans-serif" font-size="34" font-weight="800">12</text>
+  <text x="1014" y="452" fill="#F2E7C9" font-family="'Arial Narrow', sans-serif" font-size="48" font-weight="800" letter-spacing="0.08em">LOCAL-FIRST</text>
+  <text x="1014" y="486" fill="#F2E7C9" fill-opacity="0.82" font-family="'Avenir Next', sans-serif" font-size="16" font-weight="700" letter-spacing="0.18em">DISCOVER · ROUTE · QUEUE · REVIEW</text>
+</svg>

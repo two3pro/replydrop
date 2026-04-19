@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReplyDrop</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup ticketBoard">
+      <section class="ticketSheet ticketSheetLayer active" id="sheet-home" data-view-sheet="home">
+        <header class="hero heroReset">
+          <div class="heroPosterWrap" aria-hidden="true">
+            <div class="heroPosterBand">
+              <span class="heroPosterBandText">ReplyDrop Operator Ticket</span>
+            </div>
+            <div class="heroPosterArt">
+              <div class="heroPosterStamp">
+                <span class="heroPosterStampLabel">Live Pass</span>
+                <span class="heroPosterStampMeta">Reply Window</span>
+              </div>
+              <div class="heroPosterCopy">
+                <span class="heroPosterKicker">Operator Edition</span>
+                <span class="heroPosterTitleline">ReplyDrop</span>
+                <span class="heroPosterCast">QUEUE · GROWTH · PICKUP</span>
+              </div>
+              <div class="heroPosterSpec">
+                <span class="heroPosterSpecCell">
+                  <span class="heroPosterSpecLabel">Lane</span>
+                  <strong class="heroPosterSpecValue">A1</strong>
+                </span>
+                <span class="heroPosterSpecCell">
+                  <span class="heroPosterSpecLabel">Seat</span>
+                  <strong class="heroPosterSpecValue">06</strong>
+                </span>
+                <span class="heroPosterSpecCell">
+                  <span class="heroPosterSpecLabel">State</span>
+                  <strong class="heroPosterSpecValue">Live</strong>
+                </span>
+              </div>
+            </div>
+            <div class="heroPosterSidecar">
+              <span class="heroPosterSideLabel">Admit One</span>
+              <span class="heroPosterSideSerial">RD-H131</span>
+              <span class="heroPosterSideMeta">Local-first reply workflow</span>
+              <span class="heroPosterBarcode"></span>
+              <span class="heroPosterSideFoot">19:40 / ENTRY</span>
+            </div>
+          </div>
+          <div class="heroMeta heroMetaReset">
+            <div class="heroTopline heroToplineReset">
+              <div class="heroIdentity heroIdentityReset">
+                <p class="eyebrow">ReplyDrop</p>
+                <span class="heroModePill" id="heroModePill">X 回复雷达</span>
+              </div>
+              <div class="heroCountBadge heroCountBadgeReset">
+                <span class="heroCounterLabel" id="heroCounterLabel">今日已回复</span>
+                <span class="heroCountDroplet" aria-hidden="true">
+                  <span class="heroCountDropletCap"></span>
+                  <span class="heroCountDropletBody"></span>
+                </span>
+                <span class="heroStubCount" id="heroRepliedCount">0</span>
+              </div>
+            </div>
+
+            <div class="heroTitleRow heroTitleRowReset">
+              <div class="heroTitleBlock heroTitleBlockReset">
+                <h1 id="pageTitle">ReplyDrop 控制台</h1>
+                <p class="heroSummary" id="heroSummary">先选语种，再开总开关；真正操作都在 X 右上角悬浮水滴里完成。</p>
+              </div>
+            </div>
+
+            <section class="heroLocaleStrip" aria-label="界面语言切换">
+              <span class="heroLocaleLabel" id="uiLanguageTitle">界面语言</span>
+              <div class="localeBar localeBarHero" id="localeBar">
+                <button class="localeButton" data-lang="zh" type="button">简/繁</button>
+                <button class="localeButton" data-lang="en" type="button">EN</button>
+                <button class="localeButton" data-lang="ja" type="button">日本語</button>
+                <button class="localeButton" data-lang="ko" type="button">한국어</button>
+              </div>
+            </section>
+
+            <label class="switch switchInline switchPrimary switchHeroCard" id="enabledSwitchLabel" title="总开关">
+              <span class="switchLabelGroup">
+                <span class="switchLabelTitle" id="enabledSwitchTitle">第一步：开启 ReplyDrop</span>
+                <span class="switchLabelStatus" id="statusBadgeText">已开启</span>
+                <span class="switchLabelHint" id="switchHintText">控制页内水滴、打分和候选提示；点整行就能切换。</span>
+              </span>
+              <input id="enabledToggle" type="checkbox" />
+              <span class="track"></span>
+            </label>
+
+            <section class="entryInlineNote" aria-label="页内入口说明">
+              <strong class="entryInlineTitle" id="entryHintTitle">第二步：去 X 页面右上点悬浮水滴</strong>
+              <p class="entryInlineText" id="entryHintText">打开 x.com 后点右上角悬浮水滴，就能直接进入页内仪表盘看候选和回复机会。</p>
+            </section>
+
+            <div class="heroKeyStats" aria-label="核心状态">
+              <div class="heroFact heroFactReset">
+                <span class="heroFactLabel" id="heroFactScannedLabel">已扫描</span>
+                <strong class="heroFactValue" id="heroFactScanned">0</strong>
+              </div>
+              <div class="heroFact heroFactReset">
+                <span class="heroFactLabel" id="heroFactVisibleLabel">可见候选</span>
+                <strong class="heroFactValue" id="heroFactVisible">0</strong>
+              </div>
+              <div class="heroFact heroFactReset">
+                <span class="heroFactLabel" id="heroFactThresholdLabel">阈值</span>
+                <strong class="heroFactValue" id="heroFactThreshold">30</strong>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="ticketDivider ticketDividerHome" aria-hidden="true">
+          <span class="ticketDividerText">Home Entry</span>
+          <span class="ticketDividerSerial">RD-H01</span>
+        </div>
+
+        <section class="ticketSection compact dashboardGateSection" data-ticket-code="H01" data-ticket-label="Dashboard">
+          <div class="groupHead groupHeadStack" data-ticket-code="H01" data-ticket-label="Dashboard">
+            <div class="groupHeadCopy">
+              <h2 id="dashboardLaunchTitle">仪表盘</h2>
+              <p class="groupHeadMeta" id="dashboardLaunchMeta">首页只保留入口和基础控制，真正处理候选、表现和关键词都收进下一层。</p>
+            </div>
+          </div>
+          <button id="openDashboardButton" class="dashboardLaunchButton" type="button">
+            <span class="dashboardLaunchButtonCopy">
+              <span class="dashboardLaunchButtonLead" id="dashboardLaunchButtonLabel">打开仪表盘</span>
+              <span class="dashboardLaunchButtonHint" id="dashboardLaunchButtonHint">工作台 / 概览 / 加成 / 关键词</span>
+            </span>
+            <span class="dashboardLaunchButtonStub" aria-hidden="true">
+              <span class="dashboardLaunchButtonStubLabel">Gate</span>
+              <span class="dashboardLaunchButtonStubValue">D01</span>
+            </span>
+            <span class="dashboardLaunchButtonArrow" aria-hidden="true">→</span>
+          </button>
+          <div class="dashboardPreviewStrip" id="dashboardPreviewChips" aria-label="仪表盘概览"></div>
+        </section>
+
+        <footer class="footer footerReset">
+          <span id="statusText">等待同步中…</span>
+          <span class="footerMeta">ReplyDrop popup = 首页入口；深入操作已收进仪表盘</span>
+          <span class="footerSerial" aria-hidden="true">RD-HOME-ENTRY</span>
+        </footer>
+        <div class="ticketBottomCut" aria-hidden="true"></div>
+      </section>
+
+      <section class="ticketSheet ticketSheetLayer" id="sheet-dashboard" data-view-sheet="dashboard" data-active-tab="desk" data-active-desk-section="growth" hidden>
+        <header class="dashboardHeader" data-ticket-code="D00" data-ticket-label="Dashboard">
+          <button id="dashboardBackButton" class="dashboardBackButton" type="button">
+            <span class="dashboardBackButtonArrow" aria-hidden="true">←</span>
+            <span id="dashboardBackLabel">返回首页</span>
+          </button>
+          <div class="dashboardHeaderCopy">
+            <p class="eyebrow" id="dashboardEyebrow">Instrument Deck</p>
+            <h1 id="dashboardTitle">仪表盘</h1>
+            <p class="dashboardHeaderSummary" id="dashboardSummary">工作台 / 概览 / 加成 / 关键词</p>
+          </div>
+          <div class="dashboardHeaderStub" aria-hidden="true">
+            <span class="dashboardHeaderStubLabel">Admit One</span>
+            <span class="dashboardHeaderStubValue">RD-D01</span>
+          </div>
+        </header>
+
+        <div class="ticketDivider ticketDividerDashboard" aria-hidden="true">
+          <span class="ticketDividerText">Instrument Deck</span>
+          <span class="ticketDividerSerial">RD-D01</span>
+        </div>
+
+        <nav class="tabs tabsReset" aria-label="ReplyDrop tabs">
+          <button class="tabButton active" id="tabDesk" data-tab="desk" type="button">
+            <span class="tabButtonLabel">工作台</span>
+          </button>
+          <button class="tabButton" id="tabOverview" data-tab="overview" type="button">
+            <span class="tabButtonLabel">概览</span>
+          </button>
+          <button class="tabButton" id="tabSignals" data-tab="signals" type="button">
+            <span class="tabButtonLabel">加成</span>
+          </button>
+          <button class="tabButton" id="tabKeywords" data-tab="keywords" type="button">
+            <span class="tabButtonLabel">关键词</span>
+          </button>
+        </nav>
+
+        <section class="panel active" id="panel-desk" data-panel="desk" data-panel-code="RD-DESK" data-panel-stamp="Operator Deck" data-panel-hint="GROWTH · QUEUE · COPILOT">
+          <div class="deskSubTabs" id="deskSubTabs" aria-label="工作台导航">
+            <button class="deskSubTabButton active" data-desk-tab="growth" type="button">
+              <span class="deskSubTabLabel" id="deskSubTabGrowthLabel">看板</span>
+              <span class="deskSubTabBadge" id="deskSubTabGrowthCount">0</span>
+            </button>
+            <button class="deskSubTabButton" data-desk-tab="ai" type="button">
+              <span class="deskSubTabLabel" id="deskSubTabAiLabel">AI回复</span>
+              <span class="deskSubTabBadge" id="deskSubTabAiCount">0</span>
+            </button>
+          </div>
+
+          <section class="ticketSection compact deskFocusSection deskSectionGroup" data-desk-section="focus" data-ticket-code="A00" data-ticket-label="Inbox">
+            <div class="groupHead groupHeadStack" data-ticket-code="A00" data-ticket-label="Inbox">
+              <div class="groupHeadCopy">
+                <h2 id="deskFocusTitle">下一条建议</h2>
+                <p class="groupHeadMeta" id="deskFocusMeta">等待同步候选收件箱…</p>
+              </div>
+              <button id="restoreDismissedButton" class="inlineActionButton" type="button">恢复已略过</button>
+            </div>
+            <div class="deskBoostSummary focusDigestSummary" id="focusDigestSummary"></div>
+            <div class="deskFocusCard" id="deskFocusCard"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="draft" data-ticket-code="A01" data-ticket-label="Copilot">
+            <div class="groupHead groupHeadStack" data-ticket-code="A01" data-ticket-label="Copilot">
+              <div class="groupHeadCopy">
+                <h2 id="draftDeskTitle">AI 草稿台</h2>
+                <p class="groupHeadMeta" id="draftDeskMeta">针对当前最佳候选生成可直接改写的回复切入。</p>
+              </div>
+            </div>
+            <div class="draftDeskPanel" id="draftDeskPanel"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup active" data-desk-section="growth" data-ticket-code="A02" data-ticket-label="Growth Pulse">
+            <div class="groupHead groupHeadStack" data-ticket-code="A02" data-ticket-label="Growth Pulse">
+              <div class="groupHeadCopy">
+                <h2 id="growthPulseTitle">增长脉冲</h2>
+                <p class="groupHeadMeta" id="growthPulseMeta">把“找机会”变成“看得到增长方向”的工作台。</p>
+              </div>
+            </div>
+            <div class="growthPulseGrid" id="growthPulseGrid"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="ai" data-ticket-code="A03" data-ticket-label="AI Reply">
+            <div class="groupHead groupHeadStack" data-ticket-code="A03" data-ticket-label="AI Reply">
+              <div class="groupHeadCopy">
+                <h2 id="aiReplyDeskTitle">AI 回复</h2>
+                <p class="groupHeadMeta" id="aiReplyDeskMeta">把未来 AI 草稿、排期和关系记忆集中到一个独立面板。</p>
+              </div>
+            </div>
+            <div class="aiReplyDeskPanel" id="aiReplyDeskPanel"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="queue" data-ticket-code="A02B" data-ticket-label="Queue">
+            <div class="groupHead groupHeadStack" data-ticket-code="A02B" data-ticket-label="Queue">
+              <div class="groupHeadCopy">
+                <h2 id="queueDeskTitle">回复队列</h2>
+                <p class="groupHeadMeta" id="queueDeskMeta">把候选排进下一轮 / 今晚 / 明早，让 ReplyDrop 从发现走到执行。</p>
+              </div>
+            </div>
+            <div class="queueDeskPanel" id="queueDeskPanel"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="focus" data-ticket-code="B01" data-ticket-label="Candidates">
+            <div class="groupHead groupHeadStack" data-ticket-code="B01" data-ticket-label="Candidates">
+              <div class="groupHeadCopy">
+                <h2 id="candidateDeskTitle">当前候选池</h2>
+                <p class="groupHeadMeta" id="candidateDeskMeta">正在整理当前机会…</p>
+              </div>
+            </div>
+            <div class="deskList" id="candidateDeskList"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="contacts" data-ticket-code="B02" data-ticket-label="Relationships">
+            <div class="groupHead groupHeadStack" data-ticket-code="B02" data-ticket-label="Relationships">
+              <div class="groupHeadCopy">
+                <h2 id="relationshipDeskTitle">互动脉络</h2>
+                <p class="groupHeadMeta" id="relationshipDeskMeta">轻量 CRM：最近回复过谁、谁又重新出现在候选里。</p>
+              </div>
+            </div>
+            <div class="relationshipDeskList" id="relationshipDeskList"></div>
+          </section>
+
+          <section class="ticketSection compact deskSectionGroup" data-desk-section="feedback" data-ticket-code="B03" data-ticket-label="Replies">
+            <div class="groupHead groupHeadStack" data-ticket-code="B03" data-ticket-label="Replies">
+              <div class="groupHeadCopy">
+                <h2 id="replyFeedbackTitle">回复反馈</h2>
+                <p class="groupHeadMeta" id="replyFeedbackMeta">等待今日反馈…</p>
+              </div>
+            </div>
+            <div class="deskList" id="replyFeedbackList"></div>
+          </section>
+        </section>
+
+        <section class="panel" id="panel-overview" data-panel="overview" data-panel-code="RD-CTRL" data-panel-stamp="Control Deck" data-panel-hint="STATUS · ENTRY · FILTERS">
+          <section class="ticketSection compact" data-ticket-code="C01" data-ticket-label="Control Deck">
+            <div class="groupHead" data-ticket-code="C01" data-ticket-label="Control Deck">
+              <h2 id="controlDeckTitle">快捷操作</h2>
+            </div>
+            <div class="controlDeck">
+              <button id="openXButton" class="actionButton" type="button">打开 X</button>
+              <button id="openPanelButton" class="actionButton actionButtonPrimary" type="button">打开页内面板</button>
+              <button id="refreshStatusButton" class="actionButton" type="button">刷新状态</button>
+              <button id="openOptionsButton" class="actionButton" type="button">完整设置页</button>
+            </div>
+            <div class="statusCardGrid">
+              <div class="statusCard">
+                <span class="statusCardLabel" id="currentPageLabel">当前页面</span>
+                <strong class="statusCardValue" id="currentPageValue">检测中…</strong>
+              </div>
+              <div class="statusCard">
+                <span class="statusCardLabel" id="entryStatusLabel">页内入口</span>
+                <strong class="statusCardValue" id="entryStatusValue">检测中…</strong>
+              </div>
+              <div class="statusCard">
+                <span class="statusCardLabel" id="lastSyncLabel">最近同步</span>
+                <strong class="statusCardValue" id="lastSyncValue">--:--</strong>
+              </div>
+            </div>
+            <p class="hint controlDeckHint" id="controlDeckHint">先确认当前标签页是否在 x.com，再直接打开页内面板；真正操作都在 X 页内完成。</p>
+          </section>
+
+          <section class="ticketSection stats" data-ticket-code="C03" data-ticket-label="Stats">
+            <div class="stat" data-tone="scan">
+              <span class="label" id="scannedLabel">已扫描帖子数</span>
+              <strong id="scannedCount">0</strong>
+            </div>
+            <div class="stat" data-tone="visible">
+              <span class="label" id="visibleLabel">可见候选数</span>
+              <strong id="visibleCount">0</strong>
+            </div>
+            <div class="stat" data-tone="high">
+              <span class="label" id="highScoreLabel">高分帖子数</span>
+              <strong id="highScoreCount">0</strong>
+            </div>
+            <div class="stat" data-tone="reply">
+              <span class="label" id="todayRepliedLabel">今日已回复</span>
+              <strong id="repliedCount">0</strong>
+            </div>
+            <div class="stat wide" data-tone="threshold">
+              <span class="label" id="thresholdLabel">显示阈值</span>
+              <div class="thresholdRow">
+                <input id="thresholdRange" type="range" min="0" max="100" step="1" />
+                <output id="thresholdValue">30</output>
+              </div>
+            </div>
+          </section>
+
+          <section class="ticketSection compact" data-ticket-code="C04" data-ticket-label="Filters">
+            <label class="checkRow">
+              <input id="onlyKeywordHits" type="checkbox" />
+              <span id="onlyKeywordHitsText">只显示命中关键词或语言加成的帖子</span>
+            </label>
+          </section>
+
+          <section class="ticketSection note" data-ticket-code="C05" data-ticket-label="Notes">
+            <p id="overviewNote">
+              当前已支持：实时打分、广告过滤、自己的帖子过滤、回复后打 √、右上水滴快捷入口、关键词加成和阈值控制。
+            </p>
+          </section>
+        </section>
+
+        <section class="panel" id="panel-signals" data-panel="signals" data-panel-code="RD-BOOST" data-panel-stamp="Boost Booth" data-panel-hint="LANG · TOPIC · SCORE">
+          <section class="ticketSection group" data-ticket-code="D01" data-ticket-label="Language Boosts">
+            <div class="groupHead" data-ticket-code="D01" data-ticket-label="Language Boosts">
+              <h2 id="languageBoostTitle">语言加成</h2>
+            </div>
+            <div class="toggleGrid" id="languageBoostGrid"></div>
+          </section>
+
+          <section class="ticketSection group" data-ticket-code="D02" data-ticket-label="Topic Boosts">
+            <div class="groupHead" data-ticket-code="D02" data-ticket-label="Topic Boosts">
+              <h2 id="topicBoostTitle">主题加成</h2>
+            </div>
+            <div class="toggleGrid" id="topicBoostGrid"></div>
+          </section>
+
+          <section class="ticketSection compact" data-ticket-code="D03" data-ticket-label="Active Boosts">
+            <div class="groupHead" data-ticket-code="D03" data-ticket-label="Active Boosts">
+              <h2 id="deskBoostTitle">当前生效加成</h2>
+            </div>
+            <div class="deskBoostSummary" id="deskBoostSummary"></div>
+          </section>
+
+          <section class="ticketSection compact" data-ticket-code="D04" data-ticket-label="Score Guide">
+            <div class="groupHead" data-ticket-code="D04" data-ticket-label="Score Guide">
+              <h2 id="scoreGuideTitle">评分说明</h2>
+            </div>
+            <div class="scoreGuideGrid" id="scoreGuideGrid"></div>
+            <div class="scoreGuideNotes" id="scoreGuideNotes"></div>
+          </section>
+        </section>
+
+        <section class="panel" id="panel-keywords" data-panel="keywords" data-panel-code="RD-WORD" data-panel-stamp="Keyword Booth" data-panel-hint="PRESET · CUSTOM · MATCH">
+          <div class="keywordGroups" id="keywordSections"></div>
+        </section>
+
+        <footer class="footer footerReset">
+          <span data-status-text-mirror="true">等待同步中…</span>
+          <span class="footerMeta">ReplyDrop dashboard = 深入工作区；真正执行入口仍在 X 页内右上角悬浮水滴</span>
+          <span class="footerSerial" aria-hidden="true">RD-DASH-DECK</span>
+        </footer>
+        <div class="ticketBottomCut" aria-hidden="true"></div>
+      </section>
+    </main>
+
+    <script src="replydrop-pickup-core.js"></script>
+    <script src="replydrop-workflow-core.js"></script>
+    <script src="replydrop-attribution-core.js"></script>
+    <script src="replydrop-focus-core.js"></script>
+    <script src="replydrop-draft-core.js"></script>
+    <script src="replydrop-queue-core.js"></script>
+    <script src="replydrop-feedback-core.js"></script>
+    <script src="replydrop-popup-ui-core.js"></script>
+    <script src="replydrop-growth-core.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReplyDrop</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body class="options-page">
+    <main class="popup">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">ReplyDrop</p>
+          <h1 id="pageTitle">设置</h1>
+        </div>
+        <label class="switch" id="enabledSwitchLabel" title="总开关">
+          <input id="enabledToggle" type="checkbox" />
+          <span class="track"></span>
+        </label>
+      </header>
+
+      <nav class="tabs" aria-label="ReplyDrop tabs">
+        <button class="tabButton active" id="tabOverview" data-tab="overview" type="button">概览</button>
+        <button class="tabButton" id="tabSignals" data-tab="signals" type="button">加成</button>
+        <button class="tabButton" id="tabKeywords" data-tab="keywords" type="button">关键词</button>
+      </nav>
+
+      <section class="panel active" id="panel-overview" data-panel="overview">
+        <section class="card compact">
+          <div class="groupHead">
+            <h2 id="uiLanguageTitle">界面语言</h2>
+          </div>
+          <div class="localeBar" id="localeBar">
+            <button class="localeButton" data-lang="zh" type="button">简/繁</button>
+            <button class="localeButton" data-lang="en" type="button">EN</button>
+            <button class="localeButton" data-lang="ja" type="button">日本語</button>
+            <button class="localeButton" data-lang="ko" type="button">한국어</button>
+          </div>
+        </section>
+
+        <section class="card stats">
+          <div class="stat">
+            <span class="label" id="scannedLabel">已扫描帖子数</span>
+            <strong id="scannedCount">0</strong>
+          </div>
+          <div class="stat">
+            <span class="label" id="visibleLabel">可见候选数</span>
+            <strong id="visibleCount">0</strong>
+          </div>
+          <div class="stat">
+            <span class="label" id="highScoreLabel">高分帖子数</span>
+            <strong id="highScoreCount">0</strong>
+          </div>
+          <div class="stat">
+            <span class="label" id="todayRepliedLabel">今日已回复</span>
+            <strong id="repliedCount">0</strong>
+          </div>
+          <div class="stat wide">
+            <span class="label" id="thresholdLabel">显示阈值</span>
+            <div class="thresholdRow">
+              <input id="thresholdRange" type="range" min="0" max="100" step="1" />
+              <output id="thresholdValue">30</output>
+            </div>
+          </div>
+        </section>
+
+        <section class="card compact">
+          <label class="checkRow">
+            <input id="onlyKeywordHits" type="checkbox" />
+            <span id="onlyKeywordHitsText">只显示命中关键词或语言加成的帖子</span>
+          </label>
+        </section>
+
+        <section class="card note">
+          <p id="overviewNote">
+            当前已支持：实时打分、广告过滤、自己的帖子过滤、回复后打 √、右上水滴快捷入口、关键词加成和阈值控制。
+          </p>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-signals" data-panel="signals">
+        <section class="card group">
+          <div class="groupHead">
+            <h2 id="languageBoostTitle">语言加成</h2>
+          </div>
+          <div class="toggleGrid" id="languageBoostGrid"></div>
+        </section>
+
+        <section class="card group">
+          <div class="groupHead">
+            <h2 id="topicBoostTitle">主题加成</h2>
+          </div>
+          <div class="toggleGrid" id="topicBoostGrid"></div>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-keywords" data-panel="keywords">
+        <div class="keywordGroups" id="keywordSections"></div>
+      </section>
+
+      <footer class="footer">
+        <span id="statusText">等待同步中…</span>
+      </footer>
+    </main>
+
+    <script src="replydrop-pickup-core.js"></script>
+    <script src="replydrop-workflow-core.js"></script>
+    <script src="replydrop-attribution-core.js"></script>
+    <script src="replydrop-focus-core.js"></script>
+    <script src="replydrop-draft-core.js"></script>
+    <script src="replydrop-queue-core.js"></script>
+    <script src="replydrop-feedback-core.js"></script>
+    <script src="replydrop-popup-ui-core.js"></script>
+    <script src="replydrop-growth-core.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

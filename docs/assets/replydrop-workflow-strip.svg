@@ -1,0 +1,71 @@
+<svg width="1280" height="300" viewBox="0 0 1280 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="640" y1="0" x2="640" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#494C52"/>
+      <stop offset="1" stop-color="#32353A"/>
+    </linearGradient>
+    <linearGradient id="cardA" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#D8F0EF"/>
+      <stop offset="1" stop-color="#F8FBFB"/>
+    </linearGradient>
+    <linearGradient id="cardB" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFF8E7"/>
+      <stop offset="1" stop-color="#F1E0B7"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="300" rx="28" fill="url(#bg2)"/>
+  <g opacity="0.18" stroke="#FFFFFF">
+    <path d="M58 42L142 126"/>
+    <path d="M142 42L58 126"/>
+    <path d="M1138 176L1222 260"/>
+    <path d="M1222 176L1138 260"/>
+  </g>
+  <text x="72" y="56" fill="#F3E7C8" font-family="'Avenir Next', sans-serif" font-size="14" font-weight="800" letter-spacing="0.24em">REPLYDROP WORKFLOW</text>
+
+  <g>
+    <rect x="64" y="86" width="238" height="148" rx="22" fill="url(#cardA)"/>
+    <circle cx="64" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <circle cx="302" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <text x="94" y="120" fill="#86A7A3" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.22em">STEP 01</text>
+    <text x="94" y="156" fill="#24393C" font-family="'Arial Narrow', sans-serif" font-size="32" font-weight="800">Discover</text>
+    <text x="94" y="184" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">Score fresh posts, surface droplets,</text>
+    <text x="94" y="204" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">and keep only workable reply windows.</text>
+  </g>
+
+  <g>
+    <rect x="364" y="86" width="238" height="148" rx="22" fill="url(#cardB)"/>
+    <circle cx="364" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <circle cx="602" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <text x="394" y="120" fill="#9B7E53" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.22em">STEP 02</text>
+    <text x="394" y="156" fill="#2E3129" font-family="'Arial Narrow', sans-serif" font-size="32" font-weight="800">Route</text>
+    <text x="394" y="184" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">Pick a reply angle, tighten the draft,</text>
+    <text x="394" y="204" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">and hand off into the X composer.</text>
+  </g>
+
+  <g>
+    <rect x="664" y="86" width="238" height="148" rx="22" fill="url(#cardA)"/>
+    <circle cx="664" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <circle cx="902" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <text x="694" y="120" fill="#86A7A3" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.22em">STEP 03</text>
+    <text x="694" y="156" fill="#24393C" font-family="'Arial Narrow', sans-serif" font-size="32" font-weight="800">Queue</text>
+    <text x="694" y="184" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">Stage next-up, tonight, or tomorrow</text>
+    <text x="694" y="204" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">without turning the extension into a CMS.</text>
+  </g>
+
+  <g>
+    <rect x="964" y="86" width="252" height="148" rx="22" fill="url(#cardB)"/>
+    <circle cx="964" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <circle cx="1216" cy="160" r="12" fill="#32353A" fill-opacity="0.16"/>
+    <text x="994" y="120" fill="#9B7E53" font-family="'Avenir Next', sans-serif" font-size="10" font-weight="800" letter-spacing="0.22em">STEP 04</text>
+    <text x="994" y="156" fill="#2E3129" font-family="'Arial Narrow', sans-serif" font-size="32" font-weight="800">Review</text>
+    <text x="994" y="184" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">Track shipped reply performance,</text>
+    <text x="994" y="204" fill="#6C614D" font-family="'Avenir Next', sans-serif" font-size="14">pickup cadence, and operator follow-through.</text>
+  </g>
+
+  <path d="M308 160H356" stroke="#F3E7C8" stroke-width="2" stroke-dasharray="6 8"/>
+  <path d="M608 160H656" stroke="#F3E7C8" stroke-width="2" stroke-dasharray="6 8"/>
+  <path d="M908 160H956" stroke="#F3E7C8" stroke-width="2" stroke-dasharray="6 8"/>
+  <path d="M344 152L356 160L344 168" stroke="#F3E7C8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M644 152L656 160L644 168" stroke="#F3E7C8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M944 152L956 160L944 168" stroke="#F3E7C8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

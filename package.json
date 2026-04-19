@@ -1,0 +1,17 @@
+{
+  "name": "replydrop",
+  "version": "0.2.134",
+  "private": true,
+  "description": "Local-first X reply workflow browser extension.",
+  "license": "MIT",
+  "scripts": {
+    "check:syntax": "node --check background.js && node --check content.js && node --check replydrop-api-bridge.js && node --check popup.js && node --check scorer.js && node --check replydrop-pickup-core.js && node --check replydrop-workflow-core.js && node --check replydrop-attribution-core.js && node --check replydrop-focus-core.js && node --check replydrop-draft-core.js && node --check replydrop-queue-core.js && node --check replydrop-feedback-core.js && node --check replydrop-popup-ui-core.js && node --check replydrop-growth-core.js",
+    "check:oss": "node scripts/check-open-source-export.mjs",
+    "check:public-docs": "node scripts/check-public-docs.mjs",
+    "check:doc-links": "node scripts/check-doc-links.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "validate": "node scripts/validate-release.mjs",
+    "package": "bash scripts/package-release.sh",
+    "export:oss": "bash scripts/export-open-source-tree.sh"
+  }
+}

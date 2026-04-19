@@ -1,0 +1,19 @@
+# Extension runtime files only
+manifest.json
+background.js
+content.js
+replydrop-api-bridge.js
+scorer.js
+popup.html
+popup.css
+popup.js
+options.html
+replydrop-pickup-core.js
+replydrop-workflow-core.js
+replydrop-attribution-core.js
+replydrop-focus-core.js
+replydrop-draft-core.js
+replydrop-queue-core.js
+replydrop-feedback-core.js
+replydrop-popup-ui-core.js
+replydrop-growth-core.js
