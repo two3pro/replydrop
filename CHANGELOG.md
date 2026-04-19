@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.136
+
+- 继续把公开仓门面从“能用”往“像产品页”推进一轮：
+  - README 顶部新增真正的 GitHub hero
+  - 新增一条更像产品演示的 `replydrop-github-demo-loop.gif`
+  - 首页首屏现在先讲清楚实时打分、本地闭环和 Agent 接管，而不是先让人掉进长文档
+- 商店截图也重新收了一版，不再只是“有图可交”：
+  - `scripts/generate-store-assets.py` 现在会生成 5 张更完整的 Chrome Web Store 截图序列
+  - 新增语言 / 主题加成这张独立截图
+  - 原有截图的排版和文案力度也一起重做
+- `docs/store/CHROME-WEB-STORE-LISTING.md` 同步补上：
+  - 新的 5 图推荐顺序
+  - GitHub hero / demo loop 资产入口
+
 ## 0.2.135
 
 - 把公开仓缺的“首批门面内容”一次补齐，往真正可上架再推一步：

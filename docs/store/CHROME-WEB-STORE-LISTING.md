@@ -19,17 +19,27 @@
 推荐顺序：
 
 1. `docs/store/chrome-web-store-01-find-candidates.png`
-2. `docs/store/chrome-web-store-02-layered-dashboard.png`
-3. `docs/store/chrome-web-store-03-growth-dashboard.png`
-4. `docs/store/chrome-web-store-04-local-automation.png`
+2. `docs/store/chrome-web-store-02-language-boosts.png`
+3. `docs/store/chrome-web-store-03-layered-dashboard.png`
+4. `docs/store/chrome-web-store-04-growth-dashboard.png`
+5. `docs/store/chrome-web-store-05-local-automation.png`
 
 ![Store screenshot 1](./chrome-web-store-01-find-candidates.png)
 
-![Store screenshot 2](./chrome-web-store-02-layered-dashboard.png)
+![Store screenshot 2](./chrome-web-store-02-language-boosts.png)
 
-![Store screenshot 3](./chrome-web-store-03-growth-dashboard.png)
+![Store screenshot 3](./chrome-web-store-03-layered-dashboard.png)
 
-![Store screenshot 4](./chrome-web-store-04-local-automation.png)
+![Store screenshot 4](./chrome-web-store-04-growth-dashboard.png)
+
+![Store screenshot 5](./chrome-web-store-05-local-automation.png)
+
+## GitHub 门面补充
+
+- GitHub 首页 hero：
+  - `docs/assets/replydrop-github-hero.png`
+- GitHub demo loop：
+  - `docs/assets/replydrop-github-demo-loop.gif`
 
 ## 一句话卖点
 

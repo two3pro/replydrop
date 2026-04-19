@@ -4,9 +4,22 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.135`
+当前重置基线版本：`0.2.136`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
+
+![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
+
+<p align="center">
+  <a href="./SMOKE-TEST.md">快速上手</a> ·
+  <a href="./AUTOMATION.md">ReplyDropAPI</a> ·
+  <a href="./docs/store/CHROME-WEB-STORE-LISTING.md">商店文案</a> ·
+  <a href="./PRIVACY.md">隐私边界</a>
+</p>
+
+| 实时发现 | 本地闭环 | Agent Ready |
+| --- | --- | --- |
+| 为当前 X 时间线已经可见的帖子实时打分，并用水滴提示高价值回复窗口 | 回复队列、publish watch、pickup 复查都保留在浏览器本地，不依赖外部服务 | `window.ReplyDropAPI` 支持 CDP / AI Agent 直接读候选、排队、标记已发与调试状态 |
 
 ## 你有竞品没有的
 
@@ -34,17 +47,15 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 - 想准备公开仓导出或正式打包：看 [OPEN-SOURCE-RELEASE.md](./OPEN-SOURCE-RELEASE.md) 和 [RELEASING.md](./RELEASING.md)
 - 想参与协作：看 [CONTRIBUTING.md](./CONTRIBUTING.md)、[SUPPORT.md](./SUPPORT.md)、[SECURITY.md](./SECURITY.md)
 
-## 预览
+## Demo
 
-![ReplyDrop ticket hero](./docs/assets/replydrop-ticket-hero.svg)
+下面这个循环 demo 直接基于当前版本的真实界面与门面图整理，用来快速展示发现候选、语言加成、分层仪表盘、增长看板和 Agent 接口这五层产品面。
+
+![ReplyDrop GitHub demo loop](./docs/assets/replydrop-github-demo-loop.gif)
+
+## 流程概览
 
 ![ReplyDrop workflow strip](./docs/assets/replydrop-workflow-strip.svg)
-
-## 轻量 Demo
-
-下面这个循环 demo 基于当前版本的真实界面截图整理而成，用来快速展示首页入口、分层仪表盘和增长看板的整体观感。
-
-![ReplyDrop demo loop](./docs/assets/replydrop-demo-loop.gif)
 
 ## 当前界面截图
 
@@ -249,7 +260,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-会生成类似 `replydrop-p2.135.zip` 的安装包。
+会生成类似 `replydrop-p2.136.zip` 的安装包。
 
 ## 文档导航
 
