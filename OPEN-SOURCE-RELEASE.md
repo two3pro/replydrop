@@ -52,3 +52,4 @@ npm run export:oss
 2. 再跑 `npm run export:oss`
 3. 检查导出树里的 `README.md`、`CHANGELOG.md`、`docs/assets`
 4. 如需正式发布扩展运行时包，再额外执行 `npm run package`
+5. 如需准备 Chrome Web Store 上架页，再检查 `docs/store/CHROME-WEB-STORE-LISTING.md`

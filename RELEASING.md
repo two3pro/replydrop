@@ -23,6 +23,12 @@ node scripts/validate-release.mjs
 npm run export:oss
 ```
 
+如果这轮还改了图标、商店截图或上架文案，先重生成一次：
+
+```bash
+python3 scripts/generate-store-assets.py
+```
+
 4. 通过后运行：
 
 ```bash
@@ -34,6 +40,7 @@ bash scripts/package-release.sh
    - 包内 `manifest.json` 版本
    - zip 文件集合是否与 `scripts/runtime-files.txt` 完全一致
 7. 按 [SMOKE-TEST.md](./SMOKE-TEST.md) 至少走一轮快速验证
+8. 如果准备上架商店，再检查 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
 
 ## 版本规则
 

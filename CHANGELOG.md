@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.135
+
+- 把公开仓缺的“首批门面内容”一次补齐，往真正可上架再推一步：
+  - 新增扩展图标并接入 `manifest.json`
+  - 补上 `icons/icon16.png`、`icon32.png`、`icon48.png`、`icon128.png`
+  - 让弹出按钮、扩展列表和正式打包都不再处于无图标状态
+- 新增一套可复用的商店素材：
+  - `docs/store/CHROME-WEB-STORE-LISTING.md`
+  - 4 张 `1280x800` 的 Chrome Web Store 截图
+  - 一句话卖点、短描述、详细描述和隐私摘要
+- 新增 `scripts/generate-store-assets.py`
+  - 用当前 repo 里的真实界面截图生成商店图和图标预览
+  - 让后续 UI 再更新时不必重新手工拼门面素材
+- `README.md`、`PRIVACY.md`、运行时文件清单和公开导出清单也同步补上：
+  - 商店素材入口
+  - Chrome Web Store 可直接复用的隐私摘要
+  - `icons/` 进入运行时打包和公开导出
+
 ## 0.2.134
 
 - 新增两道发版护栏，补上“最后一米”的自动审计：

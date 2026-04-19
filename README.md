@@ -1,10 +1,22 @@
 # ReplyDrop
 
-ReplyDrop 是一个面向 X / Twitter 的轻量浏览器扩展，用来在信息流里筛出值得回复的帖子，并把“发现候选 -> 写草稿 -> 排队执行 -> 复查 pickup”串成一条本地工作流。
+ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子打分，帮你在窗口关闭前找到最值得回复的机会。
 
-当前重置基线版本：`0.2.134`
+开源免费，本地运行，零数据上传。
+
+当前重置基线版本：`0.2.135`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
+
+## 你有竞品没有的
+
+- 界面支持简体中文、繁體中文、English、日本語、한국어
+- 回复语言加成覆盖中日韩英法西德意葡，匹配你的目标受众
+- 主题关键词加成覆盖 `AI` / `Crypto` / `Creator` 等细分方向，并支持自定义关键词
+- 完整的本地回复队列 + pickup 追踪，发出后自动复查互动结果
+- `window.ReplyDropAPI` 让 AI Agent 可通过 CDP 直接接管候选筛选、排队、追踪全流程
+
+不收钱，不上传数据，不依赖任何外部服务。
 
 ## 开源快照
 
@@ -17,6 +29,7 @@ ReplyDrop 是一个面向 X / Twitter 的轻量浏览器扩展，用来在信息
 - 想先快速了解产品和安装：看 [README.md](./README.md)
 - 想理解运行时边界和模块关系：看 [ARCHITECTURE.md](./ARCHITECTURE.md)
 - 想接 Ada / CDP / bot 自动化：看 [AUTOMATION.md](./AUTOMATION.md)
+- 想准备商店上架图标、截图和文案：看 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
 - 想手工回归 popup / 队列 / pickup：看 [SMOKE-TEST.md](./SMOKE-TEST.md)
 - 想准备公开仓导出或正式打包：看 [OPEN-SOURCE-RELEASE.md](./OPEN-SOURCE-RELEASE.md) 和 [RELEASING.md](./RELEASING.md)
 - 想参与协作：看 [CONTRIBUTING.md](./CONTRIBUTING.md)、[SUPPORT.md](./SUPPORT.md)、[SECURITY.md](./SECURITY.md)
@@ -236,7 +249,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-会生成类似 `replydrop-p2.134.zip` 的安装包。
+会生成类似 `replydrop-p2.135.zip` 的安装包。
 
 ## 文档导航
 

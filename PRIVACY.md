@@ -1,5 +1,16 @@
 # Privacy
 
+## Chrome Web Store 摘要
+
+适合直接填入商店页面的简版说明：
+
+- 只读取 `x.com` / `twitter.com` 当前页面里已经渲染出来的公开内容
+- 默认只把状态写入浏览器本地 `chrome.storage.local`
+- 当前版本不把数据上传到 ReplyDrop 自己的服务器
+- 不要求创建 ReplyDrop 账号
+- 不调用远端 AI API
+- 不自动替用户点击发送
+
 ## 当前原则
 
 ReplyDrop 当前版本默认按“本地优先、最小外发、可解释状态”处理数据。
