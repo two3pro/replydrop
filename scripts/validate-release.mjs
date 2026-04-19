@@ -24,6 +24,14 @@ function getRuntimeFiles() {
     .filter((line) => line && !line.startsWith("#"));
 }
 
+function getTestFiles() {
+  const testsDir = path.join(root, "tests");
+  return fs.readdirSync(testsDir)
+    .filter((entry) => entry.endsWith(".test.cjs"))
+    .sort()
+    .map((entry) => path.join("tests", entry));
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -53,7 +61,7 @@ for (const relativeFile of runtimeFiles.filter((file) => file.endsWith(".js"))) 
   run("node", ["--check", relativeFile]);
 }
 
-run("node", ["--test", "tests/*.test.cjs"]);
+run("node", ["--test", ...getTestFiles()]);
 run("node", ["scripts/check-public-docs.mjs"]);
 run("node", ["scripts/check-doc-links.mjs"]);
 run("node", ["scripts/check-open-source-export.mjs"]);
