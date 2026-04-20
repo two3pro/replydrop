@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.137
+
+- 把 Chrome Web Store 提交材料从“差不多够了”补到“可以照着填表”：
+  - `scripts/generate-store-assets.py` 新增 Small promo tile、Marquee promo tile、promo video poster 和本地 promo video 产出
+  - `docs/store/CHROME-WEB-STORE-LISTING.md` 补上新素材入口
+  - 新增 `docs/store/CHROME-WEB-STORE-SUBMISSION.md`，把上架字段、权限解释、隐私答卷和 reviewer 测试说明收成一份可直接粘贴的答卷
+- 所以这轮重点不是继续堆功能，而是把商店提交最后缺的门面和表单材料补齐
+
 ## 0.2.136
 
 - 继续把公开仓门面从“能用”往“像产品页”推进一轮：

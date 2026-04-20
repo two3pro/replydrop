@@ -2,6 +2,8 @@
 
 这份文档收的是 ReplyDrop 当前可直接拿去填商店页面的首批门面内容。
 
+更具体的提交字段、权限说明、隐私答卷和 reviewer 测试指引，见 [CHROME-WEB-STORE-SUBMISSION.md](./CHROME-WEB-STORE-SUBMISSION.md)。
+
 ## 图标
 
 - 扩展运行时图标：
@@ -33,6 +35,21 @@
 ![Store screenshot 4](./chrome-web-store-04-growth-dashboard.png)
 
 ![Store screenshot 5](./chrome-web-store-05-local-automation.png)
+
+## 促销素材
+
+- Small promo tile (`440x280`)：
+  - `docs/store/chrome-web-store-small-promo-tile.png`
+- Marquee promo tile (`1400x560`)：
+  - `docs/store/chrome-web-store-marquee-promo-tile.png`
+- Promo video poster：
+  - `docs/store/replydrop-chrome-web-store-promo-poster.png`
+- Promo video source（上传到 YouTube 非公开后，把链接填进商店表单）：
+  - `docs/store/replydrop-chrome-web-store-promo.mp4`
+
+![Small promo tile](./chrome-web-store-small-promo-tile.png)
+
+![Marquee promo tile](./chrome-web-store-marquee-promo-tile.png)
 
 ## GitHub 门面补充
 

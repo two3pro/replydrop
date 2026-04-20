@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -15,8 +18,15 @@ STORE_DIR = ROOT / "docs" / "store"
 ICONS_DIR = ROOT / "icons"
 README_HERO_PATH = DOCS_ASSETS / "replydrop-github-hero.png"
 README_LOOP_PATH = DOCS_ASSETS / "replydrop-github-demo-loop.gif"
+SMALL_PROMO_TILE_PATH = STORE_DIR / "chrome-web-store-small-promo-tile.png"
+MARQUEE_PROMO_TILE_PATH = STORE_DIR / "chrome-web-store-marquee-promo-tile.png"
+PROMO_VIDEO_PATH = STORE_DIR / "replydrop-chrome-web-store-promo.mp4"
+PROMO_VIDEO_POSTER_PATH = STORE_DIR / "replydrop-chrome-web-store-promo-poster.png"
 
 CANVAS_SIZE = (1280, 800)
+PROMO_TILE_SIZE = (440, 280)
+MARQUEE_SIZE = (1400, 560)
+PROMO_VIDEO_SIZE = (1280, 720)
 BG_COLOR = "#3a3634"
 PAPER_COLOR = "#f6eed8"
 INK_COLOR = "#231f1b"
@@ -544,13 +554,240 @@ def generate_readme_demo_loop() -> None:
     )
 
 
+def draw_promotional_shell(
+    base: Image.Image,
+    card_box: tuple[int, int, int, int],
+    *,
+    accent: str,
+    radius: int,
+    rail_width: int,
+    perforation_offset: int,
+    header_height: int,
+    center_notch_radius: int,
+    bottom_notch_radius: int = 0,
+    bottom_notch_step: int = 0,
+    bottom_notch_gap_pattern: int = 0,
+) -> None:
+    draw = ImageDraw.Draw(base)
+    decorate_background(draw, base.size)
+
+    shadow_mask = Image.new("L", base.size, 0)
+    ImageDraw.Draw(shadow_mask).rounded_rectangle(card_box, radius=radius, fill=255)
+    add_shadow(base, shadow_mask, offset=(0, max(12, radius // 5)), blur=max(18, radius // 2), opacity=110)
+
+    draw.rounded_rectangle(card_box, radius=radius, fill=PAPER_COLOR)
+    draw.rounded_rectangle((card_box[0], card_box[1], card_box[0] + rail_width, card_box[3]), radius=radius, fill=RAIL_COLOR)
+    draw.rectangle((card_box[0] + rail_width // 2, card_box[1], card_box[0] + rail_width, card_box[3]), fill=RAIL_COLOR)
+    draw_perforation(
+        draw,
+        card_box[0] + rail_width + perforation_offset,
+        card_box[1] + 28,
+        card_box[3] - 28,
+        gap=max(9, radius // 4),
+        dash=max(6, radius // 5),
+        color="#d5c39f",
+        width=3,
+    )
+    draw.rounded_rectangle(
+        (card_box[0] + rail_width + 38, card_box[1] + 28, card_box[2] - 28, card_box[1] + 28 + header_height),
+        radius=max(22, radius // 2),
+        fill=accent,
+    )
+
+    center_y = (card_box[1] + card_box[3]) // 2
+    for side_x in (card_box[0], card_box[2]):
+        draw.ellipse(
+            (side_x - center_notch_radius, center_y - center_notch_radius, side_x + center_notch_radius, center_y + center_notch_radius),
+            fill=BG_COLOR,
+        )
+
+    if bottom_notch_radius and bottom_notch_step:
+        bottom_y = card_box[3] - max(4, bottom_notch_radius // 2)
+        index = 0
+        for x in range(card_box[0] + rail_width + 70, card_box[2] - 50, bottom_notch_step):
+            if bottom_notch_gap_pattern and index % bottom_notch_gap_pattern == 1:
+                index += 1
+                continue
+            draw.ellipse((x - bottom_notch_radius, bottom_y - bottom_notch_radius, x + bottom_notch_radius, bottom_y + bottom_notch_radius), fill=BG_COLOR)
+            index += 1
+
+
+def generate_small_promo_tile() -> None:
+    canvas = Image.new("RGBA", PROMO_TILE_SIZE, BG_COLOR)
+    card_box = (18, 16, 422, 262)
+    draw_promotional_shell(
+        canvas,
+        card_box,
+        accent="#dcecef",
+        radius=34,
+        rail_width=54,
+        perforation_offset=12,
+        header_height=54,
+        center_notch_radius=17,
+        bottom_notch_radius=12,
+        bottom_notch_step=72,
+        bottom_notch_gap_pattern=3,
+    )
+
+    draw = ImageDraw.Draw(canvas)
+    eyebrow_font = load_font(20, kind="title")
+    title_font = load_font(34, kind="title")
+    body_font = load_font(16)
+    chip_font = load_font(16, kind="title")
+
+    draw.text((126, 36), "REPLYDROP", fill="#4f6268", font=eyebrow_font)
+    draw.text((126, 78), "Find reply windows\nbefore they cool off", fill=INK_COLOR, font=title_font, spacing=5)
+    body = wrap(draw, "Live scoring for visible X posts. Local-first queue, pickup, and review.", body_font, 232)
+    draw.multiline_text((126, 164), body, fill="#5f564a", font=body_font, spacing=5)
+
+    draw_drop(draw, 86, 142, 34, fill=BLUE, outline=BLUE_DEEP, outline_width=4)
+    draw_drop(draw, 86, 148, 22, fill="#95c8ff")
+    draw.ellipse((92, 106, 108, 122), fill=(255, 255, 255, 170))
+
+    chip_box = (124, 220, 230, 248)
+    draw.rounded_rectangle(chip_box, radius=14, fill="#171412")
+    draw.text((chip_box[0] + 14, chip_box[1] + 7), "LOCAL-FIRST", fill=PAPER_COLOR, font=chip_font)
+
+    canvas.convert("RGB").save(SMALL_PROMO_TILE_PATH, quality=95)
+
+
+def generate_marquee_promo_tile() -> None:
+    canvas = Image.new("RGBA", MARQUEE_SIZE, BG_COLOR)
+    card_box = (46, 34, 1354, 524)
+    draw_promotional_shell(
+        canvas,
+        card_box,
+        accent="#eee0b9",
+        radius=52,
+        rail_width=92,
+        perforation_offset=16,
+        header_height=88,
+        center_notch_radius=26,
+        bottom_notch_radius=16,
+        bottom_notch_step=116,
+        bottom_notch_gap_pattern=3,
+    )
+
+    draw = ImageDraw.Draw(canvas)
+    eyebrow_font = load_font(28, kind="title")
+    title_font = load_font(54, kind="title")
+    body_font = load_font(22)
+    proof_font = load_font(18)
+
+    text_left = 182
+    draw.text((text_left, 78), "REPLYDROP  •  CHROME WEB STORE", fill="#596a72", font=eyebrow_font)
+    draw.multiline_text((text_left, 132), "Score visible X posts.\nQueue the best replies.\nReview pickup locally.", fill=INK_COLOR, font=title_font, spacing=8)
+
+    body = "ReplyDrop keeps the workflow plugin-scale: score the timeline you already see, queue promising posts, and revisit shipped replies with a local growth dashboard."
+    wrapped_body = wrap(draw, body, body_font, 500)
+    body_y = 324
+    draw.multiline_text((text_left, body_y), wrapped_body, fill="#5f564a", font=body_font, spacing=9)
+    body_bbox = draw.multiline_textbbox((text_left, body_y), wrapped_body, font=body_font, spacing=9)
+
+    proof_y = body_bbox[3] + 18
+    for index, proof in enumerate(
+        [
+            "Live scoring on x.com / twitter.com",
+            "Layered dashboard, not a long admin page",
+        ]
+    ):
+        row_y = proof_y + index * 28
+        draw.ellipse((text_left, row_y + 6, text_left + 12, row_y + 18), fill=GOLD, outline="#c89d57")
+        draw.text((text_left + 24, row_y), proof, fill="#51483d", font=proof_font)
+
+    place_screenshot_card(canvas, (820, 112, 1128, 432), "replydrop-popup-home.png", accent="#dcecef", serial="HOME", tag="LIVE")
+    place_screenshot_card(canvas, (1038, 86, 1314, 366), "replydrop-dashboard-tabs.png", accent="#efe5c6", serial="DASH", tag="LAYERED")
+    place_screenshot_card(canvas, (1002, 284, 1288, 486), "replydrop-growth-dashboard.png", accent="#dfeff5", serial="GROWTH", tag="REVIEW")
+
+    draw_drop(draw, 1270, 76, 28, fill=BLUE, outline=BLUE_DEEP, outline_width=3)
+    draw_drop(draw, 1270, 80, 18, fill="#95c8ff")
+    draw.ellipse((1278, 56, 1292, 70), fill=(255, 255, 255, 160))
+
+    canvas.convert("RGB").save(MARQUEE_PROMO_TILE_PATH, quality=95)
+
+
+def render_video_slide(source_path: Path, *, label: str) -> Image.Image:
+    canvas = Image.new("RGBA", PROMO_VIDEO_SIZE, BG_COLOR)
+    draw = ImageDraw.Draw(canvas)
+    decorate_background(draw, PROMO_VIDEO_SIZE)
+
+    frame_box = (68, 56, 1212, 664)
+    shadow_mask = Image.new("L", PROMO_VIDEO_SIZE, 0)
+    ImageDraw.Draw(shadow_mask).rounded_rectangle(frame_box, radius=44, fill=255)
+    add_shadow(canvas, shadow_mask, offset=(0, 16), blur=26, opacity=102)
+    draw.rounded_rectangle(frame_box, radius=44, fill=PAPER_COLOR)
+    draw.rounded_rectangle((frame_box[0], frame_box[1], frame_box[0] + 96, frame_box[3]), radius=44, fill=RAIL_COLOR)
+    draw.rectangle((frame_box[0] + 48, frame_box[1], frame_box[0] + 96, frame_box[3]), fill=RAIL_COLOR)
+    draw_perforation(draw, frame_box[0] + 116, frame_box[1] + 30, frame_box[3] - 30, gap=12, dash=8, color="#d6c39e", width=3)
+    draw.rounded_rectangle((frame_box[0] + 144, frame_box[1] + 28, frame_box[2] - 28, frame_box[1] + 96), radius=28, fill="#dcecef")
+
+    label_font = load_font(28, kind="title")
+    draw.text((frame_box[0] + 168, frame_box[1] + 47), label, fill="#53656d", font=label_font)
+
+    fitted = ImageOps.contain(Image.open(source_path).convert("RGBA"), (996, 520), Image.Resampling.LANCZOS)
+    fitted.putalpha(rounded_mask(fitted.size, 28))
+    canvas.alpha_composite(fitted, dest=(frame_box[0] + 156 + ((996 - fitted.width) // 2), frame_box[1] + 120 + ((500 - fitted.height) // 2)))
+    return canvas
+
+
+def generate_promo_video() -> None:
+    ffmpeg_path = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else None)
+    if not ffmpeg_path:
+        print("Skipping promo video: ffmpeg not found")
+        return
+
+    storyboard = [
+        (README_HERO_PATH, "REPLYDROP  •  OPEN SOURCE X REPLY WORKFLOW"),
+        (STORE_DIR / "chrome-web-store-01-find-candidates.png", "SCREEN 01  •  FIND CANDIDATES"),
+        (STORE_DIR / "chrome-web-store-02-language-boosts.png", "SCREEN 02  •  BOOST WHAT MATCHES"),
+        (STORE_DIR / "chrome-web-store-03-layered-dashboard.png", "SCREEN 03  •  LAYERED DASHBOARD"),
+        (STORE_DIR / "chrome-web-store-04-growth-dashboard.png", "SCREEN 04  •  GROWTH DASHBOARD"),
+        (STORE_DIR / "chrome-web-store-05-local-automation.png", "SCREEN 05  •  AGENT READY"),
+    ]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        for index, (source_path, label) in enumerate(storyboard, start=1):
+            frame = render_video_slide(source_path, label=label)
+            frame_path = temp_path / f"frame-{index:02d}.png"
+            frame.convert("RGB").save(frame_path, quality=95)
+            if index == 1:
+                frame.convert("RGB").save(PROMO_VIDEO_POSTER_PATH, quality=95)
+
+        subprocess.run(
+            [
+                ffmpeg_path,
+                "-y",
+                "-framerate",
+                "1/3",
+                "-i",
+                str(temp_path / "frame-%02d.png"),
+                "-vf",
+                "fps=30,format=yuv420p",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(PROMO_VIDEO_PATH),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 def main() -> None:
     random.seed(42)
     ensure_dirs()
     generate_icon()
     generate_store_screenshots()
+    generate_small_promo_tile()
+    generate_marquee_promo_tile()
     generate_readme_hero()
     generate_readme_demo_loop()
+    generate_promo_video()
     print(f"Generated store assets in {STORE_DIR} and icons in {ICONS_DIR}")
 
 

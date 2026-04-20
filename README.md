@@ -4,7 +4,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.136`
+当前重置基线版本：`0.2.137`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -14,6 +14,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
   <a href="./SMOKE-TEST.md">快速上手</a> ·
   <a href="./AUTOMATION.md">ReplyDropAPI</a> ·
   <a href="./docs/store/CHROME-WEB-STORE-LISTING.md">商店文案</a> ·
+  <a href="./docs/store/CHROME-WEB-STORE-SUBMISSION.md">商店提交</a> ·
   <a href="./PRIVACY.md">隐私边界</a>
 </p>
 
@@ -43,6 +44,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 - 想理解运行时边界和模块关系：看 [ARCHITECTURE.md](./ARCHITECTURE.md)
 - 想接 Ada / CDP / bot 自动化：看 [AUTOMATION.md](./AUTOMATION.md)
 - 想准备商店上架图标、截图和文案：看 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
+- 想直接照着填写商店提交表单：看 [docs/store/CHROME-WEB-STORE-SUBMISSION.md](./docs/store/CHROME-WEB-STORE-SUBMISSION.md)
 - 想手工回归 popup / 队列 / pickup：看 [SMOKE-TEST.md](./SMOKE-TEST.md)
 - 想准备公开仓导出或正式打包：看 [OPEN-SOURCE-RELEASE.md](./OPEN-SOURCE-RELEASE.md) 和 [RELEASING.md](./RELEASING.md)
 - 想参与协作：看 [CONTRIBUTING.md](./CONTRIBUTING.md)、[SUPPORT.md](./SUPPORT.md)、[SECURITY.md](./SECURITY.md)
@@ -260,7 +262,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-会生成类似 `replydrop-p2.136.zip` 的安装包。
+会生成类似 `replydrop-p2.137.zip` 的安装包。
 
 ## 文档导航
 
