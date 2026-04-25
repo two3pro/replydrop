@@ -123,6 +123,7 @@
     replyDetails: {},
     replyQueue: [],
     relationshipStates: {},
+    mediaSummaries: {},
     trafficByTweetId: {},
     trafficUpdatedAt: 0,
     recentCandidates: [],
@@ -533,6 +534,7 @@
       replyQueue: Array.isArray(state.replyQueue) ? state.replyQueue.slice() : [],
       recentCandidates: Array.isArray(state.recentCandidates) ? state.recentCandidates.slice() : [],
       relationshipStates: { ...(state.relationshipStates || {}) },
+      mediaSummaries: { ...(state.mediaSummaries || {}) },
       trafficUpdatedAt: state.trafficUpdatedAt || 0,
       stats: { ...(state.stats || {}) },
       apiStateSource: reason
@@ -843,6 +845,28 @@
     return ["image", "photo", "video", "gif", "mixed"].includes(String(mediaKind || "").trim().toLowerCase());
   }
 
+  function getMediaSummaryFromState(runtimeState = {}, tweetId = "") {
+    const normalizedTweetId = normalizeApiTweetId(tweetId);
+    if (!normalizedTweetId) {
+      return null;
+    }
+    const summary = runtimeState?.mediaSummaries?.[normalizedTweetId] || state.mediaSummaries?.[normalizedTweetId] || null;
+    if (!summary || typeof summary !== "object") {
+      return null;
+    }
+    const clean = {
+      tweetId: normalizedTweetId,
+      summary: String(summary.summary || "").trim().slice(0, 1200),
+      ocrText: String(summary.ocrText || "").trim().slice(0, 1600),
+      confidence: Math.max(0, Math.min(1, Number(summary.confidence || 0))),
+      source: String(summary.source || "").trim().slice(0, 48),
+      mediaKinds: Array.isArray(summary.mediaKinds) ? summary.mediaKinds.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 8) : [],
+      frameCount: Math.max(0, Math.floor(Number(summary.frameCount || 0))),
+      updatedAt: Number(summary.updatedAt || 0)
+    };
+    return clean.summary || clean.ocrText ? clean : null;
+  }
+
   function getConfiguredDisplayThreshold(settings = state.settings) {
     const value = Number(settings?.displayThreshold ?? settings?.threshold ?? global.XReplyScorer?.defaults?.displayThreshold ?? 30);
     return Math.max(0, Math.min(100, Math.floor(Number.isFinite(value) ? value : 30)));
@@ -1043,6 +1067,7 @@
       mode: "human-draft",
       workflow: "external-ai-chat-drafts",
       instruction: "ReplyDrop 只负责筛选和打包当前首页快照里的高分帖；外部 AI agent 按 candidates 顺序立刻在当前聊天窗口输出同语种、非模板、可直接人工复制的正式回复草稿或不建议回原因。不要自动刷新，不自动打开 composer，不自动排队，不自动发送。",
+      mediaWorkflow: "若 mediaContextMissing=true，agent 应调用 getMediaBundle(tweetId) 读取图片/视频 poster/首帧 URL，自行跑 OCR/vision，再调用 setMediaSummary({ tweetId, summary, ocrText, confidence }) 回填。",
       snapshotPolicy: {
         oneSnapshotOnly: true,
         noAutoRefresh: true,
@@ -1064,6 +1089,7 @@
         mediaKind: "string",
         needsDetailContext: "boolean",
         mediaContextMissing: "boolean",
+        mediaSummaryAvailable: "boolean",
         draftContextLabel: "quick-preview-draft | detail-ready-draft",
         urgency: "string",
         recommendation: "reply | skip",
@@ -1072,7 +1098,8 @@
         language: "same-as-post",
         confidence: "number",
         riskFlags: "string[]",
-        draftAngleHints: "string[]"
+        draftAngleHints: "string[]",
+        mediaSummary: "{ summary, ocrText, confidence, source, updatedAt }"
       }
     };
   }
@@ -1144,18 +1171,19 @@
     return /(?:Show more|显示更多|顯示更多|查看更多|さらに表示|もっと見る|더 보기|자세히 보기)/i.test(text);
   }
 
-  function buildDraftContextCompleteness(candidate = {}, article = null, includeMedia = false) {
+  function buildDraftContextCompleteness(candidate = {}, article = null, includeMedia = false, mediaSummary = null) {
     const mediaKind = String(candidate?.mediaKind || "").trim();
     const hasVisualMedia = hasVisualMediaKind(mediaKind);
     const hasQuote = articleHasQuoteCard(article);
     const hasShowMore = articleHasShowMoreCue(article);
     const text = String(candidate?.text || candidate?.draft || "").trim();
-    const mediaContextMissing = hasVisualMedia && !includeMedia;
+    const hasSummary = Boolean(mediaSummary?.summary || mediaSummary?.ocrText);
+    const mediaContextMissing = hasVisualMedia && !includeMedia && !hasSummary;
     const needsDetailContext = Boolean(
       mediaContextMissing ||
       hasQuote ||
       hasShowMore ||
-      (hasVisualMedia && text.length < 80)
+      (hasVisualMedia && !hasSummary && text.length < 80)
     );
     const flags = [];
     if (mediaContextMissing) flags.push("media_context_missing");
@@ -1166,6 +1194,7 @@
     return {
       needsDetailContext,
       mediaContextMissing,
+      mediaSummaryAvailable: hasSummary,
       draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
       flags,
       detailRewriteInstruction: needsDetailContext
@@ -1199,6 +1228,7 @@
         noAutoRefreshWithoutHumanApproval: true,
         outputDestination: "current-chat",
         instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。",
+        mediaWorkflow: "当候选 mediaContextMissing=true 时，agent 应调用 getMediaBundle(tweetId) 获取媒体 URL / poster / previewUrl，自行 OCR/vision 后用 setMediaSummary() 回填；回填后再读 getDraftContext/getDraftTargets 生成更可靠草稿。",
         wealthStoryGuidance: "高流速财富/资产故事不应仅因 wealth/hype 相邻而自动跳过；人工预览模式下应保留机会，并用 draftAngleHints 约束为中性行为金融/故事观察角度。只有涉及投资建议、买卖、价格预测、项目推广、喊单或低信息 FOMO 时才跳过或强警告。"
       },
       preferredMethods: {
@@ -1217,6 +1247,7 @@
         getCandidates: { type: "read" },
         getQueue: { type: "read" },
         getMediaBundle: { type: "read" },
+        setMediaSummary: { type: "write" },
         getTrafficSnapshot: { type: "read" },
         getDraftTargets: { type: "read" },
         getDraftContext: { type: "read" },
@@ -1367,11 +1398,12 @@
     const mediaKind = String(candidate?.mediaKind || "").trim();
     const mediaPresent = hasVisualMediaKind(mediaKind);
     const needsVision = mediaPresent && Boolean(candidate?.lowSemanticConfidence || text.length < 32);
+    const mediaSummary = getMediaSummaryFromState(runtimeState, tweetId);
     const liveArticle = options?.article instanceof Element
       ? options.article
       : findTweetArticleByTweetId(tweetId, normalizedUrl);
     const recheck = buildLiveCandidateRecheck(candidate, liveArticle);
-    const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia));
+    const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
     const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
     const recommendedDecision = recheck?.skipRecommended ? "skip" : mapQueueSlotToDecision(recommendedSlot);
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
@@ -1460,7 +1492,8 @@
       media: {
         needsVision,
         available: mediaPresent,
-        bundleIncluded: false
+        bundleIncluded: false,
+        summary: mediaSummary
       },
       lifecycle: {
         alreadyReplied
@@ -1541,7 +1574,58 @@
     if (!bundle?.items?.length) {
       throw new Error("media-not-found");
     }
+    bundle.summary = getMediaSummaryFromState(runtimeState, normalizedTweetId);
+    bundle.agentInstruction = "Agent 可读取 items[].src / poster / previewUrl 做 OCR 或 vision；完成后调用 setMediaSummary({ tweetId, summary, ocrText, confidence }) 回填给 ReplyDrop。";
     return bundle;
+  }
+
+  async function setReplyDropApiMediaSummary(payload = {}) {
+    const normalizedPayload = payload && typeof payload === "object" ? payload : {};
+    let runtimeState = null;
+    try {
+      runtimeState = await getApiRuntimeStateSnapshot();
+    } catch {
+      runtimeState = null;
+    }
+    const tweetId = normalizeApiTweetId(
+      normalizedPayload.tweetId ||
+      normalizedPayload.targetTweetId ||
+      extractTweetIdFromUrl(normalizedPayload.url || normalizedPayload.targetUrl || "")
+    );
+    if (!tweetId) {
+      return { ok: false, reason: "missing-tweet-id" };
+    }
+    const summary = String(normalizedPayload.summary || normalizedPayload.visionSummary || "").trim().slice(0, 1200);
+    const ocrText = String(normalizedPayload.ocrText || normalizedPayload.ocr || "").trim().slice(0, 1600);
+    if (!summary && !ocrText) {
+      return { ok: false, reason: "missing-media-summary" };
+    }
+    const mediaKinds = Array.isArray(normalizedPayload.mediaKinds)
+      ? normalizedPayload.mediaKinds.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const nextSummary = {
+      tweetId,
+      summary,
+      ocrText,
+      confidence: Math.max(0, Math.min(1, Number(normalizedPayload.confidence || 0))),
+      source: String(normalizedPayload.source || "agent-vision").trim().slice(0, 48),
+      mediaKinds,
+      frameCount: Math.max(0, Math.floor(Number(normalizedPayload.frameCount || 0))),
+      updatedAt: Date.now()
+    };
+    const nextMediaSummaries = {
+      ...(runtimeState?.mediaSummaries || state.mediaSummaries || {}),
+      [tweetId]: nextSummary
+    };
+    state.mediaSummaries = nextMediaSummaries;
+    try {
+      await updateRuntimeState({ mediaSummaries: nextMediaSummaries });
+    } catch (_error) {}
+    return {
+      ok: true,
+      tweetId,
+      summary: nextSummary
+    };
   }
 
   async function getReplyDropApiTrafficSnapshot(tweetIdOrUrl) {
@@ -1834,6 +1918,7 @@
     const handle = String(location.handle || context.author?.handle || "").replace(/^@/, "").trim();
     const needsDetailContext = Boolean(context.contextCompleteness?.needsDetailContext);
     const mediaContextMissing = Boolean(context.contextCompleteness?.mediaContextMissing);
+    const mediaSummaryAvailable = Boolean(context.contextCompleteness?.mediaSummaryAvailable || context.media?.summary);
     const draftContextLabel = String(context.contextCompleteness?.draftContextLabel || (needsDetailContext ? "quick-preview-draft" : "detail-ready-draft")).trim();
     return {
       version: "replydrop-draft-target-v1",
@@ -1851,6 +1936,7 @@
       mediaKind,
       needsDetailContext,
       mediaContextMissing,
+      mediaSummaryAvailable,
       draftContextLabel,
       tweetId,
       url: normalizedUrl,
@@ -1864,7 +1950,7 @@
       contextCompleteness: context.contextCompleteness || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果 needsDetailContext 或 mediaContextMissing 为 true，必须标注这是 quick preview draft，避免断言图片/视频/引用卡里没有提供的内容，并建议打开详情页后重写。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
+        writingInstruction: "请根据 post.text / media.summary / media.summary.ocrText / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果 needsDetailContext 或 mediaContextMissing 为 true，必须标注这是 quick preview draft，避免断言图片/视频/引用卡里没有提供的内容，并建议打开详情页后重写。若 mediaSummaryAvailable 为 true，可把视觉/OCR摘要作为主要上下文。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
       }
     };
   }
@@ -2571,6 +2657,8 @@
         return getReplyDropApiQueue();
       case "getMediaBundle":
         return getReplyDropApiMediaBundle(args[0]);
+      case "setMediaSummary":
+        return setReplyDropApiMediaSummary(args[0] || {});
       case "getTrafficSnapshot":
         return getReplyDropApiTrafficSnapshot(args[0]);
       case "getDraftTargets":
@@ -3232,6 +3320,7 @@
     state.replyDetails = base.replyDetails && typeof base.replyDetails === "object" ? { ...base.replyDetails } : {};
     state.replyQueue = Array.isArray(base.replyQueue) ? base.replyQueue.slice() : [];
     state.relationshipStates = base.relationshipStates && typeof base.relationshipStates === "object" ? { ...base.relationshipStates } : {};
+    state.mediaSummaries = base.mediaSummaries && typeof base.mediaSummaries === "object" ? { ...base.mediaSummaries } : {};
     state.stats = {
       scannedCount: Number(base.scannedCount) || 0,
       highScoreCount: Number(base.highScoreCount) || 0,
@@ -5430,6 +5519,8 @@
         index: items.length,
         type: "photo",
         src,
+        mediaUrl: src,
+        previewUrl: src,
         poster: "",
         alt,
         altMeaningful: isMeaningfulMediaAltText(alt),
@@ -5490,6 +5581,8 @@
         index: items.length,
         type,
         src,
+        mediaUrl: src,
+        previewUrl: poster || src,
         poster,
         alt: rawAlt,
         altMeaningful: isMeaningfulMediaAltText(rawAlt),

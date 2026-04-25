@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.219
+
+- 新增 `setMediaSummary({ tweetId, summary, ocrText, confidence })`：外部 agent 看图/OCR/视频首帧后可把视觉摘要回填给 ReplyDrop
+- `getMediaBundle()` 强化媒体交接字段，图片/视频 item 现在包含 `mediaUrl` / `previewUrl`，并返回已回填的 `summary`
+- `getDraftTargets/getDraftContext` 会带入 `media.summary`，有视觉摘要后 `mediaContextMissing` 可解除，草稿可从 quick preview 升级为更可靠上下文
+
 ## 0.2.218
 
 - 外部 AI 写稿目标增加 `needsDetailContext`、`mediaContextMissing`、`draftContextLabel` 和 `contextCompleteness`，区分首页 quick preview draft 与详情页可定稿上下文

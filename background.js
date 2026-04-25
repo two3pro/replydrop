@@ -19,6 +19,7 @@ const MAX_RELATIONSHIP_STATES = 120;
 const MAX_REPLY_QUEUE = 80;
 const MAX_PUBLISH_WATCH = 40;
 const MAX_PICKUP_WATCH = 60;
+const MAX_MEDIA_SUMMARIES = 80;
 const MIDNIGHT_ALARM_NAME = "replydrop-midnight-reset";
 const TAB_BROADCAST_TIMEOUT_MS = 400;
 const QUEUE_STATUS_SET = new Set(["queued", "completed", "shipped"]);
@@ -72,6 +73,7 @@ const DEFAULT_STATE = {
   replyDetails: {},
   recentCandidates: [],
   relationshipStates: {},
+  mediaSummaries: {},
   replyQueue: [],
   publishWatch: [],
   pickupWatch: []
@@ -1163,6 +1165,44 @@ function normalizeRelationshipStates(value, fallback = {}) {
   return Object.fromEntries(entries);
 }
 
+function normalizeMediaSummaries(value, fallback = {}) {
+  const source = value && typeof value === "object" ? value : fallback && typeof fallback === "object" ? fallback : {};
+  const entries = Object.entries(source)
+    .map(([tweetId, detail]) => {
+      const normalizedTweetId = normalizeApiTweetId(tweetId);
+      const payload = detail && typeof detail === "object" ? detail : {};
+      if (!normalizedTweetId) {
+        return null;
+      }
+      const summary = String(payload.summary || "").trim().slice(0, 1200);
+      const ocrText = String(payload.ocrText || "").trim().slice(0, 1600);
+      const confidence = Math.max(0, Math.min(1, clampNumber(payload.confidence, 0)));
+      const source = String(payload.source || "").trim().slice(0, 48);
+      const updatedAt = clampNumber(payload.updatedAt, Date.now());
+      const mediaKinds = Array.isArray(payload.mediaKinds)
+        ? payload.mediaKinds.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 8)
+        : [];
+      const frameCount = Math.max(0, Math.floor(clampNumber(payload.frameCount, 0)));
+      if (!summary && !ocrText) {
+        return null;
+      }
+      return [normalizedTweetId, {
+        tweetId: normalizedTweetId,
+        summary,
+        ocrText,
+        confidence,
+        source,
+        mediaKinds,
+        frameCount,
+        updatedAt
+      }];
+    })
+    .filter(Boolean)
+    .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+    .slice(0, MAX_MEDIA_SUMMARIES);
+  return Object.fromEntries(entries);
+}
+
 function normalizeState(partial = {}) {
   const repliedTweets = normalizeRepliedTweets(partial.repliedTweets, state.repliedTweets ?? DEFAULT_STATE.repliedTweets);
   const dismissedTweets = normalizeDismissedTweets(partial.dismissedTweets, state.dismissedTweets ?? DEFAULT_STATE.dismissedTweets);
@@ -1180,6 +1220,7 @@ function normalizeState(partial = {}) {
     replyDetails: normalizeReplyDetails(partial.replyDetails, state.replyDetails ?? DEFAULT_STATE.replyDetails),
     recentCandidates,
     relationshipStates: normalizeRelationshipStates(partial.relationshipStates, state.relationshipStates ?? DEFAULT_STATE.relationshipStates),
+    mediaSummaries: normalizeMediaSummaries(partial.mediaSummaries, state.mediaSummaries ?? DEFAULT_STATE.mediaSummaries),
     replyQueue: normalizeReplyQueue(partial.replyQueue, state.replyQueue ?? DEFAULT_STATE.replyQueue),
     publishWatch: normalizePublishWatch(partial.publishWatch, state.publishWatch ?? DEFAULT_STATE.publishWatch),
     pickupWatch: normalizePickupWatch(partial.pickupWatch, state.pickupWatch ?? DEFAULT_STATE.pickupWatch)

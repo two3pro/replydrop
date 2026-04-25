@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.218`
+Current version: `0.2.219`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,7 +34,7 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.218` includes the current scorer and executor hardening work:
+Version `0.2.219` includes the current scorer and executor hardening work:
 
 - Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
 - Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
@@ -43,6 +43,7 @@ Version `0.2.218` includes the current scorer and executor hardening work:
 - Added draft target location metadata: `rank`, `visibleOnPage`, `domIndex`, `handle`, `score`, `ageMinutes`, `textPreview`, and `mediaKind`, while keeping the waterdrop badge score-only.
 - Added `aiHints.draftAngleHints` so high-flow wealth / asset stories can remain visible in human preview mode while drafts are constrained to neutral behavioral-finance angles and avoid investment advice, buy / sell language, price predictions, ticker promotion, and FOMO.
 - Added `needsDetailContext`, `mediaContextMissing`, `draftContextLabel`, and `contextCompleteness` so homepage drafts are clearly marked as quick previews when media, quote cards, or hidden detail text may carry the main meaning.
+- Added `setMediaSummary()` so external agents can run OCR / vision on `getMediaBundle()` URLs and write the visual summary back into ReplyDrop before drafting.
 - Added local fallback snapshots so `getExecutorInbox()` does not fail just because background state sync is late.
 - Tightened scoring against X payout / revenue flex posts, follower bait, big-account low-info controversy questions, political / official broadcasters, crypto wealth narratives, and one-way viral traffic.
 - Restored media competitiveness when the caption or available metadata is meaningful, while still flagging low-confidence image / video posts for external vision handling.
@@ -75,6 +76,7 @@ Common calls:
 await window.ReplyDropExecutor.getCapabilities()
 await window.ReplyDropExecutor.getCandidates()
 await window.ReplyDropExecutor.getMediaBundle("2045354208548069468")
+await window.ReplyDropExecutor.setMediaSummary({ tweetId: "2045354208548069468", summary: "visual summary", ocrText: "OCR text", confidence: 0.8 })
 await window.ReplyDropExecutor.getTrafficSnapshot("2045354208548069468")
 await window.ReplyDropExecutor.getDraftTargets({ limit: 6 })
 await window.ReplyDropExecutor.getDraftContext("2045354208548069468")

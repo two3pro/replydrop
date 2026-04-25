@@ -387,6 +387,9 @@
     getMediaBundle(tweetId) {
       return call("getMediaBundle", tweetId);
     },
+    setMediaSummary(payload = {}) {
+      return callAction("setMediaSummary", payload);
+    },
     getTrafficSnapshot(tweetIdOrUrl) {
       return call("getTrafficSnapshot", tweetIdOrUrl);
     },
