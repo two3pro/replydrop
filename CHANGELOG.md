@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.211
+
+- 继续放宽 executor inbox：高分 `queue-tomorrow` 的执行门槛从 65 调到 60，避免 60+ 可回帖仍造成 0 executable
+- `queue-tonight` / `queue-tomorrow` 仍保留原始推荐决策，agent 可以看到它不是最高紧急度，但不会因为 inbox 为空直接停轮
+
+## 0.2.210
+
+- Executor inbox 不再只吐 `reply-now`：`queue-tonight` 和高分 `queue-tomorrow` 现在会进入可执行候选，避免压测出现 0 executable 直接停轮
+- 低分、打开后掉到发送线以下、缺视觉理解的候选仍然拦截，防止为了凑数量乱回
+- 209 的 `filteredCandidates` 诊断字段继续保留，runner 仍能看到被过滤原因
+
 ## 0.2.209
 
 - `filteredCandidates` 现在直接带 `authorHandle / authorName / text / score / lane / reasons`，runner 不必再手动读 raw `diagnosticCandidates` 才知道为什么 0 executable

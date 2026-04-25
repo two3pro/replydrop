@@ -1390,16 +1390,25 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    if (context.routing?.recommendedDecision !== "reply-now") {
-      return false;
-    }
     if (context.recheck?.skipRecommended) {
       return false;
     }
     if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
       return false;
     }
-    return true;
+    const decision = String(context.routing?.recommendedDecision || "").trim();
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
+    if (decision === "reply-now") {
+      return score >= executorSendFloor;
+    }
+    if (decision === "queue-tonight") {
+      return score >= executorSendFloor;
+    }
+    if (decision === "queue-tomorrow") {
+      return score >= Math.max(60, executorSendFloor + 4);
+    }
+    return false;
   }
 
   function getReplyDropContextFilterReasons(context = {}) {
