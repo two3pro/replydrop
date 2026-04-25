@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.208
+
+- Executor policy 新增整轮预算：默认最多处理 16 条或 18 分钟，先到即停止并回首页
+- Executor policy 新增 `consecutiveEmptyResultLimit: 3`：只有异常空返回才计数，正常评分下降 / 低于发送线 / 已回复 / 目标不匹配不计入
+- 给 OpenClaw / Hermes 明确暴露 `emptyResultDefinition` 和 `emptyResultInstruction`，避免把正常拦截误判成执行链路坏掉
+
 ## 0.2.207
 
 - 补 p2.206 Windows 压测漏网：ETH/ASTEROID whale-buy、平台币 worth buying、295% pump / $200->$850、bull market 等 crypto 财富叙事压到发送线以下

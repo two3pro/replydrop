@@ -15,6 +15,9 @@
   const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复"];
   const DEFAULT_EXECUTOR_SEND_FLOOR = 54;
   const EXECUTOR_EMPTY_INBOX_MIN_RESCANS = 3;
+  const EXECUTOR_ROUND_MAX_TARGETS = 16;
+  const EXECUTOR_ROUND_BUDGET_MS = 18 * 60 * 1000;
+  const EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT = 3;
   const EXECUTOR_TARGET_GOAL_MS = 90 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_MS = 120 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_TTL_MS = 10 * 60 * 1000;
@@ -1042,9 +1045,13 @@
       executionPolicy: {
         targetGoalMs: EXECUTOR_TARGET_GOAL_MS,
         targetTimeoutMs: EXECUTOR_TARGET_TIMEOUT_MS,
+        roundMaxTargets: EXECUTOR_ROUND_MAX_TARGETS,
+        roundBudgetMs: EXECUTOR_ROUND_BUDGET_MS,
+        consecutiveEmptyResultLimit: EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT,
         emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
         timeoutReasonCode: "target-timeout",
-        instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。若首页本轮没有合格推荐，不能直接结束，必须调用 refreshRecommendations() 或自行刷新/滚动重扫至少3轮。"
+        emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
+        instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，不能直接结束，必须调用 refreshRecommendations() 或自行刷新/滚动重扫至少3轮。"
       },
       preferredMethods: {
         getExecutorInbox: "getAgentInbox",
@@ -4319,6 +4326,12 @@
     return {
       targetGoalMs: EXECUTOR_TARGET_GOAL_MS,
       targetTimeoutMs: EXECUTOR_TARGET_TIMEOUT_MS,
+      roundMaxTargets: EXECUTOR_ROUND_MAX_TARGETS,
+      roundBudgetMs: EXECUTOR_ROUND_BUDGET_MS,
+      roundBudgetMinutes: Math.round(EXECUTOR_ROUND_BUDGET_MS / 60000),
+      consecutiveEmptyResultLimit: EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT,
+      emptyResultDefinition: "插件/runner没有拿到结构化执行结果的异常空返回；正常评分下降、低于发送线、已回复过、目标不匹配不算。",
+      emptyResultInstruction: "同一轮连续 empty-result 达到3次时，立即停止本轮、切回首页，并提示执行链路异常，建议刷新后重试。",
       emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
       emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，必须先刷新/滚动重扫至少3轮，再报告无合格推荐。",
       targetStartedAt: normalizedStartedAt,
