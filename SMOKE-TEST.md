@@ -25,11 +25,15 @@
 - 点击候选的 `打开原帖 / 复制链接 / 略过`
 - 点击“恢复已略过”，确认候选可恢复
 
-## 4. 草稿与队列
+## 4. 规则草稿与 AI 执行台
 
 - 在工作台选中一个候选
-- 确认草稿台能生成改写建议
+- 确认“规则草稿台”能生成 fallback 草稿
 - 使用 `拿来改写 / 更锐 / 更柔和 / 更短 / 更像真人`
+- 切到 `AI执行`，确认：
+  - 能看到 top shortlist，而不是只显示 1 条模板草稿
+  - `复制当前上下文 / 复制 Top6 收件箱 / 复制输出 Schema` 可点
+  - `打开回复框` 能正确跳到目标帖
 - 将当前草稿加入 `下一轮 / 今晚 / 明早`
 - 确认队列中出现新项，排序正确
 
@@ -57,9 +61,24 @@
 
 - 在 `x.com` 页面控制台或 CDP evaluate 里确认 `window.ReplyDropAPI` 存在
 - `getCandidates()` 返回数组，且每项至少包含 `tweetId / score / tier / url`
+- `getAgentInbox({ limit: 6 })` 返回 `replydrop-agent-inbox-v1`
+- `getCandidateContext(tweetId)` 返回 `replydrop-candidate-context-v1`
+- `getReplySchema()` 返回 `replydrop-agent-reply-v1`
 - `getQueue()` 返回数组，`getState()` 返回完整状态快照
+- 选一个带图片或视频的真实候选执行 `getMediaBundle(tweetId)`，确认：
+  - 返回里有 `mediaKind`
+  - `items.length > 0`
+  - 图片帖能拿到 `src`
+  - 视频帖至少能拿到 `poster` 或 `src`
 - 选一个真实候选执行 `addToQueue(tweetId)`，确认队列里出现 `pending`
-- 再执行 `markShipped(tweetId, "test reply")`，确认：
+- 打开该候选原帖后执行 `openComposer({ url: location.href, draft: "smoke test reply" })`，确认：
+  - 返回 `ok: true`
+  - `composerReady: true`
+  - 页面里真实回复框有草稿正文
+- 在安全测试账号/测试帖子上执行 `submitReply()`，确认：
+  - 返回 `ok: true`
+  - `outcomeText` 或页面 toast 能读到成功结果
+- 如需验证状态回写链路，再执行 `markShipped(tweetId, "test reply")`，确认：
   - `replyDetails` 写入
   - `repliedTweets` 写入
   - `pickupWatch` 出现该项

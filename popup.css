@@ -2589,6 +2589,10 @@ h1 {
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deskVerifyMark {
@@ -2609,6 +2613,7 @@ h1 {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .deskMetaGrid {
@@ -5192,8 +5197,10 @@ h1 {
   width: 54px;
   margin-left: -27px;
   text-align: center;
-  color: #f8faf7;
-  text-shadow: 0 2px 8px rgba(29, 58, 60, 0.34);
+  color: #31515d;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.62),
+    0 3px 10px rgba(49, 81, 93, 0.14);
 }
 
 .heroStubSerial,
@@ -6641,6 +6648,9 @@ body {
 
 .deskActionButton {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(92, 77, 51, 0.16);
   border-radius: 999px;
   background: rgba(255, 250, 238, 0.96);
@@ -8149,6 +8159,87 @@ html[lang^="zh"] .heroTitleBlockReset h1 {
   gap: 12px;
 }
 
+.aiReplyDeskPanel .deskItem {
+  grid-template-columns: 30px minmax(0, 1fr);
+  margin-top: 0;
+  border: 1px solid rgba(123, 104, 76, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 24%),
+    repeating-linear-gradient(90deg, rgba(120, 103, 76, 0.028) 0 1px, transparent 1px 11px),
+    linear-gradient(180deg, rgba(255, 250, 239, 0.98), rgba(241, 228, 198, 0.96));
+  box-shadow: 0 12px 24px rgba(83, 61, 28, 0.07);
+}
+
+.aiReplyDeskPanel .deskItem::before,
+.aiReplyDeskPanel .deskItem::after,
+.aiReplyDeskPanel .deskPerforation,
+.aiReplyDeskPanel .deskStub::before,
+.aiReplyDeskPanel .deskStubBarcode {
+  display: none;
+}
+
+.aiReplyDeskPanel .deskRail {
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.aiReplyDeskPanel .deskMain {
+  gap: 10px;
+  padding: 14px 14px 12px 16px;
+}
+
+.aiReplyDeskPanel .deskMetaGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.aiReplyDeskPanel .deskStub {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: start;
+  gap: 10px;
+  padding: 11px 14px 12px 44px;
+  border-top: 1px dashed rgba(123, 104, 76, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(233, 223, 195, 0.96), rgba(226, 214, 184, 0.96));
+  box-shadow: none;
+}
+
+.aiReplyDeskPanel .deskStubLabel,
+.aiReplyDeskPanel .deskStubMeta,
+.aiReplyDeskPanel .deskStubSerial {
+  text-align: left;
+}
+
+.aiReplyDeskPanel .deskStubLabel {
+  margin-top: 0;
+}
+
+.aiReplyDeskPanel .deskStubMeta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aiReplyDeskPanel .deskStubSerial {
+  justify-self: end;
+  text-align: right;
+}
+
+.aiReplyDeskPanel .deskScore {
+  min-width: 52px;
+  height: 42px;
+}
+
+.aiReplyDeskPanel .deskActionRow .deskActionButton {
+  flex: 1 1 140px;
+  justify-content: center;
+}
+
 .aiCopilotCard {
   position: relative;
   display: grid;
@@ -8493,6 +8584,10 @@ body:not(.options-page) .popup {
 body:not(.options-page) .ticketSheet {
   overflow: hidden;
   border: 1px solid rgba(132, 112, 82, 0.28);
+  border-left-color: var(--ticket-notch-fill);
+  border-right-color: var(--ticket-notch-fill);
+  border-bottom-color: var(--ticket-notch-fill);
+  border-bottom-width: 2px;
   border-radius: 26px 26px 18px 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 8%),
@@ -8522,8 +8617,29 @@ body:not(.options-page) .ticketSheet::after {
 }
 
 body:not(.options-page) .hero.heroReset {
+  position: relative;
   padding: 16px 16px 0;
   gap: 0;
+}
+
+body:not(.options-page) .hero.heroReset::before,
+body:not(.options-page) .hero.heroReset::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  width: 34px;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(180deg, #3a3d42, #3a3d42) center top / 3px 100% no-repeat;
+}
+
+body:not(.options-page) .hero.heroReset::before {
+  left: 0;
+}
+
+body:not(.options-page) .hero.heroReset::after {
+  right: 0;
 }
 
 body:not(.options-page) .heroPosterWrap {
@@ -8597,6 +8713,7 @@ body:not(.options-page) .heroPosterStamp {
 }
 
 body:not(.options-page) .heroMeta.heroMetaReset {
+  position: relative;
   margin: -18px 0 0;
   padding: 18px 18px 14px;
   border: 1px solid rgba(110, 92, 66, 0.18);
@@ -8613,6 +8730,10 @@ body:not(.options-page) .heroMeta.heroMetaReset::before {
   display: block;
   content: "FEATURE PASS · LOCAL-FIRST REPLY WORKFLOW";
   color: rgba(108, 92, 66, 0.64);
+}
+
+body:not(.options-page) .heroMeta.heroMetaReset::after {
+  display: none;
 }
 
 body:not(.options-page) .heroModePill {
@@ -8835,20 +8956,21 @@ body:not(.options-page) .ticketSection::after {
   content: "";
   display: block !important;
   position: absolute;
-  top: calc(50% - 11px);
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
+  top: calc(50% - 17px);
+  width: 17px;
+  height: 34px;
   background: #3a3d42;
-  opacity: 0.18;
+  opacity: 0.98;
 }
 
 body:not(.options-page) .ticketSection::before {
-  left: -11px;
+  left: 0;
+  border-radius: 0 17px 17px 0;
 }
 
 body:not(.options-page) .ticketSection::after {
-  right: -11px;
+  right: 0;
+  border-radius: 17px 0 0 17px;
 }
 
 body:not(.options-page) .ticketSection .groupHead {
@@ -8888,12 +9010,19 @@ body:not(.options-page) .tabsReset .tabButton {
 }
 
 body:not(.options-page) .footer.footerReset {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px 14px;
   align-items: start;
-  padding: 8px 16px 14px;
+  margin: auto 16px 0 !important;
+  padding: 8px 56px 14px 18px;
   border-top: 1px dashed rgba(112, 92, 63, 0.18);
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::before,
+body:not(.options-page) #sheet-home .footer.footerReset::after {
+  display: none !important;
 }
 
 body:not(.options-page) .footer.footerReset .footerMeta {
@@ -8905,6 +9034,7 @@ body:not(.options-page) .footer.footerReset .footerMeta {
 }
 
 body:not(.options-page) .footer.footerReset .footerSerial {
+  position: relative;
   display: inline-flex !important;
   grid-column: 1 / -1;
   color: #8d7750;
@@ -8912,6 +9042,10 @@ body:not(.options-page) .footer.footerReset .footerSerial {
   font-weight: 800;
   letter-spacing: 0.24em;
   text-transform: uppercase;
+}
+
+body:not(.options-page) .footer.footerReset .footerSerial::after {
+  display: none !important;
 }
 
 body:not(.options-page) .ticketBottomCut {
@@ -10108,6 +10242,30 @@ body:not(.options-page) .ticketDividerDashboard {
   margin-bottom: 8px;
 }
 
+body:not(.options-page) .ticketDividerHome {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(235, 222, 194, 0.3));
+}
+
+body:not(.options-page) .ticketDividerHome::after {
+  display: none;
+}
+
+body:not(.options-page) .ticketDividerHome .ticketDividerText,
+body:not(.options-page) .ticketDividerHome .ticketDividerSerial {
+  z-index: 2;
+}
+
+body:not(.options-page) .ticketDividerHome::before {
+  left: 17px;
+  right: 17px;
+}
+
+body:not(.options-page) .ticketDividerHome::after,
+body:not(.options-page) .ticketDividerHome::before {
+  pointer-events: none;
+}
+
 body:not(.options-page) #sheet-dashboard[data-active-tab="desk"] .ticketDividerDashboard .ticketDividerSerial {
   color: #255b5f;
 }
@@ -10239,22 +10397,22 @@ body:not(.options-page) .dashboardHeaderStub::before,
 body:not(.options-page) .dashboardHeaderStub::after {
   content: "";
   position: absolute;
-  left: -12px;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
+  left: 0;
+  width: 17px;
+  height: 34px;
   background: #3a3d42;
-  opacity: 0.18;
+  opacity: 0.98;
+  border-radius: 0 17px 17px 0;
 }
 
 body:not(.options-page) .dashboardLaunchButtonStub::before,
 body:not(.options-page) .dashboardHeaderStub::before {
-  top: -4px;
+  top: -8px;
 }
 
 body:not(.options-page) .dashboardLaunchButtonStub::after,
 body:not(.options-page) .dashboardHeaderStub::after {
-  bottom: -4px;
+  bottom: -8px;
 }
 
 body:not(.options-page) .dashboardHeader {
@@ -11180,20 +11338,21 @@ body:not(.options-page) .heroPosterSidecar {
 
 body:not(.options-page) .heroPosterSidecar::before,
 body:not(.options-page) .heroPosterSidecar::after {
-  left: -12px;
-  width: 24px;
-  height: 24px;
+  left: 0;
+  width: 17px;
+  height: 34px;
   background: #3a3d42;
   opacity: 0.98;
   box-shadow: 0 0 0 1px rgba(244, 232, 203, 0.06);
+  border-radius: 0 17px 17px 0;
 }
 
 body:not(.options-page) .heroPosterSidecar::before {
-  top: 23px;
+  top: 18px;
 }
 
 body:not(.options-page) .heroPosterSidecar::after {
-  bottom: 23px;
+  bottom: 18px;
 }
 
 body:not(.options-page) .heroPosterSideMeta {
@@ -11408,7 +11567,7 @@ body:not(.options-page) .dashboardLaunchButtonStub::before,
 body:not(.options-page) .dashboardLaunchButtonStub::after,
 body:not(.options-page) .dashboardHeaderStub::before,
 body:not(.options-page) .dashboardHeaderStub::after {
-  background: #3a3d42;
+  background: radial-gradient(circle at 0 50%, #3a3d42 0 11px, transparent 11.8px);
   opacity: 0.98;
   box-shadow: 0 0 0 1px rgba(244, 232, 203, 0.08);
 }
@@ -11570,4 +11729,513 @@ body:not(.options-page) .ticketBottomCut::after {
       radial-gradient(circle at 50% 0, #3a3d42 0 16px, transparent 16.8px) 96% 0 / 32px 32px no-repeat,
       linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(123, 104, 76, 0.08) 32%, transparent 72%);
   }
+}
+
+/* p2.138 polish pass — lighter copy pressure, stronger ticket tabs, cleaner bottom cut */
+body:not(.options-page) .heroTitleBlockReset .heroSummary {
+  max-width: 31ch;
+  padding-left: 14px;
+  position: relative;
+}
+
+body:not(.options-page) .heroTitleBlockReset .heroSummary::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(109, 174, 177, 0.98), rgba(64, 102, 106, 0.92));
+  box-shadow: 0 0 0 3px rgba(247, 237, 214, 0.92);
+}
+
+body:not(.options-page) .dashboardHeaderSummary,
+body:not(.options-page) .groupHeadMeta {
+  max-width: 34ch;
+}
+
+body:not(.options-page) .ticketSection.compact .groupHeadMeta {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body:not(.options-page) .dashboardPreviewStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body:not(.options-page) .dashboardPreviewStrip .deskLedgerChip {
+  min-width: 0;
+  flex: none;
+}
+
+body:not(.options-page) .deskSubTabs {
+  gap: 10px;
+  padding: 6px 16px 2px;
+}
+
+body:not(.options-page) .deskSubTabButton {
+  position: relative;
+  overflow: hidden;
+  min-height: 48px;
+  padding: 12px 12px 12px 20px;
+  border: 1px solid rgba(123, 104, 76, 0.14);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 26%),
+    linear-gradient(90deg, rgba(255, 250, 240, 0.98) 0 100%);
+  box-shadow: 0 10px 18px rgba(91, 73, 48, 0.05);
+}
+
+body:not(.options-page) .deskSubTabButton::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  background: linear-gradient(180deg, rgba(104, 153, 156, 0.96), rgba(71, 109, 113, 0.9));
+}
+
+body:not(.options-page) .deskSubTabButton::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 44px;
+  border-right: 1px dashed rgba(116, 96, 67, 0.22);
+}
+
+body:not(.options-page) .deskSubTabButton:hover,
+body:not(.options-page) .deskSubTabButton:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 22px rgba(91, 73, 48, 0.08);
+}
+
+body:not(.options-page) .deskSubTabButton.active {
+  border-color: rgba(63, 125, 128, 0.18);
+  box-shadow: 0 14px 24px rgba(63, 125, 128, 0.1);
+}
+
+body:not(.options-page) .deskSubTabLabel,
+body:not(.options-page) .deskSubTabBadge {
+  position: relative;
+  z-index: 1;
+}
+
+body:not(.options-page) .deskSubTabBadge {
+  min-width: 22px;
+  padding: 4px 7px 3px;
+  border: 1px dashed rgba(96, 80, 54, 0.22);
+  background: rgba(255, 250, 240, 0.86);
+  color: #5b4d39;
+}
+
+body:not(.options-page) .deskSubTabButton:not(.active) .deskSubTabBadge {
+  background: rgba(255, 252, 246, 0.82);
+  color: #6d5f49;
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="growth"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 26%),
+    linear-gradient(90deg, rgba(231, 244, 244, 0.94) 0, rgba(255, 251, 242, 0.98) 100%);
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="growth"]::before {
+  background: linear-gradient(180deg, rgba(90, 156, 159, 0.98), rgba(55, 104, 108, 0.92));
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="growth"].active {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 26%),
+    linear-gradient(90deg, rgba(210, 236, 236, 0.98) 0, rgba(244, 251, 251, 0.99) 100%);
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="ai"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 26%),
+    linear-gradient(90deg, rgba(252, 243, 221, 0.94) 0, rgba(255, 250, 241, 0.98) 100%);
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="ai"]::before {
+  background: linear-gradient(180deg, rgba(197, 142, 67, 0.98), rgba(145, 102, 40, 0.92));
+}
+
+body:not(.options-page) .deskSubTabButton[data-desk-tab="ai"].active {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 26%),
+    linear-gradient(90deg, rgba(248, 232, 191, 0.98) 0, rgba(255, 247, 226, 0.99) 100%);
+}
+
+body:not(.options-page) .ticketBottomCut {
+  position: relative;
+  min-height: 34px;
+  background:
+    radial-gradient(circle at 50% 100%, #3a3d42 0 17px, transparent 17.8px) 14% 100% / 36px 34px no-repeat,
+    radial-gradient(circle at 50% 100%, #3a3d42 0 17px, transparent 17.8px) 32% 100% / 36px 34px no-repeat,
+    radial-gradient(circle at 50% 100%, #3a3d42 0 17px, transparent 17.8px) 50% 100% / 36px 34px no-repeat,
+    radial-gradient(circle at 50% 100%, #3a3d42 0 17px, transparent 17.8px) 68% 100% / 36px 34px no-repeat,
+    radial-gradient(circle at 50% 100%, #3a3d42 0 17px, transparent 17.8px) 86% 100% / 36px 34px no-repeat,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(123, 104, 76, 0.08) 32%, transparent 72%);
+}
+
+body:not(.options-page) .ticketBottomCut::before {
+  content: "";
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  bottom: 0;
+  border-top: 1px dashed rgba(114, 95, 66, 0.22);
+}
+
+@media (max-width: 430px) {
+  body:not(.options-page) .heroTitleBlockReset .heroSummary {
+    max-width: none;
+    padding-left: 12px;
+  }
+
+  body:not(.options-page) .dashboardHeaderSummary,
+  body:not(.options-page) .groupHeadMeta {
+    max-width: none;
+  }
+
+  body:not(.options-page) .dashboardPreviewStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body:not(.options-page) .deskSubTabs {
+    gap: 8px;
+  }
+
+  body:not(.options-page) .deskSubTabButton {
+    min-height: 46px;
+    padding-left: 18px;
+  }
+
+  body:not(.options-page) .deskSubTabButton::before {
+    width: 12px;
+  }
+
+  body:not(.options-page) .deskSubTabButton::after {
+    right: 40px;
+  }
+
+  body:not(.options-page) .ticketBottomCut {
+    background:
+      radial-gradient(circle at 50% 100%, #3a3d42 0 16px, transparent 16.8px) 16% 100% / 32px 32px no-repeat,
+      radial-gradient(circle at 50% 100%, #3a3d42 0 16px, transparent 16.8px) 33% 100% / 32px 32px no-repeat,
+      radial-gradient(circle at 50% 100%, #3a3d42 0 16px, transparent 16.8px) 50% 100% / 32px 32px no-repeat,
+      radial-gradient(circle at 50% 100%, #3a3d42 0 16px, transparent 16.8px) 67% 100% / 32px 32px no-repeat,
+      radial-gradient(circle at 50% 100%, #3a3d42 0 16px, transparent 16.8px) 84% 100% / 32px 32px no-repeat,
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(123, 104, 76, 0.08) 32%, transparent 72%);
+  }
+}
+
+/* p2.148 final notch geometry pass — one real ticket semicircle across the popup */
+body:not(.options-page) {
+  --ticket-notch-radius: 16px;
+  --ticket-notch-size: 32px;
+  --ticket-notch-fill: #3a3d42;
+  --ticket-edge-offset: 18px;
+  --hero-side-rail-shift: -16px;
+  --home-divider-axis: 9px;
+}
+
+body:not(.options-page) .ticketSection::before,
+body:not(.options-page) .ticketSection::after,
+body:not(.options-page) #sheet-home .footer.footerReset::before,
+body:not(.options-page) #sheet-home .footer.footerReset::after,
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardLaunchButtonStub::after,
+body:not(.options-page) .dashboardHeaderStub::before,
+body:not(.options-page) .dashboardHeaderStub::after {
+  width: var(--ticket-notch-radius) !important;
+  height: var(--ticket-notch-size) !important;
+  background: var(--ticket-notch-fill) !important;
+  opacity: 0.98 !important;
+  box-shadow: none !important;
+}
+
+body:not(.options-page) .ticketSection::before,
+body:not(.options-page) #sheet-home .footer.footerReset::before,
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardHeaderStub::before {
+  border-radius: 0 var(--ticket-notch-radius) var(--ticket-notch-radius) 0 !important;
+}
+
+body:not(.options-page) .ticketSection::after,
+body:not(.options-page) #sheet-home .footer.footerReset::after {
+  border-radius: var(--ticket-notch-radius) 0 0 var(--ticket-notch-radius) !important;
+}
+
+body:not(.options-page) .ticketSection::before,
+body:not(.options-page) .ticketSection::after {
+  top: 50% !important;
+  transform: translateY(-50%);
+}
+
+body:not(.options-page) .ticketSection::before {
+  left: 0 !important;
+}
+
+body:not(.options-page) .ticketSection::after {
+  right: 0 !important;
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::before,
+body:not(.options-page) #sheet-home .footer.footerReset::after {
+  top: 50% !important;
+  margin-top: 0 !important;
+  transform: translateY(-50%);
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::before {
+  left: 0 !important;
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::after {
+  right: 0 !important;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardLaunchButtonStub::after,
+body:not(.options-page) .dashboardHeaderStub::before,
+body:not(.options-page) .dashboardHeaderStub::after {
+  display: block !important;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardLaunchButtonStub::after,
+body:not(.options-page) .dashboardHeaderStub::before,
+body:not(.options-page) .dashboardHeaderStub::after {
+  left: 0 !important;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub,
+body:not(.options-page) .dashboardHeaderStub {
+  overflow: visible;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub {
+  padding-left: 20px !important;
+}
+
+body:not(.options-page) .dashboardHeaderStub {
+  padding-left: 20px;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardHeaderStub::before {
+  top: -8px !important;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub::after,
+body:not(.options-page) .dashboardHeaderStub::after {
+  top: auto !important;
+  bottom: -8px !important;
+}
+
+body:not(.options-page) .dashboardGateSection {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+body:not(.options-page) .dashboardLaunchButtonStub::before,
+body:not(.options-page) .dashboardLaunchButtonStub::after {
+  display: none !important;
+}
+
+/* source-only correction pass — rebuild the ticket cuts from one geometry source */
+body:not(.options-page) {
+  --home-divider-line-top: 1px;
+  --home-divider-line-thickness: 2px;
+  --home-divider-dash-color: rgba(112, 92, 63, 0.38);
+  --hero-side-rail-width: 3px;
+  --hero-side-notch-top: 22px;
+  --hero-side-notch-bottom: 22px;
+  --home-divider-dash-inset: 18px;
+  --ticket-side-notch-overlap: 1px;
+  --ticket-side-notch-inset: 1px;
+  --footer-side-notch-inset: -15px;
+}
+
+body:not(.options-page) .ticketDividerHome {
+  display: flex !important;
+  align-items: flex-start;
+  height: 44px;
+  margin-top: -6px;
+  padding: 0 30px;
+  overflow: visible;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--home-divider-dash-color) 0 7px,
+      transparent 7px 12px
+    ) var(--home-divider-dash-inset) var(--home-divider-line-top) /
+      calc(100% - (var(--home-divider-dash-inset) * 2)) var(--home-divider-line-thickness) no-repeat,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(235, 222, 194, 0.3));
+}
+
+body:not(.options-page) .ticketDividerHome .ticketDividerText,
+body:not(.options-page) .ticketDividerHome .ticketDividerSerial {
+  position: relative;
+  z-index: 1;
+  margin-top: 12px;
+}
+
+body:not(.options-page) .ticketDividerHome .ticketDividerSerial {
+  margin-right: 36px;
+}
+
+body:not(.options-page) .ticketEdgeNotch,
+body:not(.options-page) .footerEdgeNotch {
+  position: absolute;
+  width: calc(var(--ticket-notch-radius) + var(--ticket-side-notch-overlap));
+  height: var(--ticket-notch-size);
+  background: var(--ticket-notch-fill);
+  pointer-events: none;
+}
+
+body:not(.options-page) .ticketEdgeNotch {
+  top: calc(var(--home-divider-line-top) - var(--ticket-notch-radius));
+  z-index: 2;
+}
+
+body:not(.options-page) .ticketEdgeNotchLeft {
+  left: calc(var(--ticket-side-notch-inset) - var(--ticket-side-notch-overlap));
+  border-radius: 0 var(--ticket-notch-radius) var(--ticket-notch-radius) 0;
+}
+
+body:not(.options-page) .ticketEdgeNotchRight {
+  right: calc(var(--ticket-side-notch-inset) - var(--ticket-side-notch-overlap));
+  border-radius: var(--ticket-notch-radius) 0 0 var(--ticket-notch-radius);
+}
+
+body:not(.options-page) .ticketDividerHome::before,
+body:not(.options-page) .ticketDividerHome::after {
+  display: none !important;
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::before {
+  display: none !important;
+}
+
+body:not(.options-page) #sheet-home .footer.footerReset::after {
+  display: none !important;
+}
+
+body:not(.options-page) .footerEdgeNotch {
+  top: calc(-1 * var(--ticket-notch-radius));
+  z-index: 2;
+}
+
+body:not(.options-page) .footerEdgeNotchLeft {
+  left: calc(var(--footer-side-notch-inset) - var(--ticket-side-notch-overlap));
+  border-radius: 0 var(--ticket-notch-radius) var(--ticket-notch-radius) 0;
+}
+
+body:not(.options-page) .footerEdgeNotchRight {
+  right: calc(var(--footer-side-notch-inset) - var(--ticket-side-notch-overlap));
+  border-radius: var(--ticket-notch-radius) 0 0 var(--ticket-notch-radius);
+}
+
+body:not(.options-page) .hero.heroReset::before,
+body:not(.options-page) .hero.heroReset::after {
+  display: none !important;
+}
+
+body:not(.options-page) .heroPosterSidecar {
+  padding-left: 28px !important;
+  background:
+    linear-gradient(
+      90deg,
+      var(--ticket-notch-fill) 0 var(--hero-side-rail-width),
+      transparent var(--hero-side-rail-width) 100%
+    ),
+    linear-gradient(180deg, rgba(255, 252, 244, 0.44), transparent 18%),
+    repeating-linear-gradient(0deg, rgba(121, 101, 72, 0.05) 0 1px, transparent 1px 8px),
+    linear-gradient(180deg, rgba(245, 233, 205, 0.98), rgba(234, 216, 178, 0.96)) !important;
+}
+
+body:not(.options-page) .heroPosterSidecar::before,
+body:not(.options-page) .heroPosterSidecar::after {
+  left: 0 !important;
+  width: var(--ticket-notch-radius) !important;
+  height: var(--ticket-notch-size) !important;
+  background: var(--ticket-notch-fill) !important;
+  border-radius: 0 var(--ticket-notch-radius) var(--ticket-notch-radius) 0 !important;
+  opacity: 0.98 !important;
+  box-shadow: none !important;
+}
+
+body:not(.options-page) .heroPosterSidecar::before {
+  top: var(--hero-side-notch-top) !important;
+}
+
+body:not(.options-page) .heroPosterSidecar::after {
+  top: auto !important;
+  bottom: var(--hero-side-notch-bottom) !important;
+}
+
+body:not(.options-page) .ticketBottomCut {
+  background:
+    radial-gradient(circle at 50% 100%, var(--ticket-notch-fill) 0 var(--ticket-notch-radius), transparent 16.8px) 12% 100% / var(--ticket-notch-size) var(--ticket-notch-size) no-repeat,
+    radial-gradient(circle at 50% 100%, var(--ticket-notch-fill) 0 var(--ticket-notch-radius), transparent 16.8px) 32% 100% / var(--ticket-notch-size) var(--ticket-notch-size) no-repeat,
+    radial-gradient(circle at 50% 100%, var(--ticket-notch-fill) 0 var(--ticket-notch-radius), transparent 16.8px) 68% 100% / var(--ticket-notch-size) var(--ticket-notch-size) no-repeat,
+    radial-gradient(circle at 50% 100%, var(--ticket-notch-fill) 0 var(--ticket-notch-radius), transparent 16.8px) 88% 100% / var(--ticket-notch-size) var(--ticket-notch-size) no-repeat,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(123, 104, 76, 0.08) 32%, transparent 72%) !important;
+  opacity: 1 !important;
+}
+
+body:not(.options-page) #sheet-home::before {
+  background:
+    linear-gradient(180deg, rgba(125, 106, 78, 0.26) 0 8px, transparent 8px 16px) 18px 0 / 1px 16px repeat-y,
+    linear-gradient(180deg, rgba(125, 106, 78, 0.26) 0 8px, transparent 8px 16px) calc(100% - 18px) 0 / 1px 16px repeat-y,
+    linear-gradient(180deg, rgba(255, 250, 240, 0.24), rgba(255, 250, 240, 0)) 24px 0 / 10px 100% no-repeat,
+    linear-gradient(180deg, rgba(255, 250, 240, 0.24), rgba(255, 250, 240, 0)) calc(100% - 34px) 0 / 10px 100% no-repeat;
+}
+
+body:not(.options-page) .ticketDividerHome {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--home-divider-dash-color) 0 7px,
+      transparent 7px 12px
+    ) var(--home-divider-dash-inset) var(--home-divider-line-top) /
+      calc(100% - (var(--home-divider-dash-inset) * 2)) var(--home-divider-line-thickness) no-repeat,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(235, 222, 194, 0.3));
+}
+
+body:not(.options-page) .footer.footerReset {
+  overflow: visible;
+  background: none;
+}
+
+body:not(.options-page) .ticketEdgeNotch,
+body:not(.options-page) .footerEdgeNotch {
+  display: block !important;
+}
+
+body:not(.options-page) .ticketSection::before {
+  left: calc(0px - var(--ticket-side-notch-overlap)) !important;
+  width: calc(var(--ticket-notch-radius) + var(--ticket-side-notch-overlap)) !important;
+  box-shadow: none !important;
+}
+
+body:not(.options-page) .ticketSection::after {
+  right: calc(0px - var(--ticket-side-notch-overlap)) !important;
+  width: calc(var(--ticket-notch-radius) + var(--ticket-side-notch-overlap)) !important;
+  box-shadow: none !important;
+}
+
+body:not(.options-page) .ticketEdgeNotchLeft,
+body:not(.options-page) .ticketEdgeNotchRight,
+body:not(.options-page) .footerEdgeNotchLeft,
+body:not(.options-page) .footerEdgeNotchRight {
+  box-shadow: none !important;
 }

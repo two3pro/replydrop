@@ -1,0 +1,57 @@
+﻿{
+    "roundId":  "20260423-rerun14",
+    "version":  "0.2.187",
+    "attempts":  14,
+    "visibleReplySuccesses":  11,
+    "openDropFails":  3,
+    "otherFails":  0,
+    "englishPathSubmitExceptions":  9,
+    "nativeChineseLikes":  1,
+    "fallbackLikes":  0,
+    "successUrls":  [
+                        "https://x.com/FoxNews/status/2047298166387601564",
+                        "https://x.com/AshCrypto/status/2047297563078840367",
+                        "https://x.com/DurovPD/status/2047293630029979809",
+                        "https://x.com/AshCrypto/status/2047304195292700695",
+                        "https://x.com/cryptorover/status/2047296091620880421",
+                        "https://x.com/BRICSinfo/status/2047297506036396043",
+                        "https://x.com/BroLeon/status/2047296138756432040",
+                        "https://x.com/KobeissiLetter/status/2047306000940540208",
+                        "https://x.com/andyyy/status/2047293492230070399",
+                        "https://x.com/ESPNFC/status/2047299453158134124",
+                        "https://x.com/stats_feed/status/2047301210412405028"
+                    ],
+    "openDropFailureDetails":  [
+                                   {
+                                       "url":  "https://x.com/0xXIAOc/status/2047293546169061799",
+                                       "liveScore":  39,
+                                       "belowAverageLine":  true,
+                                       "belowDisplayThreshold":  false
+                                   },
+                                   {
+                                       "url":  "https://x.com/PhyrexNi/status/2047303920650002606",
+                                       "liveScore":  43,
+                                       "belowAverageLine":  true,
+                                       "belowDisplayThreshold":  false
+                                   },
+                                   {
+                                       "url":  "https://x.com/dogeofficialceo/status/2047288379105231358",
+                                       "liveScore":  41,
+                                       "belowAverageLine":  true,
+                                       "belowDisplayThreshold":  false
+                                   }
+                               ],
+    "englishExceptionUrls":  [
+                                 "https://x.com/AshCrypto/status/2047297563078840367",
+                                 "https://x.com/DurovPD/status/2047293630029979809",
+                                 "https://x.com/AshCrypto/status/2047304195292700695",
+                                 "https://x.com/cryptorover/status/2047296091620880421",
+                                 "https://x.com/BRICSinfo/status/2047297506036396043",
+                                 "https://x.com/KobeissiLetter/status/2047306000940540208",
+                                 "https://x.com/andyyy/status/2047293492230070399",
+                                 "https://x.com/ESPNFC/status/2047299453158134124",
+                                 "https://x.com/stats_feed/status/2047301210412405028"
+                             ],
+    "currentBrowserLocation":  "https://x.com/home",
+    "roundLog":  "D:\\Users\\replydrop-agent\\logs\\replydrop-p2187-retest-20260423-rerun14.jsonl"
+}

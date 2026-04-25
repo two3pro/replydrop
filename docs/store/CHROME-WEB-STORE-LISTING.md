@@ -62,15 +62,23 @@
 
 实时给 X 时间线上的帖子打分，帮你在窗口关闭前找到最值得回复的机会。
 
+English one-liner:
+
+Score visible X posts locally and find reply-worthy windows before they close.
+
 ## 短描述
 
 开源免费，本地运行，零数据上传；实时给 X 帖子打分，并用本地队列和 pickup 追踪管理回复机会。
+
+English short description:
+
+Open-source, local-first, zero-upload reply scoring for X, with a local queue, pickup review, traffic signals, and agent-ready automation APIs.
 
 ## 详细描述
 
 ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子打分，帮你在窗口关闭前找到最值得回复的机会。
 
-它开源免费，本地运行，零数据上传，不收钱，不依赖任何外部服务。核心目标不是做网页后台，也不是替你自动发帖，而是把“先发现值得回复的帖子，再决定什么时候跟进”这件事做得更稳、更清楚。
+它开源免费，本地运行，零数据上传，不收钱，不依赖任何外部服务。核心目标不是做网页后台，也不是做无人值守批量发帖工具，而是把“先发现值得回复的帖子，再决定什么时候跟进”这件事做得更稳、更清楚。
 
 当前版本重点提供这些能力：
 
@@ -88,15 +96,33 @@ ReplyDrop 当前坚持几个边界：
 - 本地优先，不依赖云端账号系统
 - 不要求登录 ReplyDrop 自己的服务
 - 不调用远端 AI API
-- 不自动点击发送，不代替用户发帖
+- 不会在后台无人值守批量发帖；只有显式本地操作或本地自动化调用时才会提交当前回复
 
 如果你想要的是一个更接近 ReplyWisely / Hypefury / TweetHunter / Typefully 工作流节奏，但仍然保留浏览器插件轻量感与可解释状态的工具，ReplyDrop 会是一个更容易上手的替代方案。
+
+## Full Description In English
+
+ReplyDrop is a local-first browser extension for X. It scores posts that are already visible in your current timeline, highlights reply-worthy windows with a small waterdrop marker, and helps you organize replies before the opportunity fades.
+
+ReplyDrop is open source, free, and local-first. It does not require a ReplyDrop account, does not call a remote AI model, and does not upload timeline data to developer-owned servers. Workflow state is stored locally in `chrome.storage.local`.
+
+Current capabilities include:
+
+- Local scoring for visible posts on `x.com` / `twitter.com`
+- Multilingual UI: Simplified Chinese, Traditional Chinese, English, Japanese, and Korean
+- Language boosts for Chinese, Japanese, Korean, English, French, Spanish, German, Italian, and Portuguese audiences
+- Topic and keyword boosts for areas such as AI, crypto, creator work, and custom niches
+- Local reply queue, publish watch, pickup review, attribution memory, and growth dashboard
+- Traffic-aware scoring using visible engagement and captured X GraphQL traffic signals where available
+- `window.ReplyDropExecutor` / `window.ReplyDropAPI` for local agents and CDP scripts to read shortlists, inspect context, fetch media references, refresh recommendations, open the real reply composer, submit, verify, mark shipped, or skip
+
+ReplyDrop is intentionally not a cloud CMS or unattended mass-posting service. It helps users and local agents make better reply decisions while keeping the final action explicit, local, and inspectable.
 
 ## 隐私说明
 
 适合直接填写商店隐私摘要的版本：
 
-ReplyDrop 只会读取你在 `x.com` / `twitter.com` 页面里已经渲染到浏览器中的公开内容，例如帖子文本、作者 handle 与可见互动数。所有工作状态默认保存在浏览器本地的 `chrome.storage.local`，当前版本不会把这些内容上传到 ReplyDrop 自己的服务器，不要求外部账号登录，不调用远端 AI API，也不会自动替你点击发布。详细边界见仓库根目录的 [PRIVACY.md](../../PRIVACY.md)。
+ReplyDrop 只会读取你在 `x.com` / `twitter.com` 页面里已经渲染到浏览器中的公开内容，例如帖子文本、作者 handle 与可见互动数。所有工作状态默认保存在浏览器本地的 `chrome.storage.local`，当前版本不会把这些内容上传到 ReplyDrop 自己的服务器，不要求外部账号登录，不调用远端 AI API，也不会在后台无人值守替你批量发布。详细边界见仓库根目录的 [PRIVACY.md](../../PRIVACY.md)。
 
 ## 重新生成素材
 

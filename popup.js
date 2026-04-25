@@ -31,6 +31,8 @@ const TOPIC_GROUPS = [
 
 const PRIMARY_LANGUAGE_KEYS = new Set(["langZh", "langEn", "langJa", "langKo"]);
 const PRIMARY_TOPIC_KEYS = new Set(["ai", "crypto", "model", "creator", "gaming", "business"]);
+const PRIORITY_CANDIDATE_LIMIT = 6;
+const CANDIDATE_PREVIEW_LIMIT = 6;
 
 const TEXTS = {
   "zh-Hans": {
@@ -64,13 +66,13 @@ const TEXTS = {
     posterClearLabel: "恢复默认",
     posterUrlLabel: "海报图片地址",
     posterUrlHint: "支持本地上传或图片直链，留空则使用默认海报。",
-    heroSummary: "先选语种，再开总开关；真正操作都在 X 右上角悬浮水滴里完成。",
+    heroSummary: "先选语种，再开开关；真正执行都在 X 右上角水滴里。",
     heroDeskSummary: "先选语种，再开总开关；真正操作都在 X 页面右上角悬浮水滴里完成。",
     heroOverviewSummary: "这里控制阈值、展示方式和基础状态；真正操作仍在 X 页面右上角悬浮水滴里完成。",
     heroSignalsSummary: "这里决定哪些语言和主题会被额外加分；真正操作仍在 X 页面右上角悬浮水滴里完成。",
     heroKeywordsSummary: "这里管理预设词和自定义词，直接影响候选命中；真正操作仍在 X 页面右上角悬浮水滴里完成。",
     deskSectionFocus: "收件箱",
-    deskSectionDraft: "草稿",
+    deskSectionDraft: "规则稿",
     deskSectionGrowth: "看板",
     deskSectionQueue: "队列",
     deskSectionContacts: "关系",
@@ -80,10 +82,10 @@ const TEXTS = {
     entryHintTitle: "第二步：去 X 页面右上角打开悬浮水滴",
     entryHintText: "打开 x.com 后点右上角悬浮水滴，就能直接进入页内仪表盘看候选和回复机会。",
     deskFocusTitle: "下一条建议",
-    draftDeskTitle: "AI 草稿台",
-    draftDeskMeta: "针对当前最佳候选生成可直接改写的回复切入。",
+    draftDeskTitle: "规则草稿台",
+    draftDeskMeta: "给人工 / 开源 fallback 留一层规则稿，不再把它当成 AI 最终回复。",
     growthPulseTitle: "Growth Dashboard",
-    growthPulseMeta: "把队列、待确认和 pickup 复查看成一块真正的增长看板。",
+    growthPulseMeta: "先看已发回复的表现，再决定下一步。",
     relationshipDeskTitle: "互动脉络",
     relationshipDeskMeta: "轻量 CRM：最近回复过谁、谁又重新出现在候选里。",
     deskBoostTitle: "当前生效加成",
@@ -114,8 +116,8 @@ const TEXTS = {
     draftAngleBridge: "延展补充",
     copyDraftLabel: "复制草稿",
     draftCopiedStatus: "已复制回复草稿",
-    draftEmptyTitle: "先出现候选，草稿台才会亮起来",
-    draftEmptyText: "ReplyDrop 会根据当前最佳候选给你 3 个可直接改写的回复方向。",
+    draftEmptyTitle: "先出现候选，规则草稿台才会亮起来",
+    draftEmptyText: "这里保留 3 条规则 fallback，主要给人工或无模型场景兜底。",
     growthRepliesSentLabel: "今日已回",
     growthInboxLabel: "候选库存",
     growthHotLabel: "热窗机会",
@@ -192,13 +194,13 @@ const TEXTS = {
     posterClearLabel: "恢復預設",
     posterUrlLabel: "海報圖片地址",
     posterUrlHint: "支援本地上傳或圖片直鏈，留空則使用預設海報。",
-    heroSummary: "先選語種，再開總開關；真正操作都在 X 右上角懸浮水滴裡完成。",
+    heroSummary: "先選語種，再開開關；真正執行都在 X 右上角水滴裡。",
     heroDeskSummary: "先選語種，再開總開關；真正操作都在 X 頁面右上角懸浮水滴裡完成。",
     heroOverviewSummary: "這裡控制門檻、顯示方式與基礎狀態；真正操作仍在 X 頁面右上角懸浮水滴裡完成。",
     heroSignalsSummary: "這裡決定哪些語言與主題會被額外加分；真正操作仍在 X 頁面右上角懸浮水滴裡完成。",
     heroKeywordsSummary: "這裡管理預置詞與自訂詞，直接影響候選命中；真正操作仍在 X 頁面右上角懸浮水滴裡完成。",
     deskSectionFocus: "收件箱",
-    deskSectionDraft: "草稿",
+    deskSectionDraft: "規則稿",
     deskSectionGrowth: "看板",
     deskSectionQueue: "隊列",
     deskSectionContacts: "關係",
@@ -208,10 +210,10 @@ const TEXTS = {
     entryHintTitle: "第二步：去 X 頁面右上角打開懸浮水滴",
     entryHintText: "打開 x.com 後點右上角懸浮水滴，就能直接進入頁內儀表盤看候選貼與回覆機會。",
     deskFocusTitle: "下一條建議",
-    draftDeskTitle: "AI 草稿台",
-    draftDeskMeta: "針對目前最佳候選產生可直接改寫的回覆切入。",
+    draftDeskTitle: "規則草稿台",
+    draftDeskMeta: "給人工 / 開源 fallback 留一層規則稿，不再把它當成 AI 最終回覆。",
     growthPulseTitle: "Growth Dashboard",
-    growthPulseMeta: "把隊列、待確認和 pickup 複查看成一塊真正的增長看板。",
+    growthPulseMeta: "先看已發回覆的表現，再決定下一步。",
     relationshipDeskTitle: "互動脈絡",
     relationshipDeskMeta: "輕量 CRM：最近回覆過誰、誰又重新出現在候選裡。",
     deskBoostTitle: "目前生效加成",
@@ -242,8 +244,8 @@ const TEXTS = {
     draftAngleBridge: "延展補充",
     copyDraftLabel: "複製草稿",
     draftCopiedStatus: "已複製回覆草稿",
-    draftEmptyTitle: "先出現候選，草稿台才會亮起來",
-    draftEmptyText: "ReplyDrop 會根據目前最佳候選給你 3 個可直接改寫的回覆方向。",
+    draftEmptyTitle: "先出現候選，規則草稿台才會亮起來",
+    draftEmptyText: "這裡保留 3 條規則 fallback，主要給人工或無模型場景兜底。",
     growthRepliesSentLabel: "今日已回",
     growthInboxLabel: "候選庫存",
     growthHotLabel: "熱窗機會",
@@ -320,9 +322,9 @@ const TEXTS = {
     posterClearLabel: "Reset default",
     posterUrlLabel: "Poster image URL",
     posterUrlHint: "Upload a local image or paste a direct image URL. Leave blank to use the default poster.",
-    heroSummary: "Choose a language first, then turn ReplyDrop on. The real workflow happens in the floating droplet on X.",
+    heroSummary: "Pick a language, turn ReplyDrop on, then work from the floating droplet on X.",
     deskSectionFocus: "Inbox",
-    deskSectionDraft: "Drafts",
+    deskSectionDraft: "Rules",
     deskSectionGrowth: "Dashboard",
     deskSectionQueue: "Queue",
     deskSectionContacts: "Contacts",
@@ -336,10 +338,10 @@ const TEXTS = {
     entryHintTitle: "Step 2: open the floating droplet at the top-right of X",
     entryHintText: "Open x.com and click the top-right droplet to jump straight into the in-page dashboard.",
     deskFocusTitle: "Next move",
-    draftDeskTitle: "AI draft desk",
-    draftDeskMeta: "Generate editable reply angles for the best current candidate.",
+    draftDeskTitle: "Rule draft desk",
+    draftDeskMeta: "Keep rule-based fallback drafts for humans or open-source mode instead of pretending they are the final AI reply.",
     growthPulseTitle: "Growth Dashboard",
-    growthPulseMeta: "View queue pressure, publish recovery, and pickup follow-up in one operator dashboard.",
+    growthPulseMeta: "Start with shipped reply performance, then decide the next move.",
     relationshipDeskTitle: "Relationship pulse",
     relationshipDeskMeta: "CRM-lite: who you replied to recently, and who is back in the inbox.",
     deskBoostTitle: "Active boosts",
@@ -370,8 +372,8 @@ const TEXTS = {
     draftAngleBridge: "Bridge-on insight",
     copyDraftLabel: "Copy draft",
     draftCopiedStatus: "Reply draft copied",
-    draftEmptyTitle: "The draft desk wakes up after candidates appear",
-    draftEmptyText: "ReplyDrop will generate three editable reply directions for the current best candidate.",
+    draftEmptyTitle: "The rule draft desk wakes up after candidates appear",
+    draftEmptyText: "This keeps three rule-based fallback drafts for human use or no-model scenarios.",
     growthRepliesSentLabel: "Replies today",
     growthInboxLabel: "Inbox stock",
     growthHotLabel: "Hot-window ops",
@@ -448,9 +450,9 @@ const TEXTS = {
     posterClearLabel: "初期状態に戻す",
     posterUrlLabel: "ポスター画像URL",
     posterUrlHint: "ローカル画像のアップロードか、画像の直リンクを使えます。空欄ならデフォルトのポスターです。",
-    heroSummary: "先に表示言語を選び、そのあとメインスイッチを入れます。実際の操作は X 右上のしずくから進めます。",
+    heroSummary: "先に表示言語を選び、スイッチを入れたら X 右上のしずくから進めます。",
     deskSectionFocus: "受信箱",
-    deskSectionDraft: "下書き",
+    deskSectionDraft: "ルール稿",
     deskSectionGrowth: "看板",
     deskSectionQueue: "キュー",
     deskSectionContacts: "関係",
@@ -463,10 +465,10 @@ const TEXTS = {
     entryHintTitle: "手順2：X 右上のしずくを開く",
     entryHintText: "x.com を開き、右上のしずくを押すとページ内ダッシュボードで候補投稿をすぐ確認できます。",
     deskFocusTitle: "次に見る 1 件",
-    draftDeskTitle: "AI 下書きデスク",
-    draftDeskMeta: "現在の最良候補に対して、すぐ直せる返信切り口を作ります。",
+    draftDeskTitle: "ルール草稿デスク",
+    draftDeskMeta: "人手 / OSS fallback 用の規則稿を残し、AI 最終返信のふりはさせません。",
     growthPulseTitle: "Growth Dashboard",
-    growthPulseMeta: "キュー、確認待ち、pickup 再確認を一つの成長看板で見ます。",
+    growthPulseMeta: "まず送信済み返信の伸びを見て、次の一手を決めます。",
     relationshipDeskTitle: "関係パルス",
     relationshipDeskMeta: "軽量 CRM：最近返した相手と、また候補に戻ってきた相手。",
     deskBoostTitle: "現在の有効ブースト",
@@ -497,8 +499,8 @@ const TEXTS = {
     draftAngleBridge: "補足展開",
     copyDraftLabel: "下書きをコピー",
     draftCopiedStatus: "返信下書きをコピーしました",
-    draftEmptyTitle: "候補が出てくると下書きデスクが動きます",
-    draftEmptyText: "ReplyDrop は現在の最良候補に対して、3つの編集可能な返信方向を作ります。",
+    draftEmptyTitle: "候補が出るとルール草稿デスクが動きます",
+    draftEmptyText: "ここには人手やモデルなし場面のための規則 fallback を 3 本だけ残します。",
     growthRepliesSentLabel: "本日の返信",
     growthInboxLabel: "候補在庫",
     growthHotLabel: "今が熱い機会",
@@ -575,9 +577,9 @@ const TEXTS = {
     posterClearLabel: "기본값 복원",
     posterUrlLabel: "포스터 이미지 주소",
     posterUrlHint: "로컬 이미지를 업로드하거나 이미지 직링크를 넣을 수 있습니다. 비워 두면 기본 포스터를 사용합니다.",
-    heroSummary: "먼저 언어를 고르고 ReplyDrop을 켜세요. 실제 작업은 X 오른쪽 위 물방울에서 진행됩니다.",
+    heroSummary: "먼저 언어를 고르고 ReplyDrop을 켠 뒤, 실제 작업은 X 오른쪽 위 물방울에서 진행합니다.",
     deskSectionFocus: "인박스",
-    deskSectionDraft: "초안",
+    deskSectionDraft: "규칙안",
     deskSectionGrowth: "대시보드",
     deskSectionQueue: "큐",
     deskSectionContacts: "관계",
@@ -590,10 +592,10 @@ const TEXTS = {
     entryHintTitle: "2단계: X 오른쪽 위 물방울 열기",
     entryHintText: "x.com을 열고 오른쪽 위 물방울을 누르면 페이지 안 대시보드에서 후보 게시물을 바로 볼 수 있습니다.",
     deskFocusTitle: "다음으로 볼 1개",
-    draftDeskTitle: "AI 초안 데스크",
-    draftDeskMeta: "현재 최고 후보에 대해 바로 다듬을 수 있는 답글 각도를 만듭니다.",
+    draftDeskTitle: "규칙 초안 데스크",
+    draftDeskMeta: "사람용 / 오픈소스 fallback 규칙 초안만 남기고, 이것을 AI 최종 답글처럼 보이게 하지 않습니다.",
     growthPulseTitle: "Growth Dashboard",
-    growthPulseMeta: "큐, 확인 대기, pickup 재검토를 한 화면에서 보는 성장 대시보드입니다.",
+    growthPulseMeta: "먼저 보낸 답글 성과를 보고 다음 동작을 정합니다.",
     relationshipDeskTitle: "관계 펄스",
     relationshipDeskMeta: "가벼운 CRM: 최근 답글한 상대와 다시 후보로 들어온 상대.",
     deskBoostTitle: "현재 적용 중인 가산점",
@@ -624,8 +626,8 @@ const TEXTS = {
     draftAngleBridge: "확장 보충",
     copyDraftLabel: "초안 복사",
     draftCopiedStatus: "답글 초안을 복사했습니다",
-    draftEmptyTitle: "후보가 생기면 초안 데스크도 켜집니다",
-    draftEmptyText: "ReplyDrop은 현재 최고 후보를 기준으로 3개의 편집 가능한 답글 방향을 만듭니다.",
+    draftEmptyTitle: "후보가 생기면 규칙 초안 데스크가 켜집니다",
+    draftEmptyText: "여기에는 사람용 또는 무모델 상황을 위한 규칙 fallback 3개만 남겨 둡니다.",
     growthRepliesSentLabel: "오늘 답글",
     growthInboxLabel: "후보 재고",
     growthHotLabel: "핫 윈도우",
@@ -1029,6 +1031,12 @@ const DRAFT_TONE_DEFS = [
 
 const RELATIONSHIP_STATE_DEFS = [
   {
+    key: "mutual",
+    label: { "zh-Hans": "已互关", "zh-Hant": "已互關", en: "Mutual", ja: "相互フォロー", ko: "맞팔" },
+    actionLabel: { "zh-Hans": "互关", "zh-Hant": "互關", en: "Mutual", ja: "相互", ko: "맞팔" },
+    tone: "success"
+  },
+  {
     key: "pinned",
     label: { "zh-Hans": "已置顶", "zh-Hant": "已置頂", en: "Pinned", ja: "固定", ko: "고정" },
     actionLabel: { "zh-Hans": "置顶", "zh-Hant": "置頂", en: "Pin", ja: "固定", ko: "고정" },
@@ -1215,7 +1223,11 @@ const uiState = {
   draftCloserIndex: -1,
   composerText: "",
   draftSourceUrl: "",
-  attributionSignalModel: null
+  attributionSignalModel: null,
+  lastAgentInboxPayload: null,
+  lastAgentSchemaPayload: null,
+  lastAgentFocusContext: null,
+  agentContextByUrl: new Map()
 };
 
 function normalizePopupTab(value, fallback = "desk") {
@@ -1422,6 +1434,14 @@ function normalizePosterUrl(value) {
   return String(value || "").trim().slice(0, 4096);
 }
 
+function normalizeAuthorVerificationType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "gold" || raw === "government" || raw === "blue") {
+    return raw;
+  }
+  return "";
+}
+
 function normalizeQueueStatus(value, fallback = "queued") {
   if (typeof WorkflowCore?.normalizeQueueStatus === "function") {
     return WorkflowCore.normalizeQueueStatus(value, fallback);
@@ -1556,7 +1576,47 @@ function normalizeState(state) {
     uiLanguage: normalizeUiLanguage(state?.uiLanguage),
     posterUrl: normalizePosterUrl(state?.posterUrl)
   };
-  next.recentCandidates = Array.isArray(state?.recentCandidates) ? state.recentCandidates : [];
+  next.recentCandidates = Array.isArray(state?.recentCandidates)
+    ? state.recentCandidates
+      .filter((item) => item && typeof item === "object" && item.url)
+      .map((item) => ({
+        url: normalizeDeskUrl(item.url),
+        score: Math.max(0, Math.floor(Number(item.score) || 0)),
+        baseScore: Math.max(0, Math.floor(Number(item.baseScore ?? item.score) || 0)),
+        opportunityBoost: Math.floor(Number(item.opportunityBoost) || 0),
+        tier: String(item.tier || "hidden").trim(),
+        baseTier: String(item.baseTier || item.tier || "hidden").trim(),
+        relationshipStatus: String(item.relationshipStatus || "").trim(),
+        attributionKind: String(item.attributionKind || "").trim(),
+        authorHandle: String(item.authorHandle || "").trim(),
+        authorVerified: Boolean(item.authorVerified),
+        authorVerificationType: normalizeAuthorVerificationType(item.authorVerificationType),
+        text: String(item.text || "").trim().slice(0, 280),
+        mediaAltText: String(item.mediaAltText || "").trim().slice(0, 280),
+        sourceSurface: String(item.sourceSurface || "").trim().slice(0, 24),
+        postScore: Math.max(0, Math.floor(Number(item.postScore ?? item.score) || 0)),
+        reachLikelihood: Math.max(0, Math.floor(Number(item.reachLikelihood) || 0)),
+        understandingConfidence: Math.max(0, Math.floor(Number(item.understandingConfidence) || 0)),
+        authorFit: Math.max(0, Math.floor(Number(item.authorFit) || 0)),
+        finalScore: Math.max(0, Math.floor(Number(item.finalScore ?? item.score) || 0)),
+        peakFinalScore: Math.max(0, Math.floor(Number(item.peakFinalScore ?? item.finalScore ?? item.score) || 0)),
+        peakSourceSurface: String(item.peakSourceSurface || item.sourceSurface || "").trim().slice(0, 24),
+        peakObservedAt: Number(item.peakObservedAt || item.timestamp || Date.now()),
+        blockReason: String(item.blockReason || "").trim().slice(0, 48),
+        lowSemanticConfidence: Boolean(item.lowSemanticConfidence),
+        timestamp: Number(item.timestamp || Date.now()),
+        mediaKind: String(item.mediaKind || "").trim(),
+        likes: Number(item.likes || 0),
+        replies: Number(item.replies || 0),
+        views: Number(item.views || 0),
+        keywordMatched: Boolean(item.keywordMatched),
+        matchedTopics: uniqueList(item.matchedTopics).slice(0, 4),
+        matchedLanguages: uniqueList(item.matchedLanguages).slice(0, 4),
+        highlights: uniqueList(item.highlights).slice(0, 4)
+      }))
+      .filter((item) => item.url && item.tier !== "hidden")
+      .sort((left, right) => Number(right.score || 0) - Number(left.score || 0) || Number(right.timestamp || 0) - Number(left.timestamp || 0))
+    : [];
   next.dismissedTweets = state?.dismissedTweets && typeof state.dismissedTweets === "object" ? state.dismissedTweets : {};
   next.replyDetails = state?.replyDetails && typeof state.replyDetails === "object"
     ? Object.fromEntries(
@@ -1582,6 +1642,7 @@ function normalizeState(state) {
               tier: String(detail.tier || "replied").trim(),
               authorHandle: String(detail.authorHandle || "").trim(),
               authorVerified: Boolean(detail.authorVerified),
+              authorVerificationType: normalizeAuthorVerificationType(detail.authorVerificationType),
               text: String(detail.text || "").trim().slice(0, 280),
               lane: String(detail.lane || "").trim().slice(0, 48),
               slot: String(detail.slot || "").trim().slice(0, 24),
@@ -1624,12 +1685,16 @@ function normalizeState(state) {
         authorHandle: String(item.authorHandle || "").trim(),
         text: String(item.text || "").trim().slice(0, 320),
         score: Math.max(0, Math.floor(Number(item.score) || 0)),
+        baseScore: Math.max(0, Math.floor(Number(item.baseScore ?? item.score) || 0)),
+        opportunityBoost: Math.floor(Number(item.opportunityBoost) || 0),
         createdAt: Number(item.createdAt || Date.now()),
         scheduledFor: Number(item.scheduledFor || Date.now()),
         completedAt: status === "queued" ? 0 : Number(item.completedAt || Date.now()),
         slot: String(item.slot || "next").trim(),
         draft: String(item.draft || "").trim().slice(0, 560),
         lane: String(item.lane || "").trim(),
+        relationshipStatus: String(item.relationshipStatus || "").trim(),
+        attributionKind: String(item.attributionKind || "").trim(),
         keywordMatched: Boolean(item.keywordMatched),
         matchedTopics: uniqueList(item.matchedTopics).slice(0, 4),
         matchedLanguages: uniqueList(item.matchedLanguages).slice(0, 4),
@@ -1779,6 +1844,48 @@ function applyViewSheetState() {
     sheet.classList.toggle("active", active);
     sheet.hidden = !active;
     sheet.setAttribute("aria-hidden", active ? "false" : "true");
+    if ("inert" in sheet) {
+      sheet.inert = !active;
+    } else if (active) {
+      sheet.removeAttribute("inert");
+    } else {
+      sheet.setAttribute("inert", "");
+    }
+  });
+}
+
+function getViewFocusTarget(viewName) {
+  if (viewName === "dashboard") {
+    return els.dashboardBackButton || els.deskSubTabButtons?.[0] || els.tabButtons?.[0] || null;
+  }
+  if (viewName === "home") {
+    return els.openDashboardButton || els.enabledToggle || null;
+  }
+  return null;
+}
+
+function releaseFocusBeforeViewChange(nextView) {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) {
+    return;
+  }
+  const ownerSheet = activeElement.closest("[data-view-sheet]");
+  if (!ownerSheet || ownerSheet.dataset.viewSheet === nextView) {
+    return;
+  }
+  activeElement.blur();
+}
+
+function restoreFocusAfterViewChange(nextView) {
+  const target = getViewFocusTarget(nextView);
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (activeView !== nextView || target.closest("[hidden]")) {
+      return;
+    }
+    target.focus({ preventScroll: true });
   });
 }
 
@@ -1815,6 +1922,7 @@ function switchView(viewName) {
   activeTab = nextPrefs.activeTab;
   uiState.deskSection = nextPrefs.deskSection;
   uiState.queueFilter = nextPrefs.queueFilter;
+  releaseFocusBeforeViewChange(activeView);
   applyViewSheetState();
   applyTabState();
   if (document.scrollingElement) {
@@ -1825,6 +1933,7 @@ function switchView(viewName) {
   }
   persistPopupUiPrefs();
   renderTexts();
+  restoreFocusAfterViewChange(activeView);
 }
 
 function switchTab(tabName) {
@@ -1936,11 +2045,11 @@ function renderTexts() {
     ko: "대시보드"
   }));
   setText(els.deskSubTabAiLabel, localize({
-    "zh-Hans": "AI回复",
-    "zh-Hant": "AI回覆",
-    en: "AI reply",
-    ja: "AI返信",
-    ko: "AI 답글"
+    "zh-Hans": "AI执行",
+    "zh-Hant": "AI執行",
+    en: "AI runtime",
+    ja: "AI実行",
+    ko: "AI 실행"
   }));
   setText(els.deskSubTabQueueLabel, t.deskSectionQueue);
   setText(els.deskSubTabContactsLabel, t.deskSectionContacts);
@@ -1953,28 +2062,28 @@ function renderTexts() {
     ko: "성장 대시보드"
   }));
   setText(els.growthPulseMeta, localize({
-    "zh-Hans": "这里改成只看自己的回复表现：曝光、点赞、回复增量，以及哪条回复最有起色。",
-    "zh-Hant": "這裡改成只看自己的回覆表現：曝光、按讚、回覆增量，以及哪條回覆最有起色。",
-    en: "Track only your shipped reply performance here: reach, likes, reply lift, and which replies are actually moving.",
-    ja: "ここでは自分の返信実績だけを見ます。表示、いいね、返信増分、伸びている返信が中心です。",
-    ko: "여기서는 내가 보낸 답글 성과만 봅니다. 노출, 좋아요, 답글 증가, 실제로 오르는 답글 중심입니다."
+    "zh-Hans": "只看自己已发回复的曝光、互动和回流，再决定下一步。",
+    "zh-Hant": "只看自己已發回覆的曝光、互動和回流，再決定下一步。",
+    en: "Track only the reach, interaction, and return signals from replies you already shipped.",
+    ja: "送信済み返信の表示・反応・戻りだけを見て、次の一手を決めます。",
+    ko: "이미 보낸 답글의 노출, 반응, 되돌아오는 신호만 보고 다음 동작을 정합니다."
   }));
   setText(els.aiReplyDeskTitle, localize({
-    "zh-Hans": "AI 回复",
-    "zh-Hant": "AI 回覆",
-    en: "AI reply",
-    ja: "AI返信",
-    ko: "AI 답글"
+    "zh-Hans": "AI 执行台",
+    "zh-Hant": "AI 執行台",
+    en: "AI runtime desk",
+    ja: "AI 実行デスク",
+    ko: "AI 실행 데스크"
   }));
   setText(els.aiReplyDeskMeta, localize({
-    "zh-Hans": "这里先直接生成和改写 AI 回复草稿，后面再继续接入排期与关系记忆。",
-    "zh-Hant": "這裡先直接生成和改寫 AI 回覆草稿，後面再繼續接入排期與關係記憶。",
-    en: "Generate and rewrite AI reply drafts here first, then keep extending this panel into scheduling and relationship memory.",
-    ja: "まずここで AI 返信草稿を直接作って直し、その後で排期と関係記憶をつなぎます。",
-    ko: "먼저 여기서 AI 답글 초안을 직접 만들고 다듬은 뒤, 이후 배치와 관계 기억을 잇습니다."
+    "zh-Hans": "前台只展示 AI 真正要看的 top 6、单条上下文包和输出 schema，不再展示模板逻辑。",
+    "zh-Hant": "前台只展示 AI 真正要看的 top 6、單條上下文包和輸出 schema，不再展示模板邏輯。",
+    en: "Show only the top 6 shortlist, per-candidate context pack, and output schema that an AI runtime actually needs.",
+    ja: "ここでは AI runtime が本当に必要な top 6、候補文脈パック、出力 schema だけを見せます。",
+    ko: "여기에는 AI runtime이 실제로 필요한 top 6, 후보 컨텍스트 팩, 출력 schema만 보여 줍니다."
   }));
   setText(els.queueDeskTitle, localize({"zh-Hans": "回复队列", "zh-Hant": "回覆隊列", en: "Reply queue", ja: "返信キュー", ko: "답글 큐"}));
-  setText(els.queueDeskMeta, localize({"zh-Hans": "把候选排进下一轮 / 今晚 / 明早，让 ReplyDrop 从发现走到执行。", "zh-Hant": "把候選排進下一輪 / 今晚 / 明早，讓 ReplyDrop 從發現走到執行。", en: "Schedule candidates into next-up / tonight / tomorrow so ReplyDrop feels closer to execution.", ja: "候補を次・今夜・明朝に並べて、ReplyDrop を発見から実行へ近づける。", ko: "후보를 다음 차례 / 오늘 밤 / 내일 아침으로 배치해 ReplyDrop을 실행 단계까지 이어줍니다."}));
+  setText(els.queueDeskMeta, localize({"zh-Hans": "把候选排进下一轮 / 今晚 / 明早，让发现真正走到执行。", "zh-Hant": "把候選排進下一輪 / 今晚 / 明早，讓發現真正走到執行。", en: "Queue candidates into next-up / tonight / tomorrow so discovery can actually turn into execution.", ja: "候補を次・今夜・明朝に並べて、発見を実行へつなげます。", ko: "후보를 다음 차례 / 오늘 밤 / 내일 아침으로 배치해 발견을 실제 실행으로 잇습니다."}));
   setText(els.relationshipDeskTitle, t.relationshipDeskTitle);
   setText(els.relationshipDeskMeta, t.relationshipDeskMeta);
   setText(els.deskBoostTitle, t.deskBoostTitle);
@@ -2592,7 +2701,7 @@ function getVisibleDeskCandidates() {
 function getActionableDeskCandidates(candidates = getVisibleDeskCandidates()) {
   return candidates.filter((candidate) => {
     const relationship = getRelationshipState(candidate.authorHandle);
-    return !(relationship?.status === "snoozed" && relationship.snoozeUntil > Date.now());
+    return !candidate?.blockReason && !(relationship?.status === "snoozed" && relationship.snoozeUntil > Date.now());
   });
 }
 
@@ -2702,30 +2811,150 @@ function getLaneText(key) {
 
 function getCandidateLane(candidate) {
   const score = Number(candidate?.score) || 0;
+  const opportunityBoost = Number(candidate?.opportunityBoost) || 0;
+  const relationshipStatus = String(candidate?.relationshipStatus || getRelationshipState(candidate?.authorHandle)?.status || "").trim();
+  const attributionKind = String(candidate?.attributionKind || "").trim();
   const ageMinutes = getCandidateAgeMinutes(candidate);
   const replies = Number(candidate?.replies) || 0;
   const views = Number(candidate?.views) || 0;
+  const likes = Number(candidate?.likes) || 0;
+  const conversationRatio = views > 0 ? (replies / Math.max(views, 1)) : 0;
+  const likeReplyRatio = likes > 0 && replies > 0 ? (likes / Math.max(replies, 1)) : 0;
+  const relationshipHot = relationshipStatus === "mutual" || relationshipStatus === "pinned";
+  const memoryHot = attributionKind === "author-engaged" || attributionKind === "handle-picked-up";
+  const validatedRelationshipHot = relationshipHot && (memoryHot || opportunityBoost >= 10 || score >= 64);
   const crowded = replies >= 180 || (views >= 180000 && replies >= 90);
+  const broadcastHeavy = (
+    (views >= 120000 && conversationRatio > 0 && conversationRatio < 0.0025) ||
+    likeReplyRatio >= 22
+  );
 
-  if (crowded && score < 82) {
+  if ((crowded || broadcastHeavy) && opportunityBoost < 10 && score < 84 && !validatedRelationshipHot && !memoryHot) {
     return { key: "crowded", label: getLaneText("crowded"), tone: "warning", priority: 1 };
   }
-  if (score >= 72 && ageMinutes <= 240) {
+  if (
+    (score >= 72 && ageMinutes <= 240) ||
+    (opportunityBoost >= 12 && ageMinutes <= 360) ||
+    ((validatedRelationshipHot || memoryHot) && ageMinutes <= 720 && score >= 52)
+  ) {
     return { key: "now", label: getLaneText("now"), tone: "success", priority: 4 };
   }
-  if (score >= 58 && ageMinutes <= 720) {
+  if (
+    (score >= 58 && ageMinutes <= 720) ||
+    opportunityBoost >= 8 ||
+    relationshipStatus === "follow-up" ||
+    validatedRelationshipHot ||
+    memoryHot ||
+    attributionKind === "topic-validated"
+  ) {
     return { key: "watch", label: getLaneText("watch"), tone: "accent", priority: 3 };
   }
   return { key: "backlog", label: getLaneText("backlog"), tone: "soft", priority: 2 };
 }
 
+function getCandidateOpportunityChip(candidate) {
+  const boost = Math.round(Number(candidate?.opportunityBoost) || 0);
+  if (!boost) {
+    return null;
+  }
+  return {
+    text: localize({
+      "zh-Hans": `机会 +${boost}`,
+      "zh-Hant": `機會 +${boost}`,
+      en: `Lift +${boost}`,
+      ja: `機会 +${boost}`,
+      ko: `기회 +${boost}`
+    }),
+    tone: boost >= 12 ? "success" : "accent"
+  };
+}
+
+function getCandidateBaseScoreChip(candidate) {
+  const score = Math.round(Number(candidate?.score) || 0);
+  const baseScore = Math.round(Number(candidate?.baseScore ?? score) || 0);
+  if (!baseScore || baseScore === score) {
+    return null;
+  }
+  return {
+    text: localize({
+      "zh-Hans": `基础 ${baseScore}`,
+      "zh-Hant": `基礎 ${baseScore}`,
+      en: `Base ${baseScore}`,
+      ja: `基礎 ${baseScore}`,
+      ko: `기본 ${baseScore}`
+    }),
+    tone: "soft"
+  };
+}
+
+function getCandidateSemanticChip(candidate) {
+  if (!candidate?.lowSemanticConfidence) {
+    return null;
+  }
+  return {
+    text: localize({
+      "zh-Hans": "媒体语义弱",
+      "zh-Hant": "媒體語義弱",
+      en: "Weak media context",
+      ja: "媒体文脈が弱い",
+      ko: "미디어 맥락 약함"
+    }),
+    tone: "warning"
+  };
+}
+
+function isCandidateFollowTrainBait(candidate) {
+  const text = String(candidate?.text || "").trim().toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  const hasCta = (
+    /\b(?:reply|comment|drop|say|type)\s+(?:me|hello|hey|hi)\b/.test(text) ||
+    /\bwho\s+is\s+active(?:\s+now)?\b/.test(text)
+  );
+  const hasReward = (
+    /\b(?:follow\s*back|followback|need a follow|followers?\s+fast|real followers|grow together|connect\s*(?:&|and)\s*grow|let'?s connect|follow wave(?: incoming)?|follow for follow|f4f)\b/.test(text) ||
+    /\b(?:gain|get)\s+\d+(?:[.,]\d+)?\s+followers?\b/.test(text)
+  );
+
+  return hasCta && hasReward;
+}
+
 function getCandidateRelationshipPriority(candidate) {
   const relationship = getRelationshipState(candidate?.authorHandle);
+  const verificationType = normalizeAuthorVerificationType(candidate?.authorVerificationType);
+  const score = Number(candidate?.score) || 0;
+  const opportunityBoost = Number(candidate?.opportunityBoost) || 0;
+  const attributionKind = String(candidate?.attributionKind || "").trim();
+  const memoryHot = attributionKind === "author-engaged" || attributionKind === "handle-picked-up";
+  const followTrainRisk = isCandidateFollowTrainBait(candidate);
+  if (relationship?.status === "mutual") {
+    if (memoryHot) {
+      return 3;
+    }
+    if (followTrainRisk) {
+      return 0;
+    }
+    if (verificationType === "gold" || verificationType === "government") {
+      return 0;
+    }
+    if ((verificationType === "blue" || candidate?.authorVerified) && score < 68 && opportunityBoost < 10) {
+      return 0;
+    }
+    return score >= 64 || opportunityBoost >= 10 ? 2 : 1;
+  }
   if (relationship?.status === "pinned") {
-    return 2;
+    if (!memoryHot && followTrainRisk) {
+      return 0;
+    }
+    return memoryHot || score >= 60 || opportunityBoost >= 8 ? 2 : 1;
   }
   if (relationship?.status === "follow-up") {
-    return 1;
+    if (!memoryHot && followTrainRisk) {
+      return 0;
+    }
+    return memoryHot || score >= 56 || opportunityBoost >= 6 ? 1 : 0;
   }
   if (relationship?.status === "snoozed") {
     return -1;
@@ -2740,9 +2969,9 @@ function sortDeskCandidates(candidates, attributionModel = null) {
     const leftRelationshipPriority = getCandidateRelationshipPriority(left);
     const rightRelationshipPriority = getCandidateRelationshipPriority(right);
     return (
-      rightRelationshipPriority - leftRelationshipPriority ||
       rightLane.priority - leftLane.priority ||
       (Number(right.score) || 0) - (Number(left.score) || 0) ||
+      rightRelationshipPriority - leftRelationshipPriority ||
       (Number(right.timestamp) || 0) - (Number(left.timestamp) || 0)
     );
   });
@@ -2812,7 +3041,7 @@ function createDeskActionButton(action, label, url = "", tone = "default") {
 
 function formatDeskMediaKind(value) {
   const raw = String(value || "text").trim().toLowerCase();
-  if (raw === "image") return localize({ "zh-Hans": "图片", "zh-Hant": "圖片", en: "Image", ja: "画像", ko: "이미지" });
+  if (raw === "image" || raw === "photo") return localize({ "zh-Hans": "图片", "zh-Hant": "圖片", en: "Image", ja: "画像", ko: "이미지" });
   if (raw === "video") return localize({ "zh-Hans": "视频", "zh-Hant": "影片", en: "Video", ja: "動画", ko: "영상" });
   if (raw === "gif") return "GIF";
   if (raw === "mixed") return localize({ "zh-Hans": "混合", "zh-Hant": "混合", en: "Mixed", ja: "混合", ko: "혼합" });
@@ -2822,7 +3051,7 @@ function formatDeskMediaKind(value) {
 function formatDeskWindow(value) {
   const raw = String(value || "text").trim().toLowerCase();
   if (raw === "video") return localize({ "zh-Hans": "视频帖", "zh-Hant": "影片貼", en: "Video post", ja: "動画ポスト", ko: "영상 포스트" });
-  if (raw === "image") return localize({ "zh-Hans": "图片帖", "zh-Hant": "圖片貼", en: "Image post", ja: "画像ポスト", ko: "이미지 포스트" });
+  if (raw === "image" || raw === "photo") return localize({ "zh-Hans": "图片帖", "zh-Hant": "圖片貼", en: "Image post", ja: "画像ポスト", ko: "이미지 포스트" });
   if (raw === "gif") return localize({ "zh-Hans": "GIF 帖", "zh-Hant": "GIF 貼", en: "GIF post", ja: "GIFポスト", ko: "GIF 포스트" });
   if (raw === "mixed") return localize({ "zh-Hans": "混合帖", "zh-Hant": "混合貼", en: "Mixed post", ja: "混合ポスト", ko: "혼합 포스트" });
   return localize({ "zh-Hans": "文字帖", "zh-Hant": "文字貼", en: "Text post", ja: "テキストポスト", ko: "텍스트 포스트" });
@@ -2892,6 +3121,18 @@ function appendDeskSignalRows(container, candidate, lane) {
   const signalRow = document.createElement("div");
   signalRow.className = "deskSignalRow";
   signalRow.appendChild(createSummaryChip(lane.label, lane.tone));
+  const opportunityChip = getCandidateOpportunityChip(candidate);
+  if (opportunityChip) {
+    signalRow.appendChild(createSummaryChip(opportunityChip.text, opportunityChip.tone));
+  }
+  const baseScoreChip = getCandidateBaseScoreChip(candidate);
+  if (baseScoreChip) {
+    signalRow.appendChild(createSummaryChip(baseScoreChip.text, baseScoreChip.tone));
+  }
+  const semanticChip = getCandidateSemanticChip(candidate);
+  if (semanticChip) {
+    signalRow.appendChild(createSummaryChip(semanticChip.text, semanticChip.tone));
+  }
 
   const attributionSummary = typeof AttributionCore?.summarizeCandidateAttribution === "function"
     ? AttributionCore.summarizeCandidateAttribution(candidate, uiState.attributionSignalModel)
@@ -3121,9 +3362,7 @@ function createGrowthTruthStrip(snapshot) {
 }
 
 function buildDraftCopyContext(candidate, draft = null) {
-  const highlightList = Array.isArray(candidate?.highlights) && candidate.highlights.length
-    ? candidate.highlights.filter(Boolean).slice(0, 3)
-    : [];
+  const highlightList = getUserFacingCandidateHighlights(candidate, 3);
   const primaryHighlight = draft?.primaryHighlight || highlightList[0] || localize({
     "zh-Hans": "这个切口",
     "zh-Hant": "這個切口",
@@ -3671,10 +3910,77 @@ function buildReplyReadyComposerText(text) {
   return result || source;
 }
 
+function isInternalDraftHighlight(text) {
+  const source = String(text || "").trim().replace(/\s+/g, " ");
+  if (!source) {
+    return true;
+  }
+
+  return [
+    /[+-]\s*\d+(?:\.\d+)?/u,
+    /\b(?:freshness|reply room|author memory|mutual lane|for you|following|reach likelihood|understanding confidence|author fit|final score|broadcast account|vision_required_but_missing|vision_required|ocr_required|ocr|score|boost|penalty)\b/i,
+    /(?:新鲜度|新鮮度|回复空间|回覆空間|作者记忆|作者記憶|互关线|互關線|推荐流|推薦流|关注流|關注流|触达概率|觸達概率|理解置信|理解信心|作者匹配|最终得分|最終得分|广播账号|廣播賬號|媒体缺义|媒體缺義|视觉缺失|視覺缺失|需要视觉|需要視覺|降权|降權|惩罚|懲罰|打分|評分)/u,
+    /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/i
+  ].some((pattern) => pattern.test(source));
+}
+
+function getDraftHighlightFallback(candidate) {
+  const topic = Array.isArray(candidate?.matchedTopics) && candidate.matchedTopics.length
+    ? getTopicLabel(candidate.matchedTopics[0])
+    : "";
+  if (topic) {
+    return localize({
+      "zh-Hans": `${topic} 这层`,
+      "zh-Hant": `${topic} 這層`,
+      en: `${topic} here`,
+      ja: `${topic} の層`,
+      ko: `${topic} 이 층`
+    });
+  }
+
+  const mediaKind = String(candidate?.mediaKind || "").trim().toLowerCase();
+  if (["image", "photo", "video", "gif", "mixed"].includes(mediaKind)) {
+    const mediaLabel = formatDeskMediaKind(mediaKind);
+    return localize({
+      "zh-Hans": `${mediaLabel} 这层`,
+      "zh-Hant": `${mediaLabel} 這層`,
+      en: `the ${String(mediaLabel || "").toLowerCase()} angle`,
+      ja: `${mediaLabel} の切り口`,
+      ko: `${mediaLabel} 쪽 포인트`
+    });
+  }
+
+  return localize({
+    "zh-Hans": "这层讨论",
+    "zh-Hant": "這層討論",
+    en: "this part of the discussion",
+    ja: "この論点",
+    ko: "이 대화 층"
+  });
+}
+
+function getUserFacingCandidateHighlights(candidate, limit = 3) {
+  const seen = new Set();
+  const list = (Array.isArray(candidate?.highlights) ? candidate.highlights : [])
+    .map((highlight) => String(highlight || "").trim())
+    .filter((highlight) => {
+      if (!highlight || isInternalDraftHighlight(highlight)) {
+        return false;
+      }
+      const key = highlight.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, Math.max(1, Number(limit) || 0));
+
+  return list.length ? list : [getDraftHighlightFallback(candidate)];
+}
+
 function getDraftContext(candidate, attributionSummary = null) {
-  const highlightList = Array.isArray(candidate?.highlights) && candidate.highlights.length
-    ? candidate.highlights.filter(Boolean).slice(0, 3)
-    : [];
+  const highlightList = getUserFacingCandidateHighlights(candidate, 3);
   const fallbackHighlight = localize({
     "zh-Hans": "这层切口",
     "zh-Hant": "這層切口",
@@ -4818,36 +5124,9 @@ function composeDraftText(candidate, draft, attributionSummary = null, toneKey =
   if (!draft) {
     return "";
   }
-  const routeLeadText = activeRoute?.key
-    ? buildRouteBundleLeadText(candidate, draft, toneKey, activeRoute)
-    : "";
-  let text = routeLeadText || transformDraftText(draft.text, toneKey, draft, candidate);
-  const starterOption = buildDraftStarterOptions(draft, toneKey)[uiState.draftStarterIndex] || null;
-  const bodyOption = buildDraftBodyOptions(draft, candidate, attributionSummary, toneKey)[uiState.draftBodyIndex] || null;
-  const closerOption = buildDraftCloserOptions(draft, candidate, attributionSummary, toneKey)[uiState.draftCloserIndex] || null;
-  if (activeRoute?.key) {
-    const routeBodyText = buildRouteBundleBodyText(candidate, attributionSummary, toneKey, activeRoute) || bodyOption?.addition || "";
-    const routeCloserText = buildRouteBundleCloserText(candidate, attributionSummary, toneKey, activeRoute) || closerOption?.closer || "";
-    if (!routeLeadText && starterOption?.prefix) {
-      text = applyDraftStarterPrefix(text, starterOption.prefix);
-    }
-    return composeRouteBundleDraft(
-      text,
-      routeBodyText,
-      routeCloserText,
-      activeRoute
-    );
-  }
-  if (starterOption?.prefix) {
-    text = applyDraftStarterPrefix(text, starterOption.prefix);
-  }
-  if (bodyOption?.addition) {
-    text = insertDraftMiddleLine(text, bodyOption.addition);
-  }
-  if (closerOption?.closer) {
-    text = appendDraftCloserLine(text, closerOption.closer);
-  }
-  return text;
+  const baseText = String(draft.text || draft.publicText || "").trim()
+    || buildReplyReadyComposerText(String(draft.strategyText || draft.seedText || "").trim());
+  return buildReplyReadyComposerText(baseText);
 }
 
 function buildComposerText(drafts, candidate, attributionSummary = null) {
@@ -4882,10 +5161,30 @@ function createDraftCard(draft, index, isActive = false) {
   head.className = "draftCardHead";
   const angle = document.createElement("span");
   angle.className = "draftAnglePill";
-  angle.textContent = draft.angle;
+  angle.textContent = localize({
+    "zh-Hans": `草稿 ${index + 1}`,
+    "zh-Hant": `草稿 ${index + 1}`,
+    en: `Draft ${index + 1}`,
+    ja: `下書き ${index + 1}`,
+    ko: `초안 ${index + 1}`
+  });
   const serial = document.createElement("span");
   serial.className = "draftCardSerial";
-  serial.textContent = `RD-D${String(index + 1).padStart(3, "0")}`;
+  serial.textContent = isActive
+    ? localize({
+        "zh-Hans": "当前使用",
+        "zh-Hant": "目前使用",
+        en: "Current",
+        ja: "使用中",
+        ko: "현재 사용 중"
+      })
+    : localize({
+        "zh-Hans": "可切换",
+        "zh-Hant": "可切換",
+        en: "Available",
+        ja: "切替可",
+        ko: "전환 가능"
+      });
   head.append(angle, serial);
 
   const body = document.createElement("p");
@@ -4894,23 +5193,21 @@ function createDraftCard(draft, index, isActive = false) {
 
   const foot = document.createElement("div");
   foot.className = "draftCardFoot";
-  const hint = document.createElement("span");
-  hint.className = "draftCardHint";
-  hint.textContent = draft.hint;
   const actions = document.createElement("div");
   actions.className = "draftQuickActions";
   const useButton = createDeskActionButton("use-draft", localize({
-    "zh-Hans": "拿来改写",
-    "zh-Hant": "拿來改寫",
-    en: "Load to editor",
-    ja: "編集に使う",
-    ko: "에디터로"
+    "zh-Hans": isActive ? "正在编辑" : "设为当前稿",
+    "zh-Hant": isActive ? "正在編輯" : "設為目前稿",
+    en: isActive ? "Editing" : "Use this draft",
+    ja: isActive ? "編集中" : "この稿を使う",
+    ko: isActive ? "편집 중" : "이 초안 사용"
   }), "", isActive ? "accent" : "default");
   useButton.dataset.index = String(index);
+  useButton.disabled = isActive;
   const copyButton = createDeskActionButton("copy-draft", t.copyDraftLabel, "", "primary");
   copyButton.dataset.copyText = draft.text;
   actions.append(useButton, copyButton);
-  foot.append(hint, actions);
+  foot.append(actions);
 
   card.append(head, body, foot);
   return card;
@@ -4921,9 +5218,7 @@ function buildDraftSuggestions(candidate, attributionSummary = null) {
     return [];
   }
   const t = getTexts();
-  const highlightList = Array.isArray(candidate.highlights) && candidate.highlights.length
-    ? candidate.highlights.filter(Boolean).slice(0, 3)
-    : [];
+  const highlightList = getUserFacingCandidateHighlights(candidate, 3);
   const highlights = highlightList.length
     ? highlightList.slice(0, 2).join(localize({
         "zh-Hans": "、",
@@ -4964,113 +5259,118 @@ function buildDraftSuggestions(candidate, attributionSummary = null) {
       ];
 
   return draftPlans.map((plan) => {
+    const buildDraftRecord = (key, tone, angle, hint, strategyText) => ({
+      key,
+      ...sharedFields,
+      angle,
+      tone,
+      hint,
+      strategyText,
+      text: buildReplyReadyComposerText(strategyText)
+    });
+
     switch (plan.key) {
       case "memory":
-        return {
-          key: "memory",
-          ...sharedFields,
-          angle: t.draftAngleMemory,
-          tone: plan.tone || "success",
-          hint: localize({
+        return buildDraftRecord(
+          "memory",
+          plan.tone || "success",
+          t.draftAngleMemory,
+          localize({
             "zh-Hans": `顺着已经被验证过的 ${memoryTopic} 切口继续追`,
             "zh-Hant": `順著已被驗證過的 ${memoryTopic} 切口繼續追`,
             en: `Keep going on the ${memoryTopic} angle that already has proof behind it`,
             ja: `${memoryTopic} の実績ある切り口をそのまま伸ばす`,
             ko: `이미 반응이 검증된 ${memoryTopic} 각도를 이어가기`
           }),
-          text: localize({
-            "zh-Hans": `我会直接沿 ${memoryTopic} 这条验证线接，不另起一题。${highlights} 真正值钱的地方，是它已经有人接住过，再往前推半步就能把原来的互动继续带起来。`,
-            "zh-Hant": `我會直接沿 ${memoryTopic} 這條驗證線接，不另起一題。${highlights} 真正值錢的地方，是它已經有人接住過，再往前推半步就能把原來的互動繼續帶起來。`,
-            en: `I would stay on the validated ${memoryTopic} line instead of reopening the topic. The value in ${highlights} is that people already picked it up once, so one more push can carry the original interaction forward.`,
-            ja: `${memoryTopic} の検証線をそのまま継ぎ、話題を開き直しません。${highlights} の価値は、すでに一度拾われているところにあり、あと半歩押すだけで元の流れをもう一度動かせます。`,
-            ko: `저는 ${memoryTopic} 검증선을 그대로 탈 겁니다. ${highlights} 의 진짜 가치는 이미 한 번 받아들여졌다는 데 있고, 반 걸음만 더 밀어도 원래의 상호작용을 다시 움직일 수 있습니다.`
+          localize({
+            "zh-Hans": `顺着 ${memoryTopic} 这条验证线继续接会更稳，${primaryHighlight} 已经被接住过，再往前推半步更容易把原来的互动续上。`,
+            "zh-Hant": `順著 ${memoryTopic} 這條驗證線繼續接會更穩，${primaryHighlight} 已經被接住過，再往前推半步更容易把原來的互動續上。`,
+            en: `The steadier move is to stay on the validated ${memoryTopic} line. ${primaryHighlight} already got picked up once, so one more half-step is enough to carry the interaction forward.`,
+            ja: `${memoryTopic} の検証線をそのまま継ぐほうが安定します。${primaryHighlight} はすでに一度拾われていて、半歩足すだけで流れを続けやすいです。`,
+            ko: `${memoryTopic} 검증선을 그대로 잇는 편이 더 안정적입니다. ${primaryHighlight} 는 이미 한 번 받아들여져서 반 걸음만 더 밀어도 흐름을 이어가기 쉽습니다.`
           })
-        };
+        );
       case "question":
-        return {
-          key: "question",
-          ...sharedFields,
-          angle: t.draftAngleQuestion,
-          tone: plan.tone || "soft",
-          hint: localize({
+        return buildDraftRecord(
+          "question",
+          plan.tone || "soft",
+          t.draftAngleQuestion,
+          localize({
             "zh-Hans": "用问题把对话往下带一层",
             "zh-Hant": "用問題把對話往下帶一層",
             en: "Pull the thread deeper with a question",
             ja: "質問で会話を一段深くする",
             ko: "질문으로 대화를 한 단계 더 깊게 끌어가기"
           }),
-          text: localize({
-            "zh-Hans": `我更想先问一句：如果 ${highlights} 继续往前走，真正会卡住后续判断的那个变量到底是什么？`,
-            "zh-Hant": `我更想先問一句：如果 ${highlights} 繼續往前走，真正會卡住後續判斷的那個變量到底是什麼？`,
-            en: `The question I want first is this: if ${highlights} keeps moving forward, what is the variable that actually locks the next judgment in place?`,
-            ja: `先に聞きたいのはこれです。${highlights} がそのまま前へ進んだとき、次の判断を本当に止める変数は何でしょうか。`,
-            ko: `제가 먼저 묻고 싶은 건 이거예요. ${highlights} 가 계속 앞으로 갈 때 다음 판단을 실제로 붙잡는 변수는 무엇일까요?`
+          localize({
+            "zh-Hans": `如果顺着 ${highlights} 继续往前推，真正决定后续走向的变量会是什么？`,
+            "zh-Hant": `如果順著 ${highlights} 繼續往前推，真正決定後續走向的變量會是什麼？`,
+            en: `If ${highlights} keeps moving forward, what is the variable that actually decides where it goes next?`,
+            ja: `${highlights} をそのまま前へ進めたとき、次の流れを本当に決める変数は何でしょうか。`,
+            ko: `${highlights} 가 계속 앞으로 갈 때, 다음 방향을 실제로 결정하는 변수는 무엇일까요?`
           })
-        };
+        );
       case "bridge":
-        return {
-          key: "bridge",
-          ...sharedFields,
-          angle: t.draftAngleBridge,
-          tone: plan.tone || "warning",
-          hint: localize({
+        return buildDraftRecord(
+          "bridge",
+          plan.tone || "warning",
+          t.draftAngleBridge,
+          localize({
             "zh-Hans": `${lane} 场景下更适合做补充延展，而不是硬转方向`,
             "zh-Hant": `${lane} 場景下更適合做補充延展，而不是硬轉方向`,
             en: `In a ${lane.toLowerCase()} window, extend instead of forcing a hard pivot`,
             ja: `${lane} の場面では、無理にひねるより補足で伸ばす方が自然です`,
             ko: `${lane} 상황에서는 억지 전환보다 자연스럽게 이어 붙이는 편이 좋습니다`
           }),
-          text: localize({
-            "zh-Hans": `我只想补一层：表面反应已经够了，但把 ${highlights} 放回 ${topic} 这个语境里，后面还有一段没人真正展开。`,
-            "zh-Hant": `我只想補一層：表面反應已經夠了，但把 ${highlights} 放回 ${topic} 這個語境裡，後面還有一段沒人真正展開。`,
-            en: `I only want to add one more layer. The surface reaction is already enough, but once ${highlights} returns to the ${topic} context, there is still a piece nobody really opened up.`,
-            ja: `足したいのは一層だけです。表面の反応はもう十分ですが、${highlights} を ${topic} の文脈へ戻すと、まだ誰も本当に開いていない部分が残っています。`,
-            ko: `저는 한 층만 더 보태고 싶어요. 겉반응은 이미 충분하지만 ${highlights} 를 ${topic} 맥락에 다시 놓으면 아직 아무도 제대로 열지 않은 부분이 남아 있습니다.`
+          localize({
+            "zh-Hans": `表层反应已经够明显了，但把 ${highlights} 放回 ${topic} 这个语境里，后面还有一层没被真正展开。`,
+            "zh-Hant": `表層反應已經夠明顯了，但把 ${highlights} 放回 ${topic} 這個語境裡，後面還有一層沒被真正展開。`,
+            en: `The surface reaction is already clear enough, but once ${highlights} goes back into the ${topic} context, there is still another layer nobody has really opened yet.`,
+            ja: `表面の反応はもう十分見えていますが、${highlights} を ${topic} の文脈へ戻すと、まだ誰も本当に開いていない次の層があります。`,
+            ko: `겉반응은 이미 충분히 보이지만 ${highlights} 를 ${topic} 맥락에 다시 놓으면 아직 아무도 제대로 열지 않은 다음 층이 남아 있습니다.`
           })
-        };
+        );
       case "contrast":
-        return {
-          key: "contrast",
-          ...sharedFields,
-          angle: t.draftAngleContrarian,
-          tone: plan.tone || "warning",
-          hint: localize({
+        return buildDraftRecord(
+          "contrast",
+          plan.tone || "warning",
+          t.draftAngleContrarian,
+          localize({
             "zh-Hans": `${lane} 场景下更像真人回复，不像模板`,
             "zh-Hant": `${lane} 場景下更像真人回覆，不像模板`,
             en: `Fits a ${lane.toLowerCase()} window without sounding templated`,
             ja: `${lane} の場面でもテンプレっぽく見えにくい`,
             ko: `${lane} 상황에서도 템플릿보다 사람답게 들림`
           }),
-          text: localize({
-            "zh-Hans": `我反而不会接最显眼的那层。更值得接的是 ${highlights}，因为它比表面结论更有后劲，也更像真人顺手接话。`,
-            "zh-Hant": `我反而不會接最顯眼的那層。更值得接的是 ${highlights}，因為它比表面結論更有後勁，也更像真人順手接話。`,
-            en: `I would not reply to the loudest layer first. ${highlights} is the part worth touching because it lasts longer than the surface conclusion and sounds more like a real human reply.`,
-            ja: `いちばん目立つ層には返しません。触る価値があるのは ${highlights} のほうで、表面結論より後まで効き、人っぽい返しにもなります。`,
-            ko: `저는 가장 시끄러운 층부터 받지 않을 겁니다. ${highlights} 쪽이 더 건드릴 가치가 있고, 표면 결론보다 오래 가며 사람다운 답글처럼 들립니다.`
+          localize({
+            "zh-Hans": `最显眼的那层未必最值得接，${highlights} 这边反而更有后劲，也更容易把讨论往下带。`,
+            "zh-Hant": `最顯眼的那層未必最值得接，${highlights} 這邊反而更有後勁，也更容易把討論往下帶。`,
+            en: `The loudest layer is not always the best one to answer first. ${highlights} has more staying power and is more likely to move the discussion forward.`,
+            ja: `いちばん目立つ層が、いちばん返す価値があるとは限りません。${highlights} のほうが後まで効き、議論も前へ運びやすいです。`,
+            ko: `가장 눈에 띄는 층이 가장 답글할 가치가 있는 건 아닙니다. ${highlights} 쪽이 더 오래 가고 대화도 더 앞으로 밀기 쉽습니다.`
           })
-        };
+        );
       case "perspective":
       default:
-        return {
-          key: "perspective",
-          ...sharedFields,
-          angle: t.draftAnglePerspective,
-          tone: plan.tone || "accent",
-          hint: localize({
+        return buildDraftRecord(
+          "perspective",
+          plan.tone || "accent",
+          t.draftAnglePerspective,
+          localize({
             "zh-Hans": `顺着 ${highlights} 做观点补充`,
             "zh-Hant": `順著 ${highlights} 做觀點補充`,
             en: `Build a perspective on top of ${highlights}`,
             ja: `${highlights} を軸に見方を足す`,
             ko: `${highlights} 를 바탕으로 관점을 보태기`
           }),
-          text: localize({
-            "zh-Hans": `我会先直接给个判断：${highlights} 才是值得继续聊的地方。表层热度大家都看到了，真正能把讨论带下去的是这一层。`,
-            "zh-Hant": `我會先直接給個判斷：${highlights} 才是值得繼續聊的地方。表層熱度大家都看到了，真正能把討論帶下去的是這一層。`,
-            en: `I would open with a direct take: ${highlights} is the part worth continuing. Everyone already sees the surface heat. This is the layer that can actually carry the thread forward.`,
-            ja: `まず結論から入ります。続けて話す価値があるのは ${highlights} です。表面の熱量はもう見えていて、議論を先へ運べるのはこの層です。`,
-            ko: `저는 먼저 판단부터 던질 겁니다. 계속 얘기할 가치가 있는 건 ${highlights} 입니다. 겉열기는 이미 모두가 봤고, 대화를 앞으로 끌고 갈 수 있는 건 이 층입니다.`
+          localize({
+            "zh-Hans": `${highlights} 才是更值得继续聊的一层。表层热度大家都看到了，真正能把讨论带下去的是这里。`,
+            "zh-Hant": `${highlights} 才是更值得繼續聊的一層。表層熱度大家都看到了，真正能把討論帶下去的是這裡。`,
+            en: `${highlights} is the layer more worth continuing. Everyone already sees the surface heat, but this is the part that can actually carry the thread forward.`,
+            ja: `続けて話す価値があるのは ${highlights} の層です。表面の熱量はもう見えていて、議論を先へ運べるのはここです。`,
+            ko: `${highlights} 쪽이 더 계속 이야기할 가치가 있는 층입니다. 겉열기는 이미 모두가 봤고, 실제로 대화를 앞으로 끌고 갈 수 있는 곳은 여기입니다.`
           })
-        };
+        );
     }
   });
 }
@@ -5374,13 +5674,7 @@ function getRelationshipMetaText(count) {
 }
 
 function createDraftWorkbench(drafts, candidate, recommendedSlot = "", attributionSummary = null) {
-  const activeTone = getActiveDraftToneDef();
-  const selectedDraft = drafts[uiState.selectedDraftIndex] || drafts[0] || null;
   const composerText = buildComposerText(drafts, candidate, attributionSummary);
-  const draftRoutes = buildDraftRouteOptions(drafts, candidate, attributionSummary);
-  const starterOptions = selectedDraft ? buildDraftStarterOptions(selectedDraft, uiState.draftTone) : [];
-  const bodyOptions = selectedDraft ? buildDraftBodyOptions(selectedDraft, candidate, attributionSummary, uiState.draftTone) : [];
-  const closerOptions = selectedDraft ? buildDraftCloserOptions(selectedDraft, candidate, attributionSummary, uiState.draftTone) : [];
   const workbench = document.createElement("section");
   workbench.className = "draftWorkbench";
 
@@ -5388,210 +5682,20 @@ function createDraftWorkbench(drafts, candidate, recommendedSlot = "", attributi
   head.className = "draftWorkbenchHead";
   head.innerHTML = `
     <strong>${escapeHtml(localize({
-      "zh-Hans": "改写工作台",
-      "zh-Hant": "改寫工作台",
-      en: "Rewrite workbench",
-      ja: "書き換えワークベンチ",
-      ko: "리라이트 워크벤치"
+      "zh-Hans": "正式回复草稿",
+      "zh-Hant": "正式回覆草稿",
+      en: "Reply draft",
+      ja: "返信草稿",
+      ko: "답글 초안"
     }))}</strong>
-    <span>${escapeHtml(localize(activeTone.hint))}</span>
+    <span>${escapeHtml(localize({
+      "zh-Hans": "这里只展示可直接复制或发送的版本。",
+      "zh-Hant": "這裡只展示可直接複製或發送的版本。",
+      en: "Only send-ready copy is shown here.",
+      ja: "ここにはそのまま使える草稿だけを表示します。",
+      ko: "여기에는 바로 복사하거나 보낼 수 있는 버전만 표시합니다."
+    }))}</span>
   `;
-
-  const workbenchStrip = document.createElement("div");
-  workbenchStrip.className = "draftWorkbenchStrip";
-  if (selectedDraft) {
-    workbenchStrip.appendChild(createSummaryChip(getDraftHookLabel(selectedDraft), selectedDraft.tone || "soft"));
-    workbenchStrip.appendChild(createSummaryChip(selectedDraft.angle, "soft"));
-  }
-  workbenchStrip.appendChild(createSummaryChip(localize(activeTone.label), "accent"));
-  if (starterOptions[uiState.draftStarterIndex]?.label) {
-    workbenchStrip.appendChild(createSummaryChip(starterOptions[uiState.draftStarterIndex].label, starterOptions[uiState.draftStarterIndex].tone || "soft"));
-  }
-  if (bodyOptions[uiState.draftBodyIndex]?.label) {
-    workbenchStrip.appendChild(createSummaryChip(bodyOptions[uiState.draftBodyIndex].label, bodyOptions[uiState.draftBodyIndex].tone || "soft"));
-  }
-  if (closerOptions[uiState.draftCloserIndex]?.label) {
-    workbenchStrip.appendChild(createSummaryChip(closerOptions[uiState.draftCloserIndex].label, closerOptions[uiState.draftCloserIndex].tone || "soft"));
-  }
-
-  const routeSection = document.createElement("div");
-  routeSection.className = "draftRouteSection";
-  routeSection.innerHTML = `<div class="draftToolHead"><strong>${escapeHtml(localize({
-    "zh-Hans": "出手路数",
-    "zh-Hant": "出手路數",
-    en: "Reply routes",
-    ja: "返し方",
-    ko: "답글 루트"
-  }))}</strong><span>${escapeHtml(localize({
-    "zh-Hans": "先选一条打法，再继续微调句子",
-    "zh-Hant": "先選一條打法，再繼續微調句子",
-    en: "Pick a strategy first, then fine-tune the wording below",
-    ja: "先に打法を決めて、その下で文を詰める",
-    ko: "먼저 한 가지 전략을 고른 뒤 아래에서 문장을 다듬습니다"
-  }))}</span></div>`;
-  const routeGrid = document.createElement("div");
-  routeGrid.className = "draftRouteGrid";
-  draftRoutes.forEach((route, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "draftRouteCard";
-    button.dataset.action = "apply-draft-route";
-    button.dataset.payload = JSON.stringify({
-      routeKey: route.key,
-      draftIndex: route.draftIndex,
-      tone: route.tone,
-      starterIndex: route.starterIndex,
-      bodyIndex: route.bodyIndex,
-      closerIndex: route.closerIndex
-    });
-    if (uiState.draftRouteKey === route.key) {
-      button.classList.add("active");
-    } else if (!uiState.draftRouteKey && index === 0) {
-      button.classList.add("recommended");
-    }
-
-    const top = document.createElement("div");
-    top.className = "draftRouteTop";
-    const title = document.createElement("strong");
-    title.textContent = route.title;
-    const serial = document.createElement("span");
-    serial.className = "draftRouteSerial";
-    serial.textContent = `RD-RT${String(index + 1).padStart(2, "0")}`;
-    top.append(title, serial);
-
-    const reason = document.createElement("p");
-    reason.className = "draftRouteReason";
-    reason.textContent = route.reason;
-
-    const playbook = document.createElement("p");
-    playbook.className = "draftRoutePlaybook";
-    playbook.textContent = route.playbook || "";
-
-    const meta = document.createElement("div");
-    meta.className = "draftRouteMeta";
-    route.chips.forEach((chip, chipIndex) => {
-      meta.appendChild(createSummaryChip(chip, chipIndex === 1 ? route.toneChip || "soft" : chipIndex === 2 ? "warning" : "soft"));
-    });
-
-    button.append(top, reason, playbook, meta);
-    routeGrid.appendChild(button);
-  });
-  routeSection.appendChild(routeGrid);
-
-  const toneBar = document.createElement("div");
-  toneBar.className = "draftToneBar";
-  DRAFT_TONE_DEFS.forEach((tone) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "draftToneButton";
-    button.dataset.action = "set-draft-tone";
-    button.dataset.tone = tone.key;
-    button.textContent = localize(tone.label);
-    button.classList.toggle("active", tone.key === uiState.draftTone);
-    toneBar.appendChild(button);
-  });
-
-  const starterSection = document.createElement("div");
-  starterSection.className = "draftToolSection";
-  starterSection.innerHTML = `<div class="draftToolHead"><strong>${escapeHtml(localize({
-    "zh-Hans": "强起手",
-    "zh-Hant": "強起手",
-    en: "Strong opener",
-    ja: "強い入り",
-    ko: "강한 시작"
-  }))}</strong><span>${escapeHtml(localize({
-    "zh-Hans": "先把第一句拉得更像真人出手",
-    "zh-Hant": "先把第一句拉得更像真人出手",
-    en: "Tighten the first line into a stronger human opener",
-    ja: "最初の一文をもっと人っぽく強くする",
-    ko: "첫 문장을 더 사람답고 강하게 만듭니다"
-  }))}</span></div>`;
-  const starterBar = document.createElement("div");
-  starterBar.className = "draftToolBar";
-  starterOptions.forEach((option, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "draftToolButton";
-    button.dataset.action = "apply-draft-starter";
-    button.dataset.payload = String(index);
-    button.dataset.tone = option.tone || "soft";
-    button.textContent = option.label;
-    if (index === uiState.draftStarterIndex) {
-      button.classList.add("active");
-    } else if (uiState.draftStarterIndex < 0 && index === 0) {
-      button.classList.add("recommended");
-    }
-    starterBar.appendChild(button);
-  });
-  starterSection.appendChild(starterBar);
-
-  const bodySection = document.createElement("div");
-  bodySection.className = "draftToolSection";
-  bodySection.innerHTML = `<div class="draftToolHead"><strong>${escapeHtml(localize({
-    "zh-Hans": "往下推进",
-    "zh-Hant": "往下推進",
-    en: "Push it forward",
-    ja: "中段を押す",
-    ko: "중단 밀기"
-  }))}</strong><span>${escapeHtml(localize({
-    "zh-Hans": "补一句真正把对话往前带的中段",
-    "zh-Hant": "補一句真正把對話往前帶的中段",
-    en: "Add a middle beat that actually moves the thread forward",
-    ja: "会話を前へ運ぶ中段を一文足す",
-    ko: "대화를 실제로 앞으로 미는 중간 문장을 더합니다"
-  }))}</span></div>`;
-  const bodyBar = document.createElement("div");
-  bodyBar.className = "draftToolBar";
-  bodyOptions.forEach((option, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "draftToolButton";
-    button.dataset.action = "apply-draft-body";
-    button.dataset.payload = String(index);
-    button.dataset.tone = option.tone || "soft";
-    button.textContent = option.label;
-    if (index === uiState.draftBodyIndex) {
-      button.classList.add("active");
-    } else if (uiState.draftBodyIndex < 0 && index === 0) {
-      button.classList.add("recommended");
-    }
-    bodyBar.appendChild(button);
-  });
-  bodySection.appendChild(bodyBar);
-
-  const closerSection = document.createElement("div");
-  closerSection.className = "draftToolSection";
-  closerSection.innerHTML = `<div class="draftToolHead"><strong>${escapeHtml(localize({
-    "zh-Hans": "收尾动作",
-    "zh-Hant": "收尾動作",
-    en: "Closing move",
-    ja: "締め方",
-    ko: "마무리 동작"
-  }))}</strong><span>${escapeHtml(localize({
-    "zh-Hans": "把最后一句收得更像会话，不像说明文",
-    "zh-Hant": "把最後一句收得更像會話，不像說明文",
-    en: "Make the last line land like conversation, not explanation",
-    ja: "最後の一文を説明ではなく会話っぽく着地させる",
-    ko: "마지막 줄을 설명문보다 대화처럼 착지시킵니다"
-  }))}</span></div>`;
-  const closerBar = document.createElement("div");
-  closerBar.className = "draftToolBar";
-  closerOptions.forEach((option, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "draftToolButton";
-    button.dataset.action = "apply-draft-closer";
-    button.dataset.payload = String(index);
-    button.dataset.tone = option.tone || "soft";
-    button.textContent = option.label;
-    if (index === uiState.draftCloserIndex) {
-      button.classList.add("active");
-    } else if (uiState.draftCloserIndex < 0 && index === 0) {
-      button.classList.add("recommended");
-    }
-    closerBar.appendChild(button);
-  });
-  closerSection.appendChild(closerBar);
 
   const composer = document.createElement("div");
   composer.className = "draftComposer";
@@ -5601,11 +5705,11 @@ function createDraftWorkbench(drafts, candidate, recommendedSlot = "", attributi
   textarea.rows = 5;
   textarea.value = composerText;
   textarea.placeholder = localize({
-    "zh-Hans": "选一条草稿后，在这里继续改成你自己的语气。",
-    "zh-Hant": "選一條草稿後，在這裡繼續改成你自己的語氣。",
-    en: "Pick a draft and keep shaping it here.",
-    ja: "下書きを選んで、ここで自分の言い方に寄せます。",
-    ko: "초안을 고른 뒤 여기서 자기 말투로 다듬습니다."
+    "zh-Hans": "这里展示正式回复草稿，你可以直接复制，也可以再手动微调一遍。",
+    "zh-Hant": "這裡展示正式回覆草稿，你可以直接複製，也可以再手動微調一遍。",
+    en: "This shows the send-ready reply draft. Copy it directly or make a quick manual pass.",
+    ja: "ここにはそのまま使える返信草稿を表示します。必要なら少しだけ手で直せます。",
+    ko: "여기에는 바로 쓸 수 있는 답글 초안을 보여줍니다. 필요하면 조금만 손보면 됩니다."
   });
 
   const foot = document.createElement("div");
@@ -5613,7 +5717,13 @@ function createDraftWorkbench(drafts, candidate, recommendedSlot = "", attributi
   const meta = document.createElement("div");
   meta.className = "draftComposerMeta";
   meta.textContent = candidate
-    ? `${candidate.authorHandle ? `@${candidate.authorHandle}` : "candidate"} · ${getCandidateLane(candidate).label}`
+    ? `${candidate.authorHandle ? `@${candidate.authorHandle}` : "candidate"} · ${localize({
+        "zh-Hans": `草稿 ${uiState.selectedDraftIndex + 1}`,
+        "zh-Hant": `草稿 ${uiState.selectedDraftIndex + 1}`,
+        en: `Draft ${uiState.selectedDraftIndex + 1}`,
+        ja: `下書き ${uiState.selectedDraftIndex + 1}`,
+        ko: `초안 ${uiState.selectedDraftIndex + 1}`
+      })}`
     : localize({ "zh-Hans": "等待候选", "zh-Hant": "等待候選", en: "Waiting for candidate", ja: "候補待ち", ko: "후보 대기" });
   if (candidate && recommendedSlot) {
     const slotHint = document.createElement("span");
@@ -5668,7 +5778,7 @@ function createDraftWorkbench(drafts, candidate, recommendedSlot = "", attributi
   foot.append(meta, queueControls, polishButton, handoffButton, copyButton);
 
   composer.append(textarea, foot);
-  workbench.append(head, workbenchStrip, routeSection, toneBar, starterSection, bodySection, closerSection, composer);
+  workbench.append(head, composer);
   return workbench;
 }
 
@@ -6539,7 +6649,7 @@ function buildGrowthActionItems(focusCandidate, candidates, relationships, repli
     });
   }
 
-  const relationshipPriority = relationships.find((item) => item.relationship?.status === "pinned" || item.relationship?.status === "follow-up");
+  const relationshipPriority = relationships.find((item) => ["mutual", "pinned", "follow-up"].includes(item.relationship?.status));
   if (relationshipPriority) {
     items.push({
       title: localize({
@@ -6549,11 +6659,13 @@ function buildGrowthActionItems(focusCandidate, candidates, relationships, repli
         ja: `@${relationshipPriority.handle} を落とさない`,
         ko: `@${relationshipPriority.handle} 관계 놓치지 않기`
       }),
-      reason: relationshipPriority.relationship?.status === "pinned"
+      reason: relationshipPriority.relationship?.status === "mutual"
+        ? localize({ "zh-Hans": "这类互关位最容易滚出连续对话", "zh-Hant": "這類互關位最容易滾出連續對話", en: "Mutuals are the easiest lane to turn into a visible back-and-forth", ja: "相互フォローは往復会話に育ちやすい", ko: "맞팔 라인은 왕복 대화로 이어지기 쉽습니다" })
+        : relationshipPriority.relationship?.status === "pinned"
         ? localize({ "zh-Hans": "这类关系值得持续占位", "zh-Hant": "這類關係值得持續佔位", en: "This relationship deserves durable presence", ja: "継続して触る価値がある", ko: "지속적으로 관리할 가치가 있음" })
         : localize({ "zh-Hans": "已经进入下一次触达队列", "zh-Hant": "已經進入下一次觸達隊列", en: "Already queued for the next touch", ja: "次の接触キューに入っている", ko: "다음 터치 큐에 올라가 있음" }),
       meta: getRelationshipStateLabel(relationshipPriority.relationship?.status || "") || relationshipPriority.status,
-      tone: relationshipPriority.relationship?.status === "pinned" ? "accent" : "warning"
+      tone: relationshipPriority.relationship?.status === "mutual" ? "success" : relationshipPriority.relationship?.status === "pinned" ? "accent" : "warning"
     });
   } else if (items.length < 3) {
     const targetReplies = Math.max(3, hotCandidatesTarget(candidates));
@@ -6821,8 +6933,8 @@ function buildRelationshipItems(candidates, replyEntries) {
   });
   return Array.from(seen.values())
     .sort((left, right) => {
-      const leftRank = left.relationship?.status === "pinned" ? 3 : left.relationship?.status === "follow-up" ? 2 : left.relationship?.status === "snoozed" ? 0 : 1;
-      const rightRank = right.relationship?.status === "pinned" ? 3 : right.relationship?.status === "follow-up" ? 2 : right.relationship?.status === "snoozed" ? 0 : 1;
+      const leftRank = left.relationship?.status === "mutual" ? 4 : left.relationship?.status === "pinned" ? 3 : left.relationship?.status === "follow-up" ? 2 : left.relationship?.status === "snoozed" ? 0 : 1;
+      const rightRank = right.relationship?.status === "mutual" ? 4 : right.relationship?.status === "pinned" ? 3 : right.relationship?.status === "follow-up" ? 2 : right.relationship?.status === "snoozed" ? 0 : 1;
       return rightRank - leftRank || (Number(right.rawTimestamp || 0) - Number(left.rawTimestamp || 0));
     })
     .slice(0, 5);
@@ -6978,20 +7090,20 @@ function renderDashboardLaunchPreview(candidateCount, performanceSnapshot) {
 
   setText(els.dashboardLaunchMeta, localize({
     "zh-Hans": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
-      ? `首页只留入口；进到仪表盘后，先看你已发出的 ${performanceSnapshot.replies} 条回复带来了多少曝光和互动，再决定下一步。`
-      : "首页只保留入口和基础控制，真正处理候选、表现和关键词都收进下一层。",
+      ? `首页只留入口；进仪表盘先看 ${performanceSnapshot.replies} 条已发回复的表现，再决定下一步。`
+      : "首页只留入口；候选、表现和关键词都在下一层处理。",
     "zh-Hant": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
-      ? `首頁只留入口；進到儀表盤後，先看你已發出的 ${performanceSnapshot.replies} 條回覆帶來多少曝光與互動，再決定下一步。`
-      : "首頁只保留入口與基礎控制，真正處理候選、表現與關鍵詞都收進下一層。",
+      ? `首頁只留入口；進儀表盤先看 ${performanceSnapshot.replies} 條已發回覆的表現，再決定下一步。`
+      : "首頁只留入口；候選、表現和關鍵詞都在下一層處理。",
     en: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
-      ? `Keep the home layer light. Inside the dashboard, start with the performance of your ${performanceSnapshot.replies} shipped replies, then decide the next move.`
-      : "Keep only entry controls on the home layer, then move candidate work, performance, and keywords into the next layer.",
+      ? `Keep the home layer light. Inside the dashboard, start with the performance of your ${performanceSnapshot.replies} shipped replies.`
+      : "Keep only the entry on the home layer, then handle candidates and performance in the next layer.",
     ja: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
-      ? `ホーム層は入口だけに保ちます。ダッシュボードでは、送信済み ${performanceSnapshot.replies} 件の返信がどれだけ伸びたかを先に見て、次の一手を決めます。`
-      : "ホーム層には入口と基本操作だけを残し、候補・実績・キーワードは次の層へまとめます。",
+      ? `ホーム層は入口だけに保ちます。ダッシュボードでは送信済み ${performanceSnapshot.replies} 件の返信実績を先に見ます。`
+      : "ホーム層は入口だけにして、候補・実績・キーワードは次の層で扱います。",
     ko: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
-      ? `홈 레이어는 입구만 가볍게 두고, 대시보드 안에서는 이미 보낸 ${performanceSnapshot.replies}개 답글의 성과를 먼저 보고 다음 동작을 정합니다.`
-      : "홈 레이어에는 입구와 기본 제어만 남기고, 후보·성과·키워드는 다음 레이어로 보냅니다."
+      ? `홈 레이어는 입구만 두고, 대시보드 안에서는 이미 보낸 ${performanceSnapshot.replies}개 답글 성과를 먼저 봅니다.`
+      : "홈 레이어는 입구만 남기고, 후보·성과·키워드는 다음 레이어에서 다룹니다."
   }));
 }
 
@@ -7747,11 +7859,11 @@ function createAiPriorityBoardCard(summary = {}) {
         ko: "우선순위 보드"
       }))}</span>
       <strong>${escapeHtml(localize({
-        "zh-Hans": "当前前三顺位",
-        "zh-Hant": "目前前三順位",
-        en: "Current top three",
-        ja: "現在の上位3件",
-        ko: "현재 상위 3개"
+        "zh-Hans": "当前前六顺位",
+        "zh-Hant": "目前前六順位",
+        en: "Current top six",
+        ja: "現在の上位6件",
+        ko: "현재 상위 6개"
       }))}</strong>
     </div>
     <span class="performanceLeadSerial">RD-AI-RANK</span>
@@ -7768,7 +7880,7 @@ function createAiPriorityBoardCard(summary = {}) {
 
   const list = document.createElement("div");
   list.className = "aiPriorityBoardList";
-  priorityCandidates.slice(0, 3).forEach((candidate, index) => {
+  priorityCandidates.slice(0, PRIORITY_CANDIDATE_LIMIT).forEach((candidate, index) => {
     const attributionSummary = priorityAttributionSummaries[index] || null;
     const actionPlan = getAiPriorityActionPlan(candidate, attributionSummary, index);
     const row = document.createElement("article");
@@ -7793,6 +7905,14 @@ function createAiPriorityBoardCard(summary = {}) {
     meta.className = "aiPriorityBoardMeta";
     meta.appendChild(createSummaryChip(getCandidateLane(candidate).label, index === 0 ? "accent" : "soft"));
     meta.appendChild(createSummaryChip(`${Number(candidate.score) || 0}`, Number(candidate.score) >= 72 ? "success" : "soft"));
+    const opportunityChip = getCandidateOpportunityChip(candidate);
+    if (opportunityChip) {
+      meta.appendChild(createSummaryChip(opportunityChip.text, opportunityChip.tone));
+    }
+    const baseScoreChip = getCandidateBaseScoreChip(candidate);
+    if (baseScoreChip) {
+      meta.appendChild(createSummaryChip(baseScoreChip.text, baseScoreChip.tone));
+    }
     meta.appendChild(createSummaryChip(actionPlan.label, actionPlan.tone || "soft"));
     if (attributionSummary?.preferredSlot) {
       meta.appendChild(createSummaryChip(getQueueSlotTexts(attributionSummary.preferredSlot).label, "warning"));
@@ -8055,6 +8175,16 @@ function createAiCopilotCard(summary = {}) {
   if (focusCandidate && laneLabel) {
     meta.appendChild(createSummaryChip(laneLabel, "accent"));
   }
+  if (focusCandidate) {
+    const opportunityChip = getCandidateOpportunityChip(focusCandidate);
+    if (opportunityChip) {
+      meta.appendChild(createSummaryChip(opportunityChip.text, opportunityChip.tone));
+    }
+    const baseScoreChip = getCandidateBaseScoreChip(focusCandidate);
+    if (baseScoreChip) {
+      meta.appendChild(createSummaryChip(baseScoreChip.text, baseScoreChip.tone));
+    }
+  }
   if (attributionSummary) {
     meta.appendChild(createSummaryChip(getAiAttributionKindLabel(attributionSummary), attributionSummary.authorEngaged ? "success" : "warning"));
     meta.appendChild(createSummaryChip(localize({
@@ -8078,136 +8208,460 @@ function createAiCopilotCard(summary = {}) {
   return card;
 }
 
+function hasAgentVisualMediaKind(mediaKind = "") {
+  return ["image", "photo", "video", "gif", "mixed"].includes(String(mediaKind || "").trim().toLowerCase());
+}
+
+function buildAgentReplySchemaPayload() {
+  return {
+    version: "replydrop-agent-reply-v1",
+    decisionEnum: ["reply-now", "queue-next", "queue-tonight", "queue-tomorrow", "skip"],
+    fields: {
+      targetTweetId: "string",
+      decision: "enum",
+      replyText: "string",
+      rationaleShort: "string",
+      confidence: "number",
+      riskFlags: "string[]"
+    }
+  };
+}
+
+function mapAgentSlotToDecision(slot = "") {
+  const normalized = String(slot || "").trim();
+  if (normalized === "next") {
+    return "reply-now";
+  }
+  if (normalized === "tonight") {
+    return "queue-tonight";
+  }
+  if (normalized === "tomorrow") {
+    return "queue-tomorrow";
+  }
+  return "skip";
+}
+
+function getAgentDecisionLabel(decision = "") {
+  switch (String(decision || "").trim()) {
+    case "reply-now":
+      return localize({
+        "zh-Hans": "现在发",
+        "zh-Hant": "現在發",
+        en: "Reply now",
+        ja: "今返す",
+        ko: "지금 답글"
+      });
+    case "queue-next":
+      return localize({
+        "zh-Hans": "下一轮",
+        "zh-Hant": "下一輪",
+        en: "Queue next",
+        ja: "次へ入れる",
+        ko: "다음 차례"
+      });
+    case "queue-tonight":
+      return localize({
+        "zh-Hans": "排今晚",
+        "zh-Hant": "排今晚",
+        en: "Queue tonight",
+        ja: "今夜へ回す",
+        ko: "오늘 밤으로"
+      });
+    case "queue-tomorrow":
+      return localize({
+        "zh-Hans": "排明早",
+        "zh-Hant": "排明早",
+        en: "Queue tomorrow",
+        ja: "明朝へ回す",
+        ko: "내일 아침으로"
+      });
+    default:
+      return localize({
+        "zh-Hans": "先跳过",
+        "zh-Hant": "先跳過",
+        en: "Skip for now",
+        ja: "いったん見送る",
+        ko: "일단 건너뛰기"
+      });
+  }
+}
+
+function simplifyAgentRoutePlan(route = {}) {
+  return {
+    key: String(route.key || "").trim(),
+    draftKey: String(route.draftKey || "").trim(),
+    voiceKey: String(route.voiceKey || "").trim(),
+    tone: String(route.tone || "").trim(),
+    score: Number(route.score || 0),
+    sentenceTarget: Number(route.sentenceTarget || 0),
+    preferQuestionClose: Boolean(route.preferQuestionClose),
+    reasons: Array.isArray(route.reasons) ? route.reasons.slice(0, 5).map((reason) => String(reason || "").trim()).filter(Boolean) : []
+  };
+}
+
+function getAgentTweetIdFromUrl(url) {
+  const normalized = normalizeDeskUrl(url);
+  const match = normalized.match(/\/status\/(\d+)(?:$|[/?#])/);
+  return match?.[1] || "";
+}
+
+function buildPopupAgentCandidateContext(candidate, attributionSummary = null) {
+  if (!candidate?.url) {
+    return null;
+  }
+
+  const normalizedUrl = normalizeDeskUrl(candidate.url);
+  const tweetId = getAgentTweetIdFromUrl(normalizedUrl);
+  const lane = getCandidateLane(candidate);
+  const recommendedSlot = getDefaultQueueSlot(candidate);
+  const recommendedDecision = mapAgentSlotToDecision(recommendedSlot);
+  const highlights = getUserFacingCandidateHighlights(candidate, 3);
+  const mediaKind = String(candidate.mediaKind || "").trim();
+  const draftPlans = typeof DraftCore?.buildDraftPlan === "function"
+    ? DraftCore.buildDraftPlan(candidate, attributionSummary, { laneKey: lane.key })
+    : [];
+  const routePlans = typeof DraftCore?.buildDraftRoutePlan === "function"
+    ? DraftCore.buildDraftRoutePlan(candidate, attributionSummary, {
+        laneKey: lane.key,
+        preferredSlot: recommendedSlot,
+        availableDraftKeys: draftPlans.map((plan) => String(plan?.key || "").trim()).filter(Boolean)
+      })
+    : [];
+
+  return {
+    version: "replydrop-candidate-context-v1",
+    source: "candidate",
+    tweetId,
+    url: normalizedUrl,
+    author: {
+      handle: String(candidate.authorHandle || "").trim(),
+      name: String(candidate.authorName || "").trim(),
+      verified: Boolean(candidate.authorVerified),
+      verificationType: normalizeAuthorVerificationType(candidate.authorVerificationType),
+      relationshipStatus: String(candidate.relationshipStatus || "").trim()
+    },
+    post: {
+      text: String(candidate.text || "").trim().slice(0, 560),
+      mediaKind,
+      sourceSurface: String(candidate.sourceSurface || "").trim(),
+      ageMinutes: Math.max(0, Math.round((Date.now() - Number(candidate.timestamp || Date.now())) / 60000)),
+      views: Number(candidate.views || 0),
+      replies: Number(candidate.replies || 0),
+      likes: Number(candidate.likes || 0),
+      matchedTopics: Array.isArray(candidate.matchedTopics) ? candidate.matchedTopics.slice(0, 4) : [],
+      matchedLanguages: Array.isArray(candidate.matchedLanguages) ? candidate.matchedLanguages.slice(0, 4) : [],
+      highlights
+    },
+    scoring: {
+      score: Number(candidate.score || 0),
+      baseScore: Number(candidate.baseScore || candidate.score || 0),
+      opportunityBoost: Number(candidate.opportunityBoost || 0),
+      postScore: Number(candidate.postScore || candidate.score || 0),
+      reachLikelihood: Number(candidate.reachLikelihood || 0),
+      understandingConfidence: Number(candidate.understandingConfidence || 0),
+      authorFit: Number(candidate.authorFit || 0),
+      finalScore: Number(candidate.finalScore || candidate.score || 0),
+      blockReason: String(candidate.blockReason || "").trim(),
+      lowSemanticConfidence: Boolean(candidate.lowSemanticConfidence)
+    },
+    routing: {
+      laneKey: lane.key,
+      laneLabel: lane.label,
+      recommendedSlot,
+      recommendedDecision
+    },
+    memory: {
+      kind: String(attributionSummary?.kind || "").trim(),
+      priority: Number(attributionSummary?.priority || 0),
+      preferredSlot: String(attributionSummary?.preferredSlot || "").trim(),
+      reviewed: Number(attributionSummary?.reviewed || 0),
+      settled: Number(attributionSummary?.settled || 0),
+      pickedUp: Number(attributionSummary?.pickedUp || 0),
+      authorEngaged: Number(attributionSummary?.authorEngaged || 0)
+    },
+    media: {
+      needsVision: hasAgentVisualMediaKind(mediaKind) && Boolean(candidate.lowSemanticConfidence || String(candidate.text || "").trim().length < 32),
+      available: hasAgentVisualMediaKind(mediaKind),
+      bundleIncluded: false
+    },
+    aiHints: {
+      draftKeys: draftPlans.map((plan) => String(plan?.key || "").trim()).filter(Boolean),
+      routePlans: routePlans.map((route) => simplifyAgentRoutePlan(route))
+    }
+  };
+}
+
+function buildPopupAgentInboxPayload(priorityCandidates = [], attributionSummaries = []) {
+  const candidates = [];
+  const contextByUrl = new Map();
+
+  priorityCandidates.forEach((candidate, index) => {
+    const context = buildPopupAgentCandidateContext(candidate, attributionSummaries[index] || null);
+    if (!context) {
+      return;
+    }
+    candidates.push(context);
+    contextByUrl.set(normalizeDeskUrl(context.url), context);
+  });
+
+  return {
+    payload: {
+      version: "replydrop-agent-inbox-v1",
+      generatedAt: Date.now(),
+      limit: candidates.length,
+      candidates,
+      outputSchema: buildAgentReplySchemaPayload()
+    },
+    contextByUrl
+  };
+}
+
+function createAgentRuntimeSummaryCard(summary = {}) {
+  const focusCandidate = summary.focusCandidate || null;
+  const focusContext = summary.focusContext || null;
+  const priorityCount = Number(summary.priorityCount || 0);
+  const queueCount = Number(summary.queueCount || 0);
+  const relationshipCount = Number(summary.relationshipCount || 0);
+  const decisionLabel = focusContext ? getAgentDecisionLabel(focusContext.routing?.recommendedDecision) : "";
+  const slotLabel = focusContext?.routing?.recommendedSlot ? getQueueSlotTexts(focusContext.routing.recommendedSlot).label : "";
+
+  const card = document.createElement("section");
+  card.className = "aiCopilotCard";
+
+  const header = document.createElement("div");
+  header.className = "aiCopilotHeader";
+  header.innerHTML = `
+    <div>
+      <span class="performanceLeadEyebrow">${escapeHtml(localize({
+        "zh-Hans": "AI runtime",
+        "zh-Hant": "AI runtime",
+        en: "AI runtime",
+        ja: "AI runtime",
+        ko: "AI runtime"
+      }))}</span>
+      <strong>${escapeHtml(focusCandidate
+        ? localize({
+            "zh-Hans": `当前主推 ${focusCandidate.authorHandle ? `@${focusCandidate.authorHandle}` : "这条候选"}`,
+            "zh-Hant": `目前主推 ${focusCandidate.authorHandle ? `@${focusCandidate.authorHandle}` : "這條候選"}`,
+            en: `Current lead: ${focusCandidate.authorHandle ? `@${focusCandidate.authorHandle}` : "this candidate"}`,
+            ja: `現在の主推し: ${focusCandidate.authorHandle ? `@${focusCandidate.authorHandle}` : "この候補"}`,
+            ko: `현재 리드: ${focusCandidate.authorHandle ? `@${focusCandidate.authorHandle}` : "이 후보"}`
+          })
+        : localize({
+            "zh-Hans": "等待下一条可执行候选",
+            "zh-Hant": "等待下一條可執行候選",
+            en: "Waiting for the next actionable candidate",
+            ja: "次の実行候補を待っています",
+            ko: "다음 실행 후보를 기다리는 중입니다"
+          }))}</strong>
+    </div>
+    <span class="performanceLeadSerial">RD-AI-RUN</span>
+  `;
+
+  const body = document.createElement("p");
+  body.className = "aiCopilotBody";
+  body.textContent = focusContext
+    ? localize({
+        "zh-Hans": `AI 现在不再看模板草稿，而是直接看 top ${priorityCount || 1} shortlist、当前候选上下文包和输出 schema。当前更像 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
+        "zh-Hant": `AI 現在不再看模板草稿，而是直接看 top ${priorityCount || 1} shortlist、目前候選上下文包和輸出 schema。當前更像 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
+        en: `The AI runtime now works from the top ${priorityCount || 1} shortlist, the current candidate context pack, and the output schema instead of template drafts. Right now the move looks more like ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}.`,
+        ja: `AI runtime はもうテンプレ草稿ではなく、top ${priorityCount || 1} shortlist と候補文脈パック、出力 schema を見ます。今の一手は ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""} に近いです。`,
+        ko: `AI runtime은 이제 템플릿 초안 대신 top ${priorityCount || 1} shortlist, 현재 후보 컨텍스트 팩, 출력 schema를 봅니다. 지금은 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""} 쪽에 가깝습니다.`
+      })
+    : localize({
+        "zh-Hans": "当前还没有可执行候选。这里会在有 top shortlist 时展示给 AI 的真正输入，而不是规则草稿。",
+        "zh-Hant": "目前還沒有可執行候選。這裡會在有 top shortlist 時展示給 AI 的真正輸入，而不是規則草稿。",
+        en: "There is no actionable candidate yet. This panel will show the real AI runtime inputs once a shortlist is ready, not fallback drafts.",
+        ja: "まだ実行候補はありません。shortlist が出たら、ここには規則草稿ではなく AI runtime の実入力を出します。",
+        ko: "아직 실행 후보가 없습니다. shortlist가 잡히면 여기에는 fallback 초안이 아니라 AI runtime 입력이 표시됩니다."
+      });
+
+  const strip = document.createElement("div");
+  strip.className = "performanceLeadStrip aiCopilotStrip";
+  strip.append(
+    createDeskLedgerChip(localize({
+      "zh-Hans": "Top shortlist",
+      "zh-Hant": "Top shortlist",
+      en: "Top shortlist",
+      ja: "Top shortlist",
+      ko: "Top shortlist"
+    }), String(priorityCount), priorityCount ? "accent" : "soft"),
+    createDeskLedgerChip(localize({
+      "zh-Hans": "推荐动作",
+      "zh-Hant": "推薦動作",
+      en: "Move",
+      ja: "推奨動作",
+      ko: "추천 동작"
+    }), decisionLabel || localize({
+      "zh-Hans": "等待候选",
+      "zh-Hant": "等待候選",
+      en: "Waiting",
+      ja: "候補待ち",
+      ko: "후보 대기"
+    }), focusContext ? "success" : "soft"),
+    createDeskLedgerChip(localize({
+      "zh-Hans": "队列中",
+      "zh-Hant": "隊列中",
+      en: "Queued",
+      ja: "キュー中",
+      ko: "큐 중"
+    }), String(queueCount), queueCount ? "warning" : "soft"),
+    createDeskLedgerChip(localize({
+      "zh-Hans": "关系线索",
+      "zh-Hant": "關係線索",
+      en: "Memory",
+      ja: "関係線索",
+      ko: "관계 신호"
+    }), String(relationshipCount), relationshipCount ? "accent" : "soft")
+  );
+
+  const meta = document.createElement("div");
+  meta.className = "aiCopilotMeta";
+  (focusContext?.post?.highlights || []).slice(0, 2).forEach((highlight) => {
+    meta.appendChild(createSummaryChip(highlight, "soft"));
+  });
+  if (focusContext?.routing?.laneLabel) {
+    meta.appendChild(createSummaryChip(focusContext.routing.laneLabel, "accent"));
+  }
+  if (focusContext?.memory?.kind) {
+    meta.appendChild(createSummaryChip(getAiAttributionKindLabel(summary.attributionSummary || {}), focusContext.memory.authorEngaged ? "success" : "warning"));
+  }
+  if (focusContext?.media?.needsVision) {
+    meta.appendChild(createSummaryChip(localize({
+      "zh-Hans": "需要视觉判断",
+      "zh-Hant": "需要視覺判斷",
+      en: "Needs vision",
+      ja: "視覚確認あり",
+      ko: "비전 확인 필요"
+    }), "warning"));
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "deskActionRow";
+  if (focusCandidate?.url) {
+    actions.append(
+      createDeskActionButton("copy-agent-context", localize({
+        "zh-Hans": "复制当前上下文",
+        "zh-Hant": "複製目前上下文",
+        en: "Copy context",
+        ja: "文脈をコピー",
+        ko: "컨텍스트 복사"
+      }), focusCandidate.url, "primary"),
+      createDeskActionButton("copy-agent-inbox", localize({
+        "zh-Hans": "复制 Top6 收件箱",
+        "zh-Hant": "複製 Top6 收件箱",
+        en: "Copy top 6 inbox",
+        ja: "Top 6 inbox をコピー",
+        ko: "Top 6 inbox 복사"
+      }), "", "accent"),
+      createDeskActionButton("copy-agent-schema", localize({
+        "zh-Hans": "复制输出 Schema",
+        "zh-Hant": "複製輸出 Schema",
+        en: "Copy schema",
+        ja: "Schema をコピー",
+        ko: "Schema 복사"
+      }), "", "soft"),
+      createDeskActionButton("open-agent-composer", localize({
+        "zh-Hans": "打开回复框",
+        "zh-Hant": "打開回覆框",
+        en: "Open composer",
+        ja: "返信欄を開く",
+        ko: "답글창 열기"
+      }), focusCandidate.url, "warning")
+    );
+  } else {
+    actions.append(
+      createDeskActionButton("copy-agent-schema", localize({
+        "zh-Hans": "复制输出 Schema",
+        "zh-Hant": "複製輸出 Schema",
+        en: "Copy schema",
+        ja: "Schema をコピー",
+        ko: "Schema 복사"
+      }), "", "soft")
+    );
+  }
+
+  card.append(header, body, strip, meta, actions);
+  return card;
+}
+
+function appendAgentCandidateActions(item, candidate) {
+  const main = item.querySelector(".deskMain");
+  if (!main || !candidate?.url) {
+    return;
+  }
+
+  const extraRow = document.createElement("div");
+  extraRow.className = "deskActionRow";
+  extraRow.append(
+    createDeskActionButton("copy-agent-context", localize({
+      "zh-Hans": "复制上下文",
+      "zh-Hant": "複製上下文",
+      en: "Copy context",
+      ja: "文脈をコピー",
+      ko: "컨텍스트 복사"
+    }), candidate.url, "primary"),
+    createDeskActionButton("open-agent-composer", localize({
+      "zh-Hans": "打开回复框",
+      "zh-Hant": "打開回覆框",
+      en: "Open composer",
+      ja: "返信欄を開く",
+      ko: "답글창 열기"
+    }), candidate.url, "soft")
+  );
+  main.appendChild(extraRow);
+}
+
 function renderAiReplyDeskPanel(summary = {}) {
   if (!els.aiReplyDeskPanel) {
     return;
   }
 
+  const priorityCandidates = Array.isArray(summary.priorityCandidates) ? summary.priorityCandidates.slice(0, PRIORITY_CANDIDATE_LIMIT) : [];
+  const attributionSummaries = Array.isArray(summary.priorityAttributionSummaries) ? summary.priorityAttributionSummaries : [];
   const focusCandidate = summary.focusCandidate || null;
-  const drafts = Array.isArray(summary.drafts) ? summary.drafts : [];
-  const recommendedSlot = summary.recommendedSlot || "";
-  const items = focusCandidate && drafts.length
-    ? [
-        {
-          title: localize({
-            "zh-Hans": "下一层：AI 排期",
-            "zh-Hant": "下一層：AI 排期",
-            en: "Next layer: AI scheduling",
-            ja: "次層: AI排期",
-            ko: "다음 레이어: AI 배치"
-          }),
-          reason: localize({
-            "zh-Hans": "草稿已经可以直接出稿了，下一步就该让 AI 根据当前对象和记忆线索，自动推荐 `下一轮 / 今晚 / 明早`。",
-            "zh-Hant": "草稿已經可以直接出稿了，下一步就該讓 AI 根據目前對象和記憶線索，自動推薦 `下一輪 / 今晚 / 明早`。",
-            en: "Now that live drafts exist, the next step is letting AI recommend `next-up / tonight / tomorrow` from candidate context and memory signals.",
-            ja: "草稿が実際に出せるようになったので、次は候補文脈と記憶信号から `次 / 今夜 / 明朝` を自動提案する段階です。",
-            ko: "이제 실제 초안이 나오므로, 다음 단계는 후보 맥락과 기억 신호를 바탕으로 `다음 차례 / 오늘 밤 / 내일 아침` 을 자동 추천하는 것입니다."
-          }),
-          meta: localize({
-            "zh-Hans": summary.queueCount ? `当前已有 ${summary.queueCount} 条队列可对接` : "草稿已接通，排期待接",
-            "zh-Hant": summary.queueCount ? `目前已有 ${summary.queueCount} 條隊列可對接` : "草稿已接通，排期待接",
-            en: summary.queueCount ? `${summary.queueCount} queue items already available to connect` : "Drafts live, scheduling next",
-            ja: summary.queueCount ? `${summary.queueCount} 件のキューを接続可能` : "草稿は接続済み、次は排期",
-            ko: summary.queueCount ? `${summary.queueCount}개 큐를 바로 연결 가능` : "초안 연결 완료, 다음은 배치"
-          }),
-          tone: "warning"
-        },
-        {
-          title: localize({
-            "zh-Hans": "下一层：关系记忆",
-            "zh-Hant": "下一層：關係記憶",
-            en: "Next layer: relationship memory",
-            ja: "次層: 関係記憶",
-            ko: "다음 레이어: 관계 기억"
-          }),
-          reason: localize({
-            "zh-Hans": "等 AI 排期接好后，再把过去被验证过的作者和主题记忆变成更具体的改写建议，而不是再堆一个人工关系页签。",
-            "zh-Hant": "等 AI 排期接好後，再把過去被驗證過的作者和主題記憶變成更具體的改寫建議，而不是再堆一個人工關係頁籤。",
-            en: "After scheduling connects, turn validated author/topic memory into sharper rewrite advice instead of restoring another manual relationship tab.",
-            ja: "排期がつながったら、次は検証済みの作者・話題記憶を、手動タブではなく具体的な書き換え提案へ変えます。",
-            ko: "배치가 연결되면, 검증된 작성자/주제 기억을 수동 탭이 아니라 더 구체적인 리라이트 제안으로 바꿉니다."
-          }),
-          meta: localize({
-            "zh-Hans": summary.relationshipCount ? `已观察 ${summary.relationshipCount} 条关系记忆` : "等待更多互动记忆",
-            "zh-Hant": summary.relationshipCount ? `已觀察 ${summary.relationshipCount} 條關係記憶` : "等待更多互動記憶",
-            en: summary.relationshipCount ? `${summary.relationshipCount} relationship memories already observed` : "Waiting for more relationship memory",
-            ja: summary.relationshipCount ? `${summary.relationshipCount} 件の関係記憶を観測済み` : "関係記憶を蓄積中",
-            ko: summary.relationshipCount ? `${summary.relationshipCount}개 관계 기억을 이미 관측` : "관계 기억 추가 대기"
-          }),
-          tone: "success"
-        }
-      ]
-    : [
-        {
-          title: localize({
-            "zh-Hans": "AI 草稿助手",
-            "zh-Hant": "AI 草稿助手",
-            en: "AI draft copilot",
-            ja: "AI下書き支援",
-            ko: "AI 초안 도우미"
-          }),
-          reason: localize({
-            "zh-Hans": "这里现在会优先接管真实草稿生成与改写，不再只是说明以后要做什么。",
-            "zh-Hant": "這裡現在會優先接管真實草稿生成與改寫，不再只是說明以後要做什麼。",
-            en: "This layer now prioritizes real draft generation and rewrite work instead of only describing the future.",
-            ja: "この層は今後の説明だけでなく、実際の草稿生成と書き換えを優先して受け持ちます。",
-            ko: "이 레이어는 이제 미래 설명만이 아니라 실제 초안 생성과 리라이트를 우선 담당합니다."
-          }),
-          meta: localize({
-            "zh-Hans": "等待候选点亮",
-            "zh-Hant": "等待候選點亮",
-            en: "Waiting for a lead candidate",
-            ja: "候補待ち",
-            ko: "리드 후보 대기"
-          }),
-          tone: "accent"
-        },
-        {
-          title: localize({
-            "zh-Hans": "AI 排期与队列",
-            "zh-Hant": "AI 排期與隊列",
-            en: "AI scheduling",
-            ja: "AI排期とキュー",
-            ko: "AI 배치와 큐"
-          }),
-          reason: localize({
-            "zh-Hans": "把 `下一轮 / 今晚 / 明早` 这种排期继续收进 AI 工作流，不再回到人工多页签。",
-            "zh-Hant": "把 `下一輪 / 今晚 / 明早` 這種排期繼續收進 AI 工作流，不再回到人工多頁籤。",
-            en: "Keep `next-up / tonight / tomorrow` inside the AI workflow instead of reopening manual tab sprawl.",
-            ja: "`次 / 今夜 / 明朝` の排期は AI ワークフローに寄せ、手動タブ増殖へ戻しません。",
-            ko: "`다음 차례 / 오늘 밤 / 내일 아침` 배치는 AI 워크플로 안에 두고 다시 수동 탭을 늘리지 않습니다."
-          }),
-          meta: localize({
-            "zh-Hans": summary.queueCount ? `已有 ${summary.queueCount} 条可迁移` : "待开发",
-            "zh-Hant": summary.queueCount ? `已有 ${summary.queueCount} 條可遷移` : "待開發",
-            en: summary.queueCount ? `${summary.queueCount} queue items to migrate` : "Planned",
-            ja: summary.queueCount ? `${summary.queueCount} 件を統合予定` : "開発予定",
-            ko: summary.queueCount ? `${summary.queueCount}개 큐를 통합 예정` : "예정"
-          }),
-          tone: "warning"
-        }
-      ];
+  const focusContext = focusCandidate ? buildPopupAgentCandidateContext(focusCandidate, summary.attributionSummary || null) : null;
+  const inboxBundle = buildPopupAgentInboxPayload(priorityCandidates, attributionSummaries);
+
+  uiState.lastAgentSchemaPayload = buildAgentReplySchemaPayload();
+  uiState.lastAgentFocusContext = focusContext;
+  uiState.lastAgentInboxPayload = inboxBundle.payload;
+  uiState.agentContextByUrl = inboxBundle.contextByUrl;
 
   els.aiReplyDeskPanel.innerHTML = "";
-  els.aiReplyDeskPanel.appendChild(createAiReplyLeadCard(summary));
-  els.aiReplyDeskPanel.appendChild(createAiCopilotCard(summary));
-  const aiPriorityCard = createAiPriorityCard(summary);
-  if (aiPriorityCard) {
-    els.aiReplyDeskPanel.appendChild(aiPriorityCard);
+  if (!priorityCandidates.length) {
+    const empty = document.createElement("div");
+    empty.className = "draftDeskEmpty";
+    empty.innerHTML = `<strong>${escapeHtml(localize({
+      "zh-Hans": "这里现在展示 AI 真正要看的输入",
+      "zh-Hant": "這裡現在展示 AI 真正要看的輸入",
+      en: "This panel now shows real AI runtime inputs",
+      ja: "ここには AI runtime の実入力を出します",
+      ko: "여기에는 AI runtime 입력이 표시됩니다"
+    }))}</strong><p>${escapeHtml(localize({
+      "zh-Hans": "等首页里有 shortlist 后，这里会展示 top 6、单条上下文包和输出 schema。",
+      "zh-Hant": "等首頁裡有 shortlist 後，這裡會展示 top 6、單條上下文包和輸出 schema。",
+      en: "Once a shortlist appears, this panel will show the top 6, per-candidate context packs, and the output schema.",
+      ja: "shortlist が出たら、ここに top 6、候補文脈パック、出力 schema を出します。",
+      ko: "shortlist가 잡히면 여기에서 top 6, 후보 컨텍스트 팩, 출력 schema를 보여 줍니다."
+    }))}</p>`;
+    els.aiReplyDeskPanel.appendChild(empty);
+    return;
   }
-  const aiPriorityBoardCard = createAiPriorityBoardCard(summary);
-  if (aiPriorityBoardCard) {
-    els.aiReplyDeskPanel.appendChild(aiPriorityBoardCard);
-  }
-  const aiScheduleCard = createAiScheduleCard(summary);
-  if (aiScheduleCard) {
-    els.aiReplyDeskPanel.appendChild(aiScheduleCard);
-  }
-  if (focusCandidate && drafts.length) {
-    els.aiReplyDeskPanel.appendChild(createDraftWorkbench(drafts, focusCandidate, recommendedSlot, summary.attributionSummary || null));
-    drafts.forEach((draft, index) => els.aiReplyDeskPanel.appendChild(createDraftCard(draft, index, index === uiState.selectedDraftIndex)));
-  }
-  items.forEach((item, index) => els.aiReplyDeskPanel.appendChild(createAiRoadmapCard(item, index)));
+
+  els.aiReplyDeskPanel.appendChild(createAgentRuntimeSummaryCard({
+    ...summary,
+    focusContext,
+    priorityCount: priorityCandidates.length
+  }));
+
+  priorityCandidates.forEach((candidate, index) => {
+    const item = buildDeskCandidateItem(candidate, index, {
+      isFocusedChoice: normalizeDeskUrl(candidate?.url) === normalizeDeskUrl(focusCandidate?.url)
+    });
+    appendAgentCandidateActions(item, candidate);
+    els.aiReplyDeskPanel.appendChild(item);
+  });
 }
 
 function renderDeskPanel() {
@@ -8244,7 +8698,7 @@ function renderDeskPanel() {
   const secondaryAttributionSummary = secondaryCandidate && typeof AttributionCore?.summarizeCandidateAttribution === "function"
     ? AttributionCore.summarizeCandidateAttribution(secondaryCandidate, uiState.attributionSignalModel)
     : null;
-  const priorityCandidates = candidates.slice(0, 3);
+  const priorityCandidates = candidates.slice(0, PRIORITY_CANDIDATE_LIMIT);
   const priorityAttributionSummaries = priorityCandidates.map((candidate) => (
     candidate && typeof AttributionCore?.summarizeCandidateAttribution === "function"
       ? AttributionCore.summarizeCandidateAttribution(candidate, uiState.attributionSignalModel)
@@ -8266,7 +8720,7 @@ function renderDeskPanel() {
   const pickupCounts = growthSnapshot?.pickupCounts || getPickupLifecycleCounts(pickupItems);
   const reviewCounts = growthSnapshot?.reviewCounts || getPickupReviewCounts(pickupItems, now);
   const growthLift = Math.max(0, Math.round(
-    actionableCandidates.slice(0, 3).reduce((sum, candidate) => sum + (Number(candidate.score) || 0), 0) * 0.42 +
+    actionableCandidates.slice(0, PRIORITY_CANDIDATE_LIMIT).reduce((sum, candidate) => sum + (Number(candidate.score) || 0), 0) * 0.42 +
     repliesToday * 12 +
     queueCounts.live * 8 +
     queueCounts.shipped * 16
@@ -8275,7 +8729,7 @@ function renderDeskPanel() {
   setDeskSubTabCount(els.deskSubTabFocusCount, visibleCandidates.length);
   setDeskSubTabCount(els.deskSubTabDraftCount, drafts.length);
   setDeskSubTabCount(els.deskSubTabGrowthCount, performanceSnapshot.replies);
-  setDeskSubTabCount(els.deskSubTabAiCount, drafts.length);
+  setDeskSubTabCount(els.deskSubTabAiCount, priorityCandidates.length);
   setDeskSubTabCount(els.deskSubTabQueueCount, queueCounts.live);
   setDeskSubTabCount(els.deskSubTabContactsCount, relationships.length);
   setDeskSubTabCount(els.deskSubTabFeedbackCount, replyEntries.length);
@@ -8592,10 +9046,10 @@ function renderDeskPanel() {
     els.candidateDeskList.appendChild(empty);
   } else {
     const previewCandidates = typeof FocusCore?.buildCandidatePreviewItems === "function"
-      ? FocusCore.buildCandidatePreviewItems(visibleCandidates, focusCandidate, { limit: 3 })
+      ? FocusCore.buildCandidatePreviewItems(visibleCandidates, focusCandidate, { limit: CANDIDATE_PREVIEW_LIMIT })
       : visibleCandidates
           .filter((candidate) => candidate.url !== focusCandidate?.url)
-          .slice(0, 3);
+          .slice(0, CANDIDATE_PREVIEW_LIMIT);
     if (!previewCandidates.length) {
       const empty = document.createElement('p');
       empty.className = 'emptyState';
@@ -8967,6 +9421,106 @@ function flashStatus(text) {
   }, 2200);
 }
 
+function normalizeReplyHandoffReasonCode(response = {}) {
+  const explicit = String(response?.reasonCode || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  switch (String(response?.reason || "").trim()) {
+    case "already-replied":
+      return "already-replied";
+    case "score-below-agent-send-floor":
+    case "value-below-send-floor":
+      return "value-below-send-floor";
+    case "score-degraded-below-average":
+    case "value-dropped-on-open":
+      return "value-dropped-on-open";
+    case "article-url-conflict":
+    case "tweet-id-conflict":
+    case "thread-identity-conflict":
+      return "thread-identity-conflict";
+    case "send-failed":
+    case "outcome-unverified":
+      return "send-not-verified";
+    default:
+      return "context-not-locked";
+  }
+}
+
+function getReplyHandoffReasonLabel(response = {}) {
+  switch (normalizeReplyHandoffReasonCode(response)) {
+    case "already-replied":
+      return localize({
+        "zh-Hans": "已回复过",
+        "zh-Hant": "已回覆過",
+        en: "Already replied",
+        ja: "すでに返信済み",
+        ko: "이미 답글을 보냈습니다"
+      });
+    case "thread-identity-conflict":
+      return localize({
+        "zh-Hans": "主帖识别冲突",
+        "zh-Hant": "主貼識別衝突",
+        en: "Main post identity conflict",
+        ja: "主投稿の識別が衝突しました",
+        ko: "원문 식별이 충돌했습니다"
+      });
+    case "send-not-verified":
+      return localize({
+        "zh-Hans": "发送后未验证到",
+        "zh-Hant": "送出後未驗證到",
+        en: "Send outcome was not verified",
+        ja: "送信結果を確認できませんでした",
+        ko: "발송 결과를 확인하지 못했습니다"
+      });
+    case "value-dropped-on-open":
+      return localize({
+        "zh-Hans": "打开后价值已下降",
+        "zh-Hant": "打開後價值已下降",
+        en: "Value dropped after opening the post",
+        ja: "投稿を開いた後に価値が下がりました",
+        ko: "게시물을 연 뒤 가치가 낮아졌습니다"
+      });
+    case "value-below-send-floor":
+      return localize({
+        "zh-Hans": "低于自动发送线",
+        "zh-Hant": "低於自動發送線",
+        en: "Below auto-send floor",
+        ja: "自動送信ライン未満",
+        ko: "자동 발송 기준 미달"
+      });
+    default:
+      return String(response?.reasonLabel || "").trim() || localize({
+        "zh-Hans": "上下文未锁定",
+        "zh-Hant": "上下文未鎖定",
+        en: "Context not locked yet",
+        ja: "コンテキストがまだ固定されていません",
+        ko: "컨텍스트가 아직 잠기지 않았습니다"
+      });
+  }
+}
+
+function formatReplyHandoffStatus(response = {}, fallbackText = "") {
+  const label = getReplyHandoffReasonLabel(response);
+  const retryCount = Math.max(0, Math.floor(Number(response?.retryCount) || 0));
+  const retryText = retryCount
+    ? localize({
+        "zh-Hans": `已自动重试 ${retryCount} 次`,
+        "zh-Hant": `已自動重試 ${retryCount} 次`,
+        en: `Auto-retried ${retryCount} time(s)`,
+        ja: `${retryCount} 回自動リトライ済み`,
+        ko: `${retryCount}회 자동 재시도함`
+      })
+    : "";
+  return [label, retryText].filter(Boolean).join(" · ") || fallbackText;
+}
+
+function isTerminalReplyHandoffFailure(response = {}) {
+  const reasonCode = normalizeReplyHandoffReasonCode(response);
+  return reasonCode === "already-replied" || reasonCode === "thread-identity-conflict" || reasonCode === "send-not-verified" || reasonCode === "value-dropped-on-open" || reasonCode === "value-below-send-floor";
+}
+
 async function openUrl(url) {
   if (!url) {
     return;
@@ -9162,12 +9716,14 @@ async function capturePickupForUrl(url) {
     baselineViews: Number(replyEntry?.baselineViews || pickupEntry?.baselineViews || 0)
   };
   const startedAt = Date.now();
+  let lastResponse = null;
 
   while (Date.now() - startedAt <= 18000) {
     const response = await sendTabMessage(tab.id, {
       type: "X_REPLY_SCORER_CAPTURE_PICKUP_SNAPSHOT",
       payload
     });
+    lastResponse = response || null;
 
     if (response?.ok && response.snapshot) {
       const record = await sendMessage({
@@ -9187,18 +9743,20 @@ async function capturePickupForUrl(url) {
 
     if (response?.reason === "navigating") {
       await waitForTargetTabReady(tab.id, targetUrl, 12000);
+    } else if (isTerminalReplyHandoffFailure(response)) {
+      break;
     } else {
       await wait(340);
     }
   }
 
-  flashStatus(localize({
+  flashStatus(formatReplyHandoffStatus(lastResponse, localize({
     "zh-Hans": "暂时没能拿到 pickup 快照",
     "zh-Hant": "暫時沒能拿到 pickup 快照",
     en: "Could not capture a pickup snapshot yet",
     ja: "pickup スナップショットをまだ取得できませんでした",
     ko: "pickup 스냅샷을 아직 가져오지 못했습니다"
-  }));
+  })));
   return false;
 }
 
@@ -9226,12 +9784,14 @@ async function handoffQueueCompose(url, options = {}) {
   await waitForTargetTabReady(tab.id, targetUrl, 15000);
   const payload = { url: targetUrl, draft: draftText };
   const startedAt = Date.now();
+  let lastResponse = null;
 
   while (Date.now() - startedAt <= 18000) {
     const response = await sendTabMessage(tab.id, {
       type: "X_REPLY_SCORER_OPEN_QUEUE_COMPOSER",
       payload
     });
+    lastResponse = response || null;
 
     if (response?.ok && response.composerReady) {
       await trackPublishWatch(targetUrl, {
@@ -9273,9 +9833,22 @@ async function handoffQueueCompose(url, options = {}) {
 
     if (response?.reason === "navigating") {
       await waitForTargetTabReady(tab.id, targetUrl, 12000);
+    } else if (isTerminalReplyHandoffFailure(response)) {
+      break;
     } else {
       await wait(340);
     }
+  }
+
+  if (isTerminalReplyHandoffFailure(lastResponse)) {
+    flashStatus(formatReplyHandoffStatus(lastResponse, localize({
+      "zh-Hans": "回复框没能自动拉起",
+      "zh-Hant": "回覆框沒能自動拉起",
+      en: "The reply composer did not open",
+      ja: "返信欄を開けませんでした",
+      ko: "답글 창을 열지 못했습니다"
+    })));
+    return false;
   }
 
   await trackPublishWatch(targetUrl, {
@@ -9287,21 +9860,23 @@ async function handoffQueueCompose(url, options = {}) {
     draft: draftText
   });
   await refreshCurrentPageStatus().catch(() => null);
-  flashStatus(copied
-    ? localize({
+  flashStatus(lastResponse?.reasonCode
+    ? formatReplyHandoffStatus(lastResponse)
+    : (copied
+      ? localize({
         "zh-Hans": "已切到原帖，草稿已复制；回复框可手动补开",
         "zh-Hant": "已切到原貼，草稿已複製；回覆框可手動補開",
         en: "The post is open and the draft is copied. Open the composer manually if needed",
         ja: "元投稿は開いています。必要なら手動で返信欄を開いてください",
         ko: "원문과 초안은 준비됐습니다. 필요하면 답글 창을 수동으로 열어 주세요"
       })
-    : localize({
+      : localize({
         "zh-Hans": "已切到原帖，但回复框还没自动拉起",
         "zh-Hant": "已切到原貼，但回覆框還沒自動拉起",
         en: "The post is open, but the composer did not open automatically",
         ja: "元投稿は開きましたが、返信欄は自動で開きませんでした",
         ko: "원문은 열었지만 답글 창은 자동으로 열리지 않았습니다"
-      }));
+      })));
   return false;
 }
 
@@ -9615,6 +10190,49 @@ async function handleDeskAction(action, url = "") {
       if (await copyTextToClipboard(url)) {
         flashStatus(getTexts().draftCopiedStatus);
       }
+      return;
+    case "copy-agent-context": {
+      const context = uiState.agentContextByUrl.get(normalizeDeskUrl(url));
+      const payload = context ? JSON.stringify(context, null, 2) : "";
+      if (payload && await copyTextToClipboard(payload)) {
+        flashStatus(localize({
+          "zh-Hans": "已复制候选上下文包",
+          "zh-Hant": "已複製候選上下文包",
+          en: "Candidate context copied",
+          ja: "候補文脈パックをコピーしました",
+          ko: "후보 컨텍스트 팩을 복사했습니다"
+        }));
+      }
+      return;
+    }
+    case "copy-agent-inbox": {
+      const payload = uiState.lastAgentInboxPayload ? JSON.stringify(uiState.lastAgentInboxPayload, null, 2) : "";
+      if (payload && await copyTextToClipboard(payload)) {
+        flashStatus(localize({
+          "zh-Hans": "已复制 AI top shortlist",
+          "zh-Hant": "已複製 AI top shortlist",
+          en: "AI shortlist copied",
+          ja: "AI shortlist をコピーしました",
+          ko: "AI shortlist를 복사했습니다"
+        }));
+      }
+      return;
+    }
+    case "copy-agent-schema": {
+      const payload = uiState.lastAgentSchemaPayload ? JSON.stringify(uiState.lastAgentSchemaPayload, null, 2) : "";
+      if (payload && await copyTextToClipboard(payload)) {
+        flashStatus(localize({
+          "zh-Hans": "已复制输出 schema",
+          "zh-Hant": "已複製輸出 schema",
+          en: "Output schema copied",
+          ja: "出力 schema をコピーしました",
+          ko: "출력 schema를 복사했습니다"
+        }));
+      }
+      return;
+    }
+    case "open-agent-composer":
+      await handoffQueueCompose(url, { draftText: "" });
       return;
     case "copy-composer": {
       const textarea = getActiveDraftComposerTextarea();

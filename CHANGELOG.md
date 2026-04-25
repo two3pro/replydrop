@@ -1,5 +1,385 @@
 # Changelog
 
+## 0.2.202
+
+- 补 p2.200 Windows 压测漏网：英文 / 日文 X payout、广告收益、入金 / 振込 / 寄付类收益炫耀会被压到自动发送线以下
+- 加重 BNB meme wealth、ETH trenches、degen alpha 这类币圈财富叙事 / 产品短 thesis 扣分
+- 大号低信息争议问句不再吃流速加分，避免靠回复量冲进自动发送线
+- 修复 `refreshRecommendations()` 后读取候选偶发 `replydrop-api-timeout`：内容脚本现在会保留本页候选快照，background 短时无响应时直接用本地快照返回 inbox
+- `getCandidates()` / `getExecutorInbox()` 不再因为扩展后台状态同步卡住而拖死 agent 流程
+- 执行器新增 `refreshRecommendations()`，无合格推荐时必须刷新 / 滚动重扫至少 3 轮，不能直接报告空跑
+- `getExecutorInbox()` 返回 `emptyInboxRecovery`，明确告诉 OpenClaw / Hermes 空候选时下一步要重扫
+- 补 p2.199 Windows 压测漏网：韩文 X 收益 / 周薪 / 蓝 V 收益、1000 replies 互动量炫耀、辱骂 AI 奖励挑战会被压到自动发送线以下
+
+## 0.2.199
+
+- 收紧流速加分入口：低信息短帖、互关涨粉、展示量炫耀、协议 / 币圈增长叙事不再吃 `Traffic velocity` / `Acceleration window` 加成
+- 加重 `5000+ followers / say Hi`、`919+ followers / say Want`、`Grow your page`、`reply hello / follow you` 这类 follower-exchange bait 扣分
+- 新增 `Low-info short post` 与 `Growth flex bait` 惩罚，补 p2.198 flow16 压测暴露的短句鸡汤、展示量炫耀和 BNB holder-count 漏网
+
+## 0.2.198
+
+- 内置 X GraphQL 流量监控层，候选帖会补充 `views/hour`、回复流速、互动率、收藏 / 转发信号
+- 评分新增 `Traffic velocity` 加分和 `One-way traffic` 扣分，只奖励仍有回复空间的升温帖，压低高浏览但低对话的假机会
+- AI / executor 候选上下文新增 `post.traffic`，可直接读取流速阶段和实时流量指标
+
+## 0.2.197
+
+- 给 AI / executor 链路新增单目标时间策略：90 秒为正常目标，120 秒为硬截止
+- `getExecutorCapabilities()` / `getAgentInbox()` / 候选上下文现在会暴露 `executionPolicy`，agent 可把 `targetStartedAt` / `targetDeadlineAt` 原样传回执行入口
+- `openComposer()` / `submitReply()` / `runExecutorAction()` 统一检查同一目标耗时，超过 120 秒返回 `target-timeout` 且 `shouldSkipTarget=true`
+- 超时目标会在当前页面会话内短期封锁，防止 agent 在同一帖反复重试；桥接超时放宽到 125 秒，优先返回插件内结构化失败而不是空结果
+
+## 0.2.196
+
+- 补 p2.195 Windows 压测漏网：体育电台 / 事实聚合 / Whale Alert / TrollFootball 这类广播号继续加重降权
+- 产品 beta / early access / waitlist CTA、`100x / 1000x` 币圈暴富话术、会议冲突八卦新增识别，避免靠热度冲进自动发送线
+- 低信息媒体帖如果缺有效 alt / OCR 语义，会新增 `Needs vision context` 扣分，不再单靠视频/图片热度拿高分
+- 页面桥接把 `runExecutorAction()` 超时放宽到 45 秒，并把 open/submit/action 的桥接异常转成结构化失败，减少偶发 `empty-result`
+
+## 0.2.195
+
+- 补 p2.193 Windows 压测漏网：韩文 / 日文 follow bait、`reply here / active followers / payout` 这类涨粉变现诱导会被压到自动发送线以下
+- 加重官方服务号、游戏品牌、BRICS / 政治新闻、交易所 / Web3 活动 / 做市宣传的广播型扣分
+- 新增无匹配语言候选的硬降权，土耳其语 / 阿拉伯语等未支持语言不再靠热度进入自动发送线
+- 补低质量擦边 AI 图片 prompt / token 叙事的风险扣分回归测试
+
+## 0.2.194
+
+- 修复引用帖 / 嵌套结构下可能点错回复按钮的问题：`openComposer()` 现在只点击当前主帖 article 自己的可见回复按钮
+- 如果误开普通发帖框触发 `generic-composer-opened`，会先关闭普通框并自动重试一次主帖回复入口
+- 保留 p2.193 的推荐层修复：继续压低增长变现诱导、协议 / 产品广播、币种清单和空文本候选
+
+## 0.2.193
+
+- 补 p2.192 Windows 压测漏网：`X payday / monetising / say hi boost`、`0 到 10k 粉丝 / 百万曝光复盘` 这类增长变现诱导会被压到自动发送线以下
+- 新增协议 / 产品 / 币种宣传降权：`Arkham / OpenCode / Protocol FX / TVL / buyback / token list` 这类广播型候选不再靠热度冲高分
+- 空文本且无媒体语义的候选新增硬降权，避免 DOM 抽取空壳进入推荐队列
+
+## 0.2.192
+
+- 继续补 p2.191 压测漏网：`@NBA` 这类官方体育品牌 / 广播号会被官方账号与广播账号双重降权
+- 增长诱导新增混淆字符归一化，`gr0wing / f0ll0w` 这类写法不再绕过 follow-train 识别
+- 点赞收藏诱导、死亡消息、性化八卦类线程新增风险扣分，并把低于自动发送线的复验统一返回 `value-below-send-floor`
+
+## 0.2.191
+
+- 继续补 p2.190 压测漏网：中文推荐关注清单、评论区集合、蓝V 增长、`write help`、持币裂变等增长诱导会被压到自动发送线以下
+- 金标 / 官方品牌 / 政客账号新增 handle、名称、文本语义兜底识别，并加重广播型账号和政客内容扣分
+- 文本归一化支持数学体字符和弯引号，避免 `𝕏`、`Let’s`、`“help”` 这类写法绕过规则
+
+## 0.2.190
+
+- 继续压低互关 / 互粉 / 涨粉 / 互推 / repost bait：新增 `mutuals / follow me / repost this / drop handle / 互关互粉 / 涨粉 / 帮转` 等识别
+- `Follow-train bait` 惩罚从 `24` 提到 `38`，并加重它对触达概率和综合惩罚项的影响，避免这类帖靠回复数挤进自动发送线
+- 新增 scorer 回归测试，覆盖英文 mutual/repost bait 和中文互关涨粉 bait
+
+## 0.2.189
+
+- 抬高 agent 自动发送门槛：低于 `54` 分或低于实时平均线的目标会在 `openComposer()` 阶段直接返回跳过，不再进入发送
+- 新增 `value-below-send-floor` 阻断原因，避免 runner 出现空结果或把低价值帖误当成可发送目标
+- 继续加重金标 / 官方 / 政客 / 广播型账号的风险扣分，减少高热度但低互动概率的目标进入队列
+
+## 0.2.188
+
+- 修复 `content.js` 非中文发送路径里的 `isChinese is not defined` 异常：自动点赞判定现在改为走文件内自带的 `isChineseText / isJapaneseText / isKoreanText` helper，不再依赖外部全局
+
+## 0.2.187
+
+- `submitReply()` 现在会先检查最近一次 `openComposer()` 的硬失败态；如果上一跳已经是 `value-dropped-on-open / thread-identity-conflict / reply-target-lost`，就直接原样透传，不再报二次假错
+- `buildReplyComposerContext()` 拆出了 `pageLocked / composerLocked`，`queryReplyComposer(requireLocked: true)` 和 `submitReply()` 现在只认真正的 `composerLocked`
+- `waitForReplySubmitReady()` 失败时会带上 `editorFound / sendButtonFound / buttonDisabled / draftReady / composerLocked / pageLocked`，方便一眼分辨到底卡在哪一步
+
+## 0.2.186
+
+- 修复状态页主帖识别串读：`readTweetUrl()` 现在优先按作者句柄认本帖的 status 链接，不再被引用帖 / 卡片里的别的 status 链接带偏
+- `findPrimaryStatusArticle()` 现在会优先锁定当前目标帖的 URL / tweetId，避免实时复核时把别的可见帖子误当成主帖去重打分
+- `openComposer()` 和 `submitReply()` 都新增发送就绪等待：回复文稿写入后会继续等发送按钮真正变为可点，不再过早落到 `send-button-disabled-but-target-locked`
+
+## 0.2.185
+
+- 修复 `p2.184` 把合法 `compose/post` 回复器误判成 `reply-target-lost` 的问题：现在只要回复器仍是当前目标的 pending reply，且出现 `Replying to` / `Reply` 证据，就不会再被硬拦
+- `reply-target-lost` 现在只在确实出现目标句柄冲突时触发，不再把“有回复上下文但没有目标帖 URL”的合法模式误杀
+
+## 0.2.184
+
+- 修紧 Reply composer 的“成功判定”：`openComposer()` 不再只看到 editor 就报成功，现在必须确认回复上下文真的锁到目标帖，避免普通 `compose/post` 假阳性
+- `runExecutorAction({ action: "reply" })` 在 `open -> submit` 中间增加 settle 检查，减少刚开框就立刻提交导致的 `send-disabled / context-not-locked`
+- `submitReply()` 与发送按钮识别一起收紧到 reply-only 上下文，并把失败拆细成 `reply-context-missing / generic-composer-opened / reply-target-lost / send-button-disabled-but-target-locked`
+
+## 0.2.183
+
+- ReplyDrop 开始把页面执行入口正式收成通用 `executor` 通道：新增 `window.ReplyDropExecutor`，旧 `window.ReplyDropAPI` 继续保留为兼容别名
+- 新增 `getCapabilities()` / `getExecutorInbox()` / `getExecutorContext()` / `getExecutorSchema()` / `runExecutorAction()`，让 Codex / OpenClaw / Hermes / Claude 可以走同一套动作协议
+- `openComposer()` 现在也支持直接传 `tweetId`，外部执行器不必再自己拼目标帖 URL；`runExecutorAction({ action: "reply" })` 则可直接串起开框和提交
+
+## 0.2.182
+
+- 继续压低英文蓝 V 里常见的互关诱饵帖：新增 `Follow-train bait` 识别，像 `say hello / drop hey / follow back / gain followers` 这类“骗评论换关注”的内容即使表面回复多也会被明显降分
+- 这类帖同时不再吃到 `mutual / pinned / follow-up` 的关系加成，popup 排序也同步降级，避免因为互关状态又被重新抬回高分区
+
+## 0.2.181
+
+- 继续压低“看起来热但你回进去只会被埋”的目标：评分新增 `Verified pile-on risk`，会对蓝 V / 金 V / 官方号里那种高赞高曝光但讨论密度偏浅的高楼层再补一层惩罚
+- 生日祝福 / 纯社交庆生帖新增专门降权，不再因为短时热度和回复数把这类低转化互动帖顶进高分候选
+- 互关 / 关系加成不再固定硬抬：只有已经被验证过会回流的关系才保留高加成；蓝 V / 金 V / 拥挤线程里的 `mutual` 会明显收缩，popup 排序也不再让关系状态压过真实分数和车道
+- 机会加成后的 `finalScore / peakFinalScore` 同步回写，避免候选预览、二次复核和工作台排序前后读到两套分
+
+## 0.2.180
+
+- 修复首页“角标已经出来，但 `ReplyDropAPI.getCandidates()` 还空着”的时序错位：page API 现在会把后台 `recentCandidates` 和当前页面 DOM 上已落好的候选一起合并，不再只盯慢一拍的后台缓存
+- 这次不是只修 `getCandidates()` 表面返回；`getState()`、`getAgentInbox()`、`getCandidateContext()`、`addToQueue()`、`markShipped()`、`skipCandidate()` 也统一改成走同一份合并候选视图，避免 AI 先看见候选、下一步动作却又说 `candidate-not-found`
+- 新增 `pageCandidateSync` 调试字段，能看出当前 page API 到底用了多少后台候选、多少 DOM 候选，以及这一拍是否正在扫描中
+
+## 0.2.179
+
+- 候选现在会保留同一条帖在首页预览阶段见过的峰值分数与来源面；进到帖子主页后，`getCandidateContext()` 会附带 `recheck`，明确告诉 AI 这条机会是稳定、降级还是该直接跳过
+- `openComposer()` 新增打开后二次复核：如果主页实时分已经跌到当前平均线以下，就直接返回 `value-dropped-on-open / 打开后价值已下降`，不再继续拉起回复框让 agent 白费一次动作
+- popup 侧同步接住这个新阻断原因，并保留 `peakFinalScore / peakSourceSurface / peakObservedAt`，方便前台后续继续把“预览高、落地低”的价值变化展示出来
+
+## 0.2.178
+
+- 评分继续压低政客 / 公职人物 / 竞选型徽标账号：新增 `Political figure risk` 惩罚，优先识别作者 handle / 名称里的公职头衔与竞选身份，再结合单向传播结构一起降分
+- 这层不是粗暴打死所有政治话题；普通人在聊政策、新闻或选举不会直接被这一条误杀，重点压的是“乱评论风险高、但作者基本不会接你”的政治人物账号
+
+## 0.2.177
+
+- 继续压低金标 / 机构型认证账号：内容脚本现在会区分 `gold / government / blue`，评分器新增 `Gold or official account` 惩罚，金标品牌号和官方号不再轻易压过更容易接住互动的真人帖子
+- `submitReply(options)` 新增 agent 专用 `autoLikeIfChinese`，发送成功后会只在中文主帖上补点赞，并把 `likeAttempted / likePerformed / likeState` 一起回给自动化
+- `AI 执行台` 的 shortlist 候选卡改成独立收口布局，不再让右侧票根 stub 挤压正文和操作按钮
+
+## 0.2.176
+
+- `window.ReplyDropAPI` 新增 `getAgentInbox(options)`、`getCandidateContext(tweetId, options)`、`getReplySchema()`，ReplyDrop 开始直接给 AI agent 输出 top shortlist、单条候选上下文包和标准输出 schema
+- popup 的 `AI 回复` 面板改成真正的 `AI 执行台`：前台不再展示模板草稿逻辑，而是展示 top 6 shortlist、当前候选上下文复制、inbox 复制、schema 复制和直接打开回复框
+- 原来的草稿层降级成 `规则草稿台`，继续作为人工 / 开源 fallback 保留，不再伪装成 AI 最终文稿
+
+## 0.2.175
+
+- 修复 popup 首页切到仪表盘时的无障碍焦点错误：现在会先释放旧页焦点，再隐藏旧页并把新页设为活动焦点区域，不再在扩展错误页里刷出 `Blocked aria-hidden`
+- 视图切换补上 `inert` 状态，隐藏页不再继续保留可交互焦点，Chrome 的扩展诊断会更干净
+
+## 0.2.174
+
+- `AI 回复` 面板前台收口成正式回复草稿流：不再把内部设计逻辑、路数说明、roadmap 卡直接展示给用户
+- 草稿生成新增前台可见高亮清洗：`Freshness +14`、`Reply room +14` 这类内部评分诊断词不会再混进回复文稿或复制结果
+- 草稿工作台简化为实际动作面板，只保留正式稿查看、复制、直接打开回复框和排期，不再要求先看一整套策略说明
+
+## 0.2.173
+
+- 回复交接页增加一次自动短重试：状态页刚切完时不再第一次轻微抖动就直接判失败，返回结构也会带上 `retried / retryCount`
+- 状态页主帖识别改成优先信 `location.href` 并直接取当前线程主卡片，引用帖里的 `status` 链接不再覆盖主帖判断
+- `openComposer` / pickup 快照 / `submitReply` 现在都会附带更产品化的阻断信息：`reasonCode / reasonLabel` 统一收口到 `上下文未锁定 / 主帖识别冲突 / 已回复过 / 发送后未验证到`
+- popup 侧同步显示这些阻断原因，并在自动重试发生过时直接提示 `已自动重试 x 次`
+
+## 0.2.172
+
+- 评分从单一总分继续往多维判断推进：`scorer.js` 现在会额外产出 `postScore / reachLikelihood / understandingConfidence / authorFit / finalScore`，并把来源页权重接入主评分
+- 新增来源页信号：`For You > Following > Search > Notifications`，不再把不同分发面上的帖子当成同一层机会
+- 候选上报链路真正放宽到 16 条：内容脚本不再只截前 8 条，后台和工作台现在能完整接住 `抓16`
+- 低理解置信度的纯视觉候选会带 `vision_required_but_missing`，不会再进入 actionable 候选列表
+
+## 0.2.171
+
+- 候选池上限从 12 提到 16：现在一次会保留更多首页里已经打过分的帖文，减少刚刷到就被截断的情况
+- `AI回复` 的优先级板、候选预览和增长联动统一扩到前 6 条，不再是表面能看到更多，但内部仍只按前 3 条算
+
+## 0.2.170
+
+- 撤回 `p2.168` 对弱语义媒体帖的直接扣分：图片 / 视频帖现在恢复原本媒体权重，不再因为“正文短、alt 弱”这条规则被额外压分
+- `lowSemanticConfidence` 和候选卡上的 `媒体语义弱` 提示仍然保留，所以现在的策略变成“提醒你这条需要视觉判断”，而不是“先把它打下去”
+- 配合 `p2.169` 新增的 `getMediaBundle(tweetId)`，当前路线明确收成两段：评分层负责把媒体帖保留在候选里，agent 再按需自己去看图 / poster / 首帧
+
+## 0.2.169
+
+- 新增 `window.ReplyDropAPI.getMediaBundle(tweetId)`：不再让 agent 自己在整页 DOM 里猜哪张图、哪个视频属于哪条候选；现在可以直接按 `tweetId` 取回对应帖子的媒体清单
+- 返回内容不是重 OCR / vision 结果，而是稳定媒体引用层：图片 `src`、视频 `poster/src`、`alt`、时长文本、尺寸和当前可见区域都会一起带上，更适合让 agent 自己决定什么时候截图、看图或裁图
+- 这版继续坚持“扩展负责定位媒体，agent 负责理解媒体”这条路线，所以不会在 ReplyDrop 里重复造一套重视觉能力
+
+## 0.2.168
+
+- 纯媒体帖不再只靠 `tweetText` 猜内容：`content.js` 现在会额外读取图片 / 视频附件里可用的 alt / aria 语义，并把这部分一起喂给评分器和候选摘要
+- `scorer.js` 新增 `Media context weak` 惩罚：当一条帖子主要是媒体、正文过短、又没有有效 alt 时，会被标记成低语义置信度并主动降分，避免“看不懂图但分很高”的帖子继续顶到前排
+- 如果媒体帖本身有足够说明文案，或者附件 alt 已经能提供清晰上下文，就不会吃这道惩罚；同时 alt 里的真实语义也会参与主题匹配，候选卡会额外显示 `媒体语义弱` 提示
+
+## 0.2.167
+
+- 评分继续往“更容易接住互动”收：新增 `authorName` 采集，并对“认证 + 机构/广播特征 + 单向播报互动结构”的账号追加 `Broadcast account` 惩罚，减少官方播报号、媒体播报号、品牌公告号继续靠热度顶到前排
+- 这次不是粗暴打压所有金钩；如果认证账号本身更像真人对话、提问或讨论串，惩罚会明显减轻，避免把真正会回你的认证个人号一起错杀
+- README、`AUTOMATION.md`、冒烟文档和商店说明同步补上 `openComposer(payload)` / `submitReply()` 能力，并把过时的“不自动点击发送”表述改成更准确的“不会后台无人值守批量发帖”
+
+## 0.2.166
+
+- 合并 Windows 侧已验证的 composer 修复，把 `window.ReplyDropAPI` 扩展到 `openComposer(payload)` 与 `submitReply()`，不再要求外部自动化自己猜 X 的输入框和发送按钮
+- `content.js` 的 `queryReplyComposer()` 改为优先命中可见的 `[data-testid="tweetTextarea_0"][role="textbox"]`，再回退旧 `contenteditable` 选择器，显著降低命中隐藏层/旧层导致的“重影输入”
+- 新增 `submitReplyDropComposer()`，发送前会优先选择真实可见的 reply submit button，并复用扩展内部的 outcome 监控链路读取 toast 结果，继续沿用 ReplyDrop 自己的回帖闭环而不是回到外部 DOM 注入路线
+
+## 0.2.165
+
+- 把 `机会分` 的字段从时间线角标一路贯通到 `background.js`、`content.js`、`popup.js`，`baseScore / opportunityBoost / relationshipStatus / attributionKind` 不再在状态同步时丢失
+- 工作台候选卡、AI priority board、copilot meta 现在会直接显示 `机会 +x` 和 `基础 x`，测试时能直观看到一条候选是靠真实回复空间上来，还是只靠底层热度撑起来
+- 队列档位判断也改成机会驱动：互关、作者记忆、已验证 handle 这些信号会把中等热度但更容易形成来回互动的帖子提前推到 `现在接 / 今晚看`
+
+## 0.2.164
+
+- 重做 `scorer.js` 的主评分方向，不再把大号热帖的 `views / likes / followers` 当成绝对正反馈，而是明显提高“中等热度但仍有回复空间”的线程分数
+- 新增 `Reply room` / `Author memory` / `Mutual lane` 这类机会信号，并把 `replydrop-attribution-core.js` 接进时间线实时打分，让曾经被作者接住过、或你手动标记成互关/跟进的账号直接抬分
+- 强化广播型大帖的埋帖惩罚：浅回复比、点赞远高于回复、线程已挤爆的帖子会更主动降分，避免候选列表继续被“看起来很火但回进去就沉”的帖子占满
+
+## 0.2.163
+
+- 把票面外壳底边从 `1px` 收口改成 `2px` 深色底边，让底部四个半圆不再踩在一条发灰细线上
+- 同时把 `.ticketBottomCut` 的透明度提回 `1`，避免底边和半圆交界处再出现一层发白的灰边
+- 这版按扩展运行态 popup 重新放大检查底部四个半圆后发版，用 `p2.163` 替换掉底边仍有细缝感的 `p2.162`
+
+## 0.2.162
+
+- 把整张票面外壳 `.ticketSheet` 左右两侧那条 `1px` 浅棕边框改成和半圆缺口同色的深色边，先把黑边与半圆之间那根亮线本体消掉
+- 首页中段白卡 `ticketSection` 的左右伪元素补上真正生效的 `!important` 外移，避免看起来黑边已经对上、半圆却还差一列像素
+- 这版按扩展运行态 popup 重新抓图复查，确认 `HOME ENTRY`、中段白卡、footer 三组侧边切口都不再夹着亮色分界线后，用 `p2.162` 替换掉仍有细缝的 `p2.161`
+
+## 0.2.161
+
+- 按运行态截图量出了上下两组与中间白卡之间正好差 `15px`
+- 所以上面 `HOME ENTRY` 那组从 `16px` 推到 `1px`，footer 那组从 `0px` 推到 `-15px`
+- 这次不是凭眼睛猜，而是把三组直断面都量到同一条线上后才发版，用 `p2.161` 替换仍未贴齐的 `p2.160`
+
+## 0.2.160
+
+- 撤销了上一轮把中间白卡去对齐上下两组的错误方向
+- 保持中间白卡不动，只把 `HOME ENTRY` 与 footer `RD-HOME-ENTRY` 两组半圆往黑边方向推回去
+- 具体把首页目标切口横向基线改成 `16px / 0px` 组合，让上下两组去贴中间那条正确黑边线，再按运行态 popup 复查后发版
+
+## 0.2.159
+
+- 把首页白卡 `ticketSection` 的左右边界从 `16px` 收到和上下切口一致的 `18px`
+- 因此 `HOME ENTRY`、中间白卡侧切口、footer `RD-HOME-ENTRY` 三组半圆的直断面终于落到同一条竖线上
+- 这次按扩展运行态 popup 复查后再发版，用 `p2.159` 替换纵向直断面仍没对齐的 `p2.158`
+
+## 0.2.158
+
+- 把 `HOME ENTRY` 和 footer `RD-HOME-ENTRY` 的四个侧边切口从会被容器裁掉的 `background` 画法改回真正可跨线的独立半圆
+- 因此这四个目标切口不再显示成贴在线下面的 `1/4` 圆，而会真正以半圆方式跨过粗虚线和 footer 顶边
+- 这次不只看 `file://` 源码图，也重新抓了 `chrome-extension://.../popup.html` 的运行态截图后才发版，用 `p2.158` 替换判断失误的 `p2.157`
+
+## 0.2.157
+
+- 把 `HOME ENTRY` 左右半圆从最外侧黑壳收回，直边重新贴回票面内部的黑黄分界线
+- 把 footer `RD-HOME-ENTRY` 左右半圆也收回到同一条黑黄分界线，同时继续对准 footer 顶边
+- 重新检查右侧 `Admit One` sidecar 上下半圆后才重新打包，用 `p2.157` 正式替换掉几何方向错误的 `p2.156`
+
+## 0.2.156
+
+- 你标红叉的四个侧边半圆继续外推，这次不再贴在黄底内部，而是直接贴到票面最外侧黑边
+- `HOME ENTRY` 左右半圆仍对着上方粗虚线，`RD-HOME-ENTRY` 左右半圆仍对着 footer 顶边，只修横向落点，不再漂在中间
+- 这版是专门替换掉错误打包的 `p2.155`，不再复用那份错位安装包
+
+## 0.2.155
+
+- 首页 `HOME ENTRY` 与底部 `RD-HOME-ENTRY` 的四个目标半圆改为直接跟票面黑黄分界线绑定，不再混入整张票壳的旧侧边切口
+- footer 中间那颗误导视线的旧黑点来源已移除，顶部粗虚线和底部顶边现在各自只保留左右一对真半圆
+- 这次按宽截图自检把右侧也拍全后再打包，避免再出现“源码看着改了、实际右边没进图”的误判
+
+## 0.2.154
+
+- `HOME ENTRY` 两侧半圆不再贴在 divider 容器的外边缘，而是直接对齐票面的 `18px` 黑黄分界线
+- 底部 `RD-HOME-ENTRY` 两侧半圆按 footer 的真实缩进重新补到外缘边界，不再看起来缩在黄底里面
+- 这次是针对你指出的那四个半圆做的定点修正，不再只是继续叠新的装饰层
+
+## 0.2.153
+
+- 把票根半圆修正正式收口成一套几何规则，`HOME ENTRY` / `Admit One` / 底部裙边不再各走各的旧样式
+- `HOME ENTRY` 现在由单条粗虚线和两侧真半圆共同控制，圆心不再漂回下方细线
+- `Admit One` 与底部裙边半圆继续锁在黑黄分界线上，底部保留左右各两枚、圆弧朝内的票根切口
+
+## 0.2.152
+
+- `HOME ENTRY` 这组半圆和虚线不再用 `50%` 居中定位
+- 现在半圆圆心与上方那根更粗的虚线绑定到同一条固定轴线上，不会再对到下方细线
+
+## 0.2.151
+
+- `RD-HOME-ENTRY` 这对底部左右半圆不再沿用 footer 旧的 `18px/22px` 内缩
+- 现在直接跟上面白卡侧边半圆共用 `16px` 基准线，避免上下切口错开
+
+## 0.2.150
+
+- `RD-HOME-ENTRY` 页脚区域不再沿用旧的 `22px` 内缩，整段 footer 现在直接对齐黑黄分界线
+- 因此这一区域左右黑色半圆的直边也会落在同一条黑黄分界线上，而不是继续卡在票面内部
+
+## 0.2.149
+
+- 首页票根左侧长竖线与 `Admit One` 票根上下半圆整体左移，直边贴到黑黄分界线
+- `Home Entry` 左右外侧半圆、仪表盘白卡左右外侧半圆、底部 `RD-HOME-ENTRY` 左右半圆全部收口到外缘黑边
+- `Gate D01` 中间那对多余半圆已移除，只保留外侧票根切口
+
+## 0.2.148
+
+- 所有黑色半圆切口进一步统一到和底部同一规格
+- 首页上部分界线、工作台侧切口、底部侧切口现在都按同一半径和同一贴边方式收口
+
+## 0.2.147
+
+- 把票根切口从“混合了圆点/渐变假切口”重新收回真正的半圆几何
+- 工作台卡片侧边、首页底部侧边、头部侧票根切口都统一成同一套黑色半圆
+
+## 0.2.146
+
+- 面板里此前新增的黑色/灰色圆点装饰统一改成黑色半圆切口
+- 半圆统一为直边朝外、圆弧朝内，并贴齐各自所在的黑黄分界线或卡片边界
+
+## 0.2.145
+
+- 页内左下角已回复小水滴的勾号重新加深并改成更清晰的 `✓`
+- 已回复液滴芯也稍微降亮，避免勾号再次被玻璃高光吃掉
+
+## 0.2.144
+
+- 首页头部左右黑边改成真正向下延伸的独立竖线
+- `HOME ENTRY` 两端黑点从中线挪到上方票面分界线端点
+- 首页底边补成 5 个半圆切口，同时左右侧边也补上内向半圆切口
+
+## 0.2.143
+
+- 底部票根切边翻转成了圆弧朝上、直边在下
+- 同时把对应虚线一起下压到黑黄分界线，底边关系更贴近真实票根
+
+## 0.2.142
+
+- 首页 `HOME ENTRY` 分界线两端不再使用黑色票根切边，
+  改成对齐虚线轴线的实心黑圆点，边缘关系更干净
+
+## 0.2.141
+
+- 首页 `今日已回复` 统计卡的大数字改成了更深的墨青色，
+  不再跟浅灰蓝底混在一起，读数对比度更稳
+
+## 0.2.140
+
+- 收掉了悬浮水滴顶端那根越界高光：
+  - 给浮动水滴内部高光和滴芯加了轮廓裁切，不再让白色斜线撑出水滴外面
+  - 同时把顶端高光本体缩短并回收到滴尖内部，避免呼吸动画时像长出天线
+
+## 0.2.139
+
+- 把 X 页面里的悬浮水滴往 Gemini 封面图那种质感推进了一轮：
+  - 悬浮按钮从单层平面渐变改成多层玻璃滴芯、水滴外缘冷光和柔和外晕
+  - 候选数计数改成半透明小胶囊，不再直接压在高光最亮的位置上
+  - 帖子旁边的小水滴分数徽章也同步换成更立体的液滴结构，产品语言终于更统一
+- 这轮没有再动交互路径，重点就是把“看起来像临时占位”的旧水滴换掉，
+  让你发 X 介绍 ReplyDrop 时，页面里的真实水滴至少和封面图在同一个审美方向上
+
+## 0.2.138
+
+- 继续推进本地下一版收口，但不打断当前商店送审：
+  - 首页、仪表盘和增长面板的默认说明文案再压短一轮
+  - 工作台子页签现在更像真正的票根分色 stub，而不是普通切换按钮
+  - dashboard preview strip 改成更紧凑的三列 deck snapshot
+  - 面板底部切边改成更低密度的三段半圆切口，层次更干净
+- 同时补了一份专门面向商店复审/答辩的 FAQ：
+  - `docs/store/CHROME-WEB-STORE-REVIEWER-NOTES.md`
+  - 把单一用途、权限理由、本地存储、主机权限、remote code 和“不自动发帖”边界集中成一份说明
+
 ## 0.2.137
 
 - 把 Chrome Web Store 提交材料从“差不多够了”补到“可以照着填表”：

@@ -1,10 +1,12 @@
 (function attachReplyDropFocusCore(globalScope) {
+  const DEFAULT_CANDIDATE_PREVIEW_LIMIT = 6;
+
   function clampNumber(value, fallback = 0) {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
   }
 
-  function normalizePreviewLimit(value, fallback = 3) {
+  function normalizePreviewLimit(value, fallback = DEFAULT_CANDIDATE_PREVIEW_LIMIT) {
     return Math.max(1, Math.floor(clampNumber(value, fallback)));
   }
 
@@ -59,7 +61,7 @@
   }
 
   function buildCandidatePreviewItems(candidates = [], focusCandidate = null, options = {}) {
-    const limit = normalizePreviewLimit(options.limit, 3);
+    const limit = normalizePreviewLimit(options.limit, DEFAULT_CANDIDATE_PREVIEW_LIMIT);
     const focusUrl = String(options.focusUrl || focusCandidate?.url || "").trim();
     const items = (Array.isArray(candidates) ? candidates : [])
       .filter((candidate) => candidate && String(candidate.url || "").trim())

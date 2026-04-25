@@ -113,8 +113,10 @@
         </header>
 
         <div class="ticketDivider ticketDividerHome" aria-hidden="true">
+          <span class="ticketEdgeNotch ticketEdgeNotchLeft" aria-hidden="true"></span>
           <span class="ticketDividerText">Home Entry</span>
           <span class="ticketDividerSerial">RD-H01</span>
+          <span class="ticketEdgeNotch ticketEdgeNotchRight" aria-hidden="true"></span>
         </div>
 
         <section class="ticketSection compact dashboardGateSection" data-ticket-code="H01" data-ticket-label="Dashboard">
@@ -142,6 +144,8 @@
           <span id="statusText">等待同步中…</span>
           <span class="footerMeta">ReplyDrop popup = 首页入口；深入操作已收进仪表盘</span>
           <span class="footerSerial" aria-hidden="true">RD-HOME-ENTRY</span>
+          <span class="footerEdgeNotch footerEdgeNotchLeft" aria-hidden="true"></span>
+          <span class="footerEdgeNotch footerEdgeNotchRight" aria-hidden="true"></span>
         </footer>
         <div class="ticketBottomCut" aria-hidden="true"></div>
       </section>
@@ -190,7 +194,7 @@
               <span class="deskSubTabBadge" id="deskSubTabGrowthCount">0</span>
             </button>
             <button class="deskSubTabButton" data-desk-tab="ai" type="button">
-              <span class="deskSubTabLabel" id="deskSubTabAiLabel">AI回复</span>
+              <span class="deskSubTabLabel" id="deskSubTabAiLabel">AI执行</span>
               <span class="deskSubTabBadge" id="deskSubTabAiCount">0</span>
             </button>
           </div>
@@ -210,8 +214,8 @@
           <section class="ticketSection compact deskSectionGroup" data-desk-section="draft" data-ticket-code="A01" data-ticket-label="Copilot">
             <div class="groupHead groupHeadStack" data-ticket-code="A01" data-ticket-label="Copilot">
               <div class="groupHeadCopy">
-                <h2 id="draftDeskTitle">AI 草稿台</h2>
-                <p class="groupHeadMeta" id="draftDeskMeta">针对当前最佳候选生成可直接改写的回复切入。</p>
+                <h2 id="draftDeskTitle">规则草稿台</h2>
+                <p class="groupHeadMeta" id="draftDeskMeta">给人工 / 开源 fallback 留一层规则稿，不再把它当成 AI 最终回复。</p>
               </div>
             </div>
             <div class="draftDeskPanel" id="draftDeskPanel"></div>
@@ -230,8 +234,8 @@
           <section class="ticketSection compact deskSectionGroup" data-desk-section="ai" data-ticket-code="A03" data-ticket-label="AI Reply">
             <div class="groupHead groupHeadStack" data-ticket-code="A03" data-ticket-label="AI Reply">
               <div class="groupHeadCopy">
-                <h2 id="aiReplyDeskTitle">AI 回复</h2>
-                <p class="groupHeadMeta" id="aiReplyDeskMeta">把未来 AI 草稿、排期和关系记忆集中到一个独立面板。</p>
+                <h2 id="aiReplyDeskTitle">AI 执行台</h2>
+                <p class="groupHeadMeta" id="aiReplyDeskMeta">前台只展示 AI 真正要看的 top 6、单条上下文包和输出 schema，不再展示模板逻辑。</p>
               </div>
             </div>
             <div class="aiReplyDeskPanel" id="aiReplyDeskPanel"></div>

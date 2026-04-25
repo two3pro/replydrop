@@ -4,9 +4,13 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.137`
+当前重置基线版本：`0.2.202`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
+
+ReplyDrop is a local-first browser extension for X. It scores already-visible posts in your timeline, helps you find reply-worthy windows before they close, and keeps reply workflow state on your device.
+
+Open source, free, local-first, and zero data upload by default.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -15,12 +19,17 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
   <a href="./AUTOMATION.md">ReplyDropAPI</a> ·
   <a href="./docs/store/CHROME-WEB-STORE-LISTING.md">商店文案</a> ·
   <a href="./docs/store/CHROME-WEB-STORE-SUBMISSION.md">商店提交</a> ·
+  <a href="./docs/store/CHROME-WEB-STORE-REVIEWER-NOTES.md">审核说明</a> ·
   <a href="./PRIVACY.md">隐私边界</a>
 </p>
 
-| 实时发现 | 本地闭环 | Agent Ready |
+| 实时发现 | 本地闭环 | Executor Ready |
 | --- | --- | --- |
-| 为当前 X 时间线已经可见的帖子实时打分，并用水滴提示高价值回复窗口 | 回复队列、publish watch、pickup 复查都保留在浏览器本地，不依赖外部服务 | `window.ReplyDropAPI` 支持 CDP / AI Agent 直接读候选、排队、标记已发与调试状态 |
+| 为当前 X 时间线已经可见的帖子实时打分，并用水滴提示高价值回复窗口 | 回复队列、publish watch、pickup 复查都保留在浏览器本地，不依赖外部服务 | `window.ReplyDropExecutor` / `window.ReplyDropAPI` 支持 Codex / OpenClaw / Hermes / Claude 直接读 shortlist、上下文、媒体引用、排队、开框、提交与校验 |
+
+| Live discovery | Local workflow | Executor ready |
+| --- | --- | --- |
+| Scores posts already rendered in the current X timeline and marks high-value reply windows with a small waterdrop | Reply queue, publish watch, pickup review, attribution memory, and settings stay in the browser | `window.ReplyDropExecutor` / `window.ReplyDropAPI` lets Codex, OpenClaw, Hermes, Claude, or any local CDP script read shortlist context, open the real composer, submit, verify, and skip safely |
 
 ## 你有竞品没有的
 
@@ -28,15 +37,37 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 - 回复语言加成覆盖中日韩英法西德意葡，匹配你的目标受众
 - 主题关键词加成覆盖 `AI` / `Crypto` / `Creator` 等细分方向，并支持自定义关键词
 - 完整的本地回复队列 + pickup 追踪，发出后自动复查互动结果
-- `window.ReplyDropAPI` 让 AI Agent 可通过 CDP 直接接管候选筛选、排队、追踪全流程
+- `window.ReplyDropExecutor` / `window.ReplyDropAPI` 让外部执行器可通过 CDP 直接接管 shortlist、上下文打包、排队与执行闭环
 
 不收钱，不上传数据，不依赖任何外部服务。
 
+## English Overview
+
+ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is a lightweight browser extension that helps you choose better X replies:
+
+- It scans the visible X / Twitter timeline and scores reply opportunities locally.
+- It favors posts with realistic interaction potential instead of only boosting giant accounts.
+- It tracks reply queue, publish handoff, pickup review, attribution memory, and growth signals in `chrome.storage.local`.
+- It exposes a stable page-world automation API for local agents through `window.ReplyDropExecutor`.
+- It can package post text, scoring details, traffic signals, media references, and route hints for external AI agents.
+- It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
+
+## Latest Updates
+
+Version `0.2.202` includes the current scorer and executor hardening work:
+
+- Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
+- Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
+- Added 90-second target guidance and a 120-second hard timeout for executor flows.
+- Added local fallback snapshots so `getExecutorInbox()` does not fail just because background state sync is late.
+- Tightened scoring against X payout / revenue flex posts, follower bait, big-account low-info controversy questions, political / official broadcasters, crypto wealth narratives, and one-way viral traffic.
+- Restored media competitiveness when the caption or available metadata is meaningful, while still flagging low-confidence image / video posts for external vision handling.
+
 ## 开源快照
 
-- 当前定位：本地优先的 X 回复工作台，不是网页后台，也不是自动发帖机器人
+- 当前定位：本地优先的 X 回复工作台，不是网页后台，也不是无人值守群发机器人
 - 当前重点：稳定、分层 popup、ReplyWisely 风格工作流、电影票根视觉语言
-- 当前边界：不接远端模型，不依赖服务端，不自动点击发送
+- 当前边界：不接远端模型，不依赖服务端，不做后台无人值守批量自动发帖
 
 ## 文档地图
 
@@ -45,6 +76,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 - 想接 Ada / CDP / bot 自动化：看 [AUTOMATION.md](./AUTOMATION.md)
 - 想准备商店上架图标、截图和文案：看 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
 - 想直接照着填写商店提交表单：看 [docs/store/CHROME-WEB-STORE-SUBMISSION.md](./docs/store/CHROME-WEB-STORE-SUBMISSION.md)
+- 想准备审核补充说明或权限答辩：看 [docs/store/CHROME-WEB-STORE-REVIEWER-NOTES.md](./docs/store/CHROME-WEB-STORE-REVIEWER-NOTES.md)
 - 想手工回归 popup / 队列 / pickup：看 [SMOKE-TEST.md](./SMOKE-TEST.md)
 - 想准备公开仓导出或正式打包：看 [OPEN-SOURCE-RELEASE.md](./OPEN-SOURCE-RELEASE.md) 和 [RELEASING.md](./RELEASING.md)
 - 想参与协作：看 [CONTRIBUTING.md](./CONTRIBUTING.md)、[SUPPORT.md](./SUPPORT.md)、[SECURITY.md](./SECURITY.md)
@@ -83,10 +115,10 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 ## 暂时不做什么
 
-- 不做自动发布
+- 不做后台无人值守批量自动发布
 - 不做远端账号系统
 - 不做云端同步
-- 不把 `AI回复` 包装成模型能力
+- 不把 `AI执行台` 包装成内置模型能力
 - 不把插件强行做成重后台或 CMS
 
 ## 当前能力
@@ -109,41 +141,33 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
   - 首页入口和仪表盘头部也继续补上真实的 divider rail、tear-stub cutout 和 serial，票根感不再只停留在配色
   - 首页 poster 现在也补上了侧边 stub、规格栏和更完整的正面票根排印
   - 整张票面的黑边、侧边切口和底部齿口也继续收拢到同一套边缘几何里
-- 工作台当前收敛成 `看板 / AI回复` 两个二级面板
-- `AI回复` 工作台支持：
-  - 一键式 `出手路数`
-  - 基于 `pickup / reviewed / lane / 拥挤度 / score` 的路数推荐
-  - 不同路数的主草稿正文会明显切成不同说话方式，而不是只换几个近义词
-  - 同一路数的 `起手 / 推进 / 收尾` 也会根据窗口与记忆信号自动换包，不再是固定索引
-  - 路数卡会直接展示本次将采用的打法摘要
-  - 路数选中后的最终工作稿会按该 bundle 的节奏收束成更统一的 2-3 句，而不是机械把 3 段说明拼起来
-  - route 生效时第一句会直接改成该打法自己的主句，减少“我会怎么回”这类解释腔
-  - route 生效后的第二句和收尾也会优先改成该打法自己的表达，而不是回退成通用说明句
-  - route 稿里最明显的一批模板化词句已经做了一轮去模板味收敛
-  - route 稿里又做了一轮中文去模板味，把更像“系统在讲打法”的句子继续压回更自然的回复口吻
-  - route 推荐现在会区分“真的被接住的记忆”和“只是复查过但还偏安静的记忆”，避免把 quiet reviewed 误判成已验证主线
-  - fresh 候选的 route 推荐现在会更偏“独特主意 / 补一层”
-    - 对发出约 1 小时内、已经起量、还在加速、回复区仍有空间的帖子
-    - 更优先给 `直接给观点 / 先补一层`
-    - 少一点泛态度，更多实质观点或新增信息
-  - 当前工作稿新增 `收成直发版`
-    - 会把偏说明味的工作稿压成更短、更像直接回复的版本
-    - 再决定复制 / 排队 / 打开回复框
-  - 改写工作台现在可以直接把当前工作稿带到 X 的回复框，不用先手动复制再找 composer
-  - 候选前三顺位决策板
-  - 强起手 / 往下推进 / 收尾动作 三段式改写
-  - 从优先级板直接切焦点或按建议档位入队
+- 工作台当前收敛成 `看板 / AI执行` 两个二级面板
+- `AI执行` 工作台支持：
+  - 展示当前 top 6 shortlist，而不是只把 1 条候选包装成模板草稿
+  - 输出单条候选上下文包：作者、关系、评分、推荐档位、媒体需求、隐藏 route hints
+  - 输出 top shortlist inbox 和统一 reply schema，方便 agent 直接复制进 CDP / evaluate 流程
+  - 从 shortlist 直接切焦点、入队、打开真实回复框
+- `规则草稿台` 仍然保留：
+  - 继续提供 3 条本地规则 fallback
+  - 主要服务人工使用或无模型场景
+  - 不再把这些规则文稿伪装成 AI 最终回复
 - Reply Queue 支持 `下一轮 / 今晚 / 明早` 排期和已发出状态跟踪
 - Publish Watch 跟踪“已拉起 composer 但未闭环”的执行项
 - Pickup Watch 跟踪 shipped reply 是否被线程接住
 - Attribution Memory 会把 handle / topic / lane 的历史表现反向喂给当前候选排序和默认排期
-- 在 `x.com` 页面向 page world 暴露 `window.ReplyDropAPI`
-  - 让 Ada / CDP / 其他自动化脚本直接读候选、读队列、入队、标记发出、跳过候选
+- 在 `x.com` 页面向 page world 暴露 `window.ReplyDropExecutor` 和兼容别名 `window.ReplyDropAPI`
+  - 让 Codex / OpenClaw / Hermes / Claude / 其他自动化脚本直接读 shortlist、读候选上下文包、读队列、入队、拉起真实回复框、提交回复、标记发出、跳过候选
   - 不再依赖截图、DOM 找按钮或 popup 可见状态
 
 ## Automation API
 
 ReplyDrop 现在会只在 `x.com` 域名下注入一个 page-world 全局对象：
+
+```js
+window.ReplyDropExecutor
+```
+
+兼容别名仍然保留：
 
 ```js
 window.ReplyDropAPI
@@ -152,29 +176,45 @@ window.ReplyDropAPI
 支持的方法：
 
 ```js
-await window.ReplyDropAPI.getCandidates()
-await window.ReplyDropAPI.getQueue()
-await window.ReplyDropAPI.getState()
-await window.ReplyDropAPI.addToQueue("2045354208548069468")
-await window.ReplyDropAPI.markShipped("2045354208548069468", "your reply text")
-await window.ReplyDropAPI.skipCandidate("2045354208548069468")
+await window.ReplyDropExecutor.getCapabilities()
+await window.ReplyDropExecutor.getCandidates()
+await window.ReplyDropExecutor.getQueue()
+await window.ReplyDropExecutor.getMediaBundle("2045354208548069468")
+await window.ReplyDropExecutor.getTrafficSnapshot("2045354208548069468")
+await window.ReplyDropExecutor.refreshRecommendations({ mode: "scroll", pages: 2 })
+await window.ReplyDropExecutor.getExecutorInbox({ limit: 6 })
+await window.ReplyDropExecutor.getExecutorContext("2045354208548069468")
+await window.ReplyDropExecutor.getExecutorSchema()
+await window.ReplyDropExecutor.getState()
+await window.ReplyDropExecutor.addToQueue("2045354208548069468")
+await window.ReplyDropExecutor.openComposer({ tweetId: "2045354208548069468", draft: "your reply text" })
+await window.ReplyDropExecutor.submitReply({ autoLikeIfChinese: true })
+await window.ReplyDropExecutor.runExecutorAction({ action: "reply", tweetId: "2045354208548069468", draft: "your reply text" })
+await window.ReplyDropExecutor.markShipped("2045354208548069468", "your reply text")
+await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
 ```
 
 - 深入说明见 [AUTOMATION.md](./AUTOMATION.md)
   - 方法返回字段
   - 错误语义
   - CDP evaluate 示例
+  - `autoLikeIfChinese` 这类 agent 专用发送选项
+  - `refreshRecommendations()` / `emptyInboxRecovery` 空候选重扫规则
+  - 90 秒正常目标与 120 秒硬截止执行策略
   - 自动化限制与注意事项
 
 - 一个最短的 CDP evaluate 示例：
 
 ```js
 await page.evaluate(async () => {
-  const candidates = await window.ReplyDropAPI.getCandidates();
-  if (!candidates.length) return null;
-  const lead = candidates[0];
-  await window.ReplyDropAPI.addToQueue(lead.tweetId);
-  return await window.ReplyDropAPI.getQueue();
+  const executor = window.ReplyDropExecutor || window.ReplyDropAPI;
+  const inbox = await executor.getExecutorInbox({ limit: 6 });
+  if (!inbox.candidates.length) return null;
+  const lead = inbox.candidates[0];
+  return {
+    lead,
+    schema: await executor.getExecutorSchema()
+  };
 });
 ```
 
@@ -183,7 +223,7 @@ await page.evaluate(async () => {
 - `/manifest.json`: 扩展声明
 - `/background.js`: 后台状态管理、归一化、持久化、alarms
 - `/content.js`: 页面内侦测、角标与悬浮入口注入
-- `/replydrop-api-bridge.js`: page-world automation bridge，向 `x.com` 暴露 `window.ReplyDropAPI`
+- `/replydrop-api-bridge.js`: page-world automation bridge，向 `x.com` 暴露 `window.ReplyDropExecutor` 和兼容别名 `window.ReplyDropAPI`
 - `/popup.html` `/popup.css` `/popup.js`: popup UI 与交互
 - `/replydrop-pickup-core.js`: pickup review 共享纯逻辑
 - `/replydrop-workflow-core.js`: queue / publish-watch 共享纯逻辑
@@ -213,6 +253,14 @@ await page.evaluate(async () => {
 3. 点击“加载已解压的扩展程序”
 4. 选择当前仓库根目录
 
+## Local Install
+
+1. Open `chrome://extensions` in Chrome or Brave.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select this repository root.
+5. Open `x.com` or `twitter.com`, then wait a few seconds for ReplyDrop to scan visible posts.
+
 ## 开发与验证
 
 项目不依赖打包器，直接使用浏览器扩展运行时和 Node 自带工具。
@@ -240,7 +288,7 @@ npm run export:oss
 
 - 优先修稳定性、DOM 兼容性、状态一致性、测试和文档
 - UI 可以继续精修，但不要把插件重新做成长网页
-- `AI回复` 当前仍是 heuristic copilot，是否继续深做，适合等开源反馈后再决定
+- `AI执行台` 当前负责 runtime 输入与执行闭环，不负责假装内置模型写稿
 
 ## 发版产物
 
@@ -262,7 +310,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-会生成类似 `replydrop-p2.137.zip` 的安装包。
+当前会生成 `replydrop-p2.202.zip` 这样的安装包。
 
 ## 文档导航
 
@@ -285,8 +333,7 @@ bash scripts/package-release.sh
 
 ## 当前仍未完成
 
-- 真正的 AI 模型生成与重写仍然偏 heuristic，当前还是本地规则型 copilot
-- `AI回复` 后续是否继续深做，暂时更适合等待开源后的真实反馈再决定
+- 最终回复文稿仍需要外部模型 / agent 自己产出，ReplyDrop 当前负责 shortlist、上下文、记忆和执行闭环
+- `AI执行台` 已经 runtime-ready，但还没有内置远端模型调用
 - 增长 attribution 仍以本地可见信号为主，不是完整分析看板
 - execute / publish 仍然是辅助闭环，不是全自动发布
-- AI 回复虽然已经接入真实决策台与改写工作台，但关系记忆与排期仍未接入真正模型判断

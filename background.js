@@ -12,7 +12,7 @@ const AttributionCore = globalThis.ReplyDropAttributionCore || null;
 
 const STORAGE_KEY = "x-reply-scorer-state";
 const MAX_REPLIED_TWEETS = 500;
-const MAX_RECENT_CANDIDATES = 12;
+const MAX_RECENT_CANDIDATES = 16;
 const MAX_REPLY_DETAILS = 60;
 const MAX_DISMISSED_TWEETS = 120;
 const MAX_RELATIONSHIP_STATES = 120;
@@ -48,6 +48,7 @@ const TOPIC_DEFS = [
 
 const DEFAULT_STATE = {
   enabled: true,
+  headlessMode: false,
   scannedCount: 0,
   highScoreCount: 0,
   visibleCount: 0,
@@ -83,6 +84,7 @@ TOPIC_DEFS.forEach((topic, index) => {
 
 const BOOLEAN_KEYS = [
   "enabled",
+  "headlessMode",
   "onlyKeywordHits",
   "langZh",
   "langEn",
@@ -144,6 +146,14 @@ function clampNumber(value, fallback) {
     return fallback;
   }
   return n;
+}
+
+function normalizeAuthorVerificationType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "gold" || raw === "government" || raw === "blue") {
+    return raw;
+  }
+  return "";
 }
 
 function normalizeQueueStatus(value, fallback = "queued") {
@@ -350,11 +360,23 @@ function mapQueueStatusToApi(status) {
 
 function getCandidateLaneDescriptor(candidate = {}, uiLanguage = DEFAULT_STATE.uiLanguage) {
   const score = clampNumber(candidate?.score, 0);
+  const opportunityBoost = clampNumber(candidate?.opportunityBoost, 0);
+  const relationshipStatus = String(candidate?.relationshipStatus || "").trim();
+  const attributionKind = String(candidate?.attributionKind || "").trim();
   const replies = clampNumber(candidate?.replies, 0);
   const views = clampNumber(candidate?.views, 0);
+  const likes = clampNumber(candidate?.likes, 0);
   const timestamp = clampNumber(candidate?.timestamp, Date.now());
   const ageMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  const conversationRatio = views > 0 ? (replies / Math.max(views, 1)) : 0;
+  const likeReplyRatio = likes > 0 && replies > 0 ? (likes / Math.max(replies, 1)) : 0;
+  const relationshipHot = relationshipStatus === "mutual" || relationshipStatus === "pinned";
+  const memoryHot = attributionKind === "author-engaged" || attributionKind === "handle-picked-up";
   const crowded = replies >= 180 || (views >= 180000 && replies >= 90);
+  const broadcastHeavy = (
+    (views >= 120000 && conversationRatio > 0 && conversationRatio < 0.0025) ||
+    likeReplyRatio >= 22
+  );
   const language = normalizeUiLanguage(uiLanguage);
   const laneLabels = {
     "zh-Hans": {
@@ -391,13 +413,24 @@ function getCandidateLaneDescriptor(candidate = {}, uiLanguage = DEFAULT_STATE.u
 
   let key = "backlog";
   let priority = 2;
-  if (crowded && score < 82) {
+  if ((crowded || broadcastHeavy) && opportunityBoost < 10 && score < 84 && !relationshipHot && !memoryHot) {
     key = "crowded";
     priority = 1;
-  } else if (score >= 72 && ageMinutes <= 240) {
+  } else if (
+    (score >= 72 && ageMinutes <= 240) ||
+    (opportunityBoost >= 12 && ageMinutes <= 360) ||
+    ((relationshipHot || memoryHot) && ageMinutes <= 720 && score >= 48)
+  ) {
     key = "now";
     priority = 4;
-  } else if (score >= 58 && ageMinutes <= 720) {
+  } else if (
+    (score >= 58 && ageMinutes <= 720) ||
+    opportunityBoost >= 8 ||
+    relationshipStatus === "follow-up" ||
+    relationshipHot ||
+    memoryHot ||
+    attributionKind === "topic-validated"
+  ) {
     key = "watch";
     priority = 3;
   }
@@ -446,10 +479,32 @@ function summarizeApiCandidate(candidate = {}) {
   return {
     tweetId: extractTweetIdFromUrl(url),
     score: clampNumber(candidate.score, 0),
+    baseScore: clampNumber(candidate.baseScore, clampNumber(candidate.score, 0)),
+    opportunityBoost: clampNumber(candidate.opportunityBoost, 0),
     tier: String(candidate.tier || "").trim() || "hidden",
+    relationshipStatus: String(candidate.relationshipStatus || "").trim(),
+    attributionKind: String(candidate.attributionKind || "").trim(),
     topicTags: Array.isArray(candidate.matchedTopics) ? candidate.matchedTopics.slice(0, 4) : [],
     author: String(candidate.authorHandle || "").trim(),
     authorHandle: String(candidate.authorHandle || "").trim(),
+    mediaKind: String(candidate.mediaKind || "").trim(),
+    sourceSurface: String(candidate.sourceSurface || "").trim(),
+    postScore: clampNumber(candidate.postScore, clampNumber(candidate.score, 0)),
+    reachLikelihood: clampNumber(candidate.reachLikelihood, 0),
+    understandingConfidence: clampNumber(candidate.understandingConfidence, 0),
+    authorFit: clampNumber(candidate.authorFit, 0),
+    finalScore: clampNumber(candidate.finalScore, clampNumber(candidate.score, 0)),
+    peakFinalScore: clampNumber(candidate.peakFinalScore, clampNumber(candidate.finalScore, clampNumber(candidate.score, 0))),
+    peakSourceSurface: String(candidate.peakSourceSurface || candidate.sourceSurface || "").trim(),
+    trafficPhase: String(candidate.trafficPhase || "").trim(),
+    trafficVelocityPerHour: clampNumber(candidate.trafficVelocityPerHour, 0),
+    trafficReplyVelocityPerHour: clampNumber(candidate.trafficReplyVelocityPerHour, 0),
+    trafficEngagementRate: clampNumber(candidate.trafficEngagementRate, 0),
+    trafficReplyRatio: clampNumber(candidate.trafficReplyRatio, 0),
+    retweets: clampNumber(candidate.retweets, 0),
+    bookmarks: clampNumber(candidate.bookmarks, 0),
+    blockReason: String(candidate.blockReason || "").trim(),
+    lowSemanticConfidence: Boolean(candidate.lowSemanticConfidence),
     textSummary,
     "text摘要": textSummary,
     url
@@ -468,6 +523,15 @@ function summarizeApiQueueItem(item = {}) {
     author: String(item.authorHandle || "").trim(),
     authorHandle: String(item.authorHandle || "").trim(),
     score: clampNumber(item.score, 0),
+    baseScore: clampNumber(item.baseScore, clampNumber(item.score, 0)),
+    opportunityBoost: clampNumber(item.opportunityBoost, 0),
+    relationshipStatus: String(item.relationshipStatus || "").trim(),
+    attributionKind: String(item.attributionKind || "").trim(),
+    trafficPhase: String(item.trafficPhase || "").trim(),
+    trafficVelocityPerHour: clampNumber(item.trafficVelocityPerHour, 0),
+    trafficReplyVelocityPerHour: clampNumber(item.trafficReplyVelocityPerHour, 0),
+    trafficEngagementRate: clampNumber(item.trafficEngagementRate, 0),
+    trafficReplyRatio: clampNumber(item.trafficReplyRatio, 0),
     draft: String(item.draft || "").trim().slice(0, 560)
   };
 }
@@ -553,6 +617,9 @@ async function addCandidateToQueueByTweetId(tweetId) {
   if (!candidate?.url) {
     throw new Error("candidate-not-found");
   }
+  if (candidate.blockReason) {
+    throw new Error(String(candidate.blockReason));
+  }
 
   const existing = getQueueItemByTweetId(normalizedTweetId);
   const slot = resolveDefaultQueueSlot(candidate);
@@ -561,16 +628,30 @@ async function addCandidateToQueueByTweetId(tweetId) {
     authorHandle: candidate.authorHandle || existing?.authorHandle || "",
     text: candidate.text || existing?.text || "",
     score: clampNumber(candidate.score, clampNumber(existing?.score, 0)),
+    baseScore: clampNumber(candidate.baseScore, clampNumber(existing?.baseScore, clampNumber(candidate.score, 0))),
+    opportunityBoost: clampNumber(candidate.opportunityBoost, clampNumber(existing?.opportunityBoost, 0)),
     createdAt: clampNumber(existing?.createdAt, Date.now()),
     scheduledFor: getScheduledTimestamp(slot),
     completedAt: 0,
     slot,
     draft: String(existing?.draft || "").trim().slice(0, 560),
     lane: getCandidateLaneDescriptor(candidate, state.uiLanguage).label,
+    relationshipStatus: String(candidate.relationshipStatus || existing?.relationshipStatus || "").trim(),
+    attributionKind: String(candidate.attributionKind || existing?.attributionKind || "").trim(),
     keywordMatched: Boolean(candidate.keywordMatched || existing?.keywordMatched),
     matchedTopics: Array.isArray(candidate.matchedTopics) ? candidate.matchedTopics.slice(0, 4) : [],
     matchedLanguages: Array.isArray(candidate.matchedLanguages) ? candidate.matchedLanguages.slice(0, 4) : [],
     highlights: Array.isArray(candidate.highlights) ? candidate.highlights.slice(0, 4) : [],
+    retweets: clampNumber(candidate.retweets, clampNumber(existing?.retweets, 0)),
+    bookmarks: clampNumber(candidate.bookmarks, clampNumber(existing?.bookmarks, 0)),
+    trafficCapturedAt: clampNumber(candidate.trafficCapturedAt, clampNumber(existing?.trafficCapturedAt, 0)),
+    trafficAgeHours: clampNumber(candidate.trafficAgeHours, clampNumber(existing?.trafficAgeHours, 0)),
+    trafficVelocityPerHour: clampNumber(candidate.trafficVelocityPerHour, clampNumber(existing?.trafficVelocityPerHour, 0)),
+    trafficReplyVelocityPerHour: clampNumber(candidate.trafficReplyVelocityPerHour, clampNumber(existing?.trafficReplyVelocityPerHour, 0)),
+    trafficEngagementRate: clampNumber(candidate.trafficEngagementRate, clampNumber(existing?.trafficEngagementRate, 0)),
+    trafficReplyRatio: clampNumber(candidate.trafficReplyRatio, clampNumber(existing?.trafficReplyRatio, 0)),
+    trafficPhase: String(candidate.trafficPhase || existing?.trafficPhase || "").trim(),
+    trafficSource: String(candidate.trafficSource || existing?.trafficSource || "").trim(),
     status: "queued"
   };
 
@@ -611,6 +692,7 @@ async function markTweetAsShippedById(tweetId, replyText = "") {
     tier: "replied",
     authorHandle: String(queueItem?.authorHandle || candidate?.authorHandle || "").trim(),
     authorVerified: Boolean(candidate?.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(candidate?.authorVerificationType),
     text: finalReplyText,
     lane: String(queueItem?.lane || "").trim(),
     slot: String(queueItem?.slot || resolveDefaultQueueSlot(candidate)).trim(),
@@ -730,25 +812,93 @@ function normalizeDismissedTweets(value, fallback = {}) {
 
 function normalizeRecentCandidates(value, fallback = []) {
   const source = Array.isArray(value) ? value : fallback;
+  const previousByUrl = new Map(
+    (Array.isArray(fallback) ? fallback : [])
+      .filter((item) => item && typeof item === "object" && item.url)
+      .map((item) => [normalizeTweetUrl(item.url), item])
+  );
   return source
     .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      url: normalizeTweetUrl(item.url),
-      score: Math.max(0, Math.min(100, Math.floor(clampNumber(item.score, 0)))),
-      tier: String(item.tier || "hidden"),
-      authorHandle: String(item.authorHandle || "").trim(),
-      authorVerified: Boolean(item.authorVerified),
-      text: String(item.text || "").trim().slice(0, 280),
-      timestamp: clampNumber(item.timestamp, Date.now()),
-      mediaKind: String(item.mediaKind || "").trim(),
-      likes: clampNumber(item.likes, 0),
-      replies: clampNumber(item.replies, 0),
-      views: clampNumber(item.views, 0),
-      keywordMatched: Boolean(item.keywordMatched),
-      matchedTopics: Array.isArray(item.matchedTopics) ? item.matchedTopics.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
-      matchedLanguages: Array.isArray(item.matchedLanguages) ? item.matchedLanguages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
-      highlights: Array.isArray(item.highlights) ? item.highlights.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : []
-    }))
+    .map((item) => {
+      const url = normalizeTweetUrl(item.url);
+      const previous = previousByUrl.get(url) || {};
+      const score = Math.max(0, Math.min(100, Math.floor(clampNumber(item.score, 0))));
+      const finalScore = Math.max(0, Math.min(100, Math.floor(clampNumber(item.finalScore, clampNumber(item.score, 0)))));
+      const sourceSurface = String(item.sourceSurface || "").trim().slice(0, 24);
+      const timestamp = clampNumber(item.timestamp, Date.now());
+      const previousPeakFinalScore = Math.max(
+        0,
+        Math.min(
+          100,
+          Math.floor(
+            clampNumber(
+              previous.peakFinalScore,
+              clampNumber(previous.finalScore, clampNumber(previous.score, 0))
+            )
+          )
+        )
+      );
+      const peakFinalScore = Math.max(
+        finalScore,
+        Math.max(
+          0,
+          Math.min(100, Math.floor(clampNumber(item.peakFinalScore, finalScore))),
+          previousPeakFinalScore
+        )
+      );
+      const peakSourceSurface = peakFinalScore > previousPeakFinalScore
+        ? sourceSurface
+        : String(previous.peakSourceSurface || previous.sourceSurface || sourceSurface).trim().slice(0, 24);
+      const peakObservedAt = peakFinalScore > previousPeakFinalScore
+        ? timestamp
+        : clampNumber(previous.peakObservedAt, timestamp);
+
+      return {
+        url,
+        score,
+        baseScore: Math.max(0, Math.min(100, Math.floor(clampNumber(item.baseScore, clampNumber(item.score, 0))))),
+        opportunityBoost: Math.max(-100, Math.min(100, Math.floor(clampNumber(item.opportunityBoost, 0)))),
+        tier: String(item.tier || "hidden"),
+        baseTier: String(item.baseTier || item.tier || "hidden").trim(),
+        relationshipStatus: String(item.relationshipStatus || "").trim().slice(0, 24),
+        attributionKind: String(item.attributionKind || "").trim().slice(0, 32),
+        authorHandle: String(item.authorHandle || "").trim(),
+        authorVerified: Boolean(item.authorVerified),
+        authorVerificationType: normalizeAuthorVerificationType(item.authorVerificationType),
+        text: String(item.text || "").trim().slice(0, 280),
+        mediaAltText: String(item.mediaAltText || "").trim().slice(0, 280),
+        sourceSurface,
+        postScore: Math.max(0, Math.min(100, Math.floor(clampNumber(item.postScore, clampNumber(item.score, 0))))),
+        reachLikelihood: Math.max(0, Math.min(100, Math.floor(clampNumber(item.reachLikelihood, 0)))),
+        understandingConfidence: Math.max(0, Math.min(100, Math.floor(clampNumber(item.understandingConfidence, 0)))),
+        authorFit: Math.max(0, Math.min(100, Math.floor(clampNumber(item.authorFit, 0)))),
+        finalScore,
+        peakFinalScore,
+        peakSourceSurface,
+        peakObservedAt,
+        blockReason: String(item.blockReason || "").trim().slice(0, 48),
+        lowSemanticConfidence: Boolean(item.lowSemanticConfidence),
+        timestamp,
+        mediaKind: String(item.mediaKind || "").trim(),
+        likes: clampNumber(item.likes, 0),
+        replies: clampNumber(item.replies, 0),
+        views: clampNumber(item.views, 0),
+        retweets: clampNumber(item.retweets, 0),
+        bookmarks: clampNumber(item.bookmarks, 0),
+        trafficCapturedAt: clampNumber(item.trafficCapturedAt, 0),
+        trafficAgeHours: clampNumber(item.trafficAgeHours, 0),
+        trafficVelocityPerHour: clampNumber(item.trafficVelocityPerHour, 0),
+        trafficReplyVelocityPerHour: clampNumber(item.trafficReplyVelocityPerHour, 0),
+        trafficEngagementRate: clampNumber(item.trafficEngagementRate, 0),
+        trafficReplyRatio: clampNumber(item.trafficReplyRatio, 0),
+        trafficPhase: String(item.trafficPhase || "").trim().slice(0, 16),
+        trafficSource: String(item.trafficSource || "").trim().slice(0, 24),
+        keywordMatched: Boolean(item.keywordMatched),
+        matchedTopics: Array.isArray(item.matchedTopics) ? item.matchedTopics.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
+        matchedLanguages: Array.isArray(item.matchedLanguages) ? item.matchedLanguages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
+        highlights: Array.isArray(item.highlights) ? item.highlights.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : []
+      };
+    })
     .filter((item) => item.url && item.tier !== "hidden")
     .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
     .slice(0, MAX_RECENT_CANDIDATES);
@@ -778,6 +928,7 @@ function normalizeReplyDetails(value, fallback = {}) {
         tier: String(payload.tier || "replied"),
         authorHandle: String(payload.authorHandle || "").trim(),
         authorVerified: Boolean(payload.authorVerified),
+        authorVerificationType: normalizeAuthorVerificationType(payload.authorVerificationType),
         text: String(payload.text || "").trim().slice(0, 280),
         lane: String(payload.lane || "").trim().slice(0, 48),
         slot: String(payload.slot || "").trim().slice(0, 24),
@@ -789,6 +940,16 @@ function normalizeReplyDetails(value, fallback = {}) {
         queuedAt: clampNumber(payload.queuedAt, 0),
         handedOffAt: clampNumber(payload.handedOffAt, 0),
         executionLatencyMs: clampNumber(payload.executionLatencyMs, 0),
+        retweets: clampNumber(payload.retweets, 0),
+        bookmarks: clampNumber(payload.bookmarks, 0),
+        trafficCapturedAt: clampNumber(payload.trafficCapturedAt, 0),
+        trafficAgeHours: clampNumber(payload.trafficAgeHours, 0),
+        trafficVelocityPerHour: clampNumber(payload.trafficVelocityPerHour, 0),
+        trafficReplyVelocityPerHour: clampNumber(payload.trafficReplyVelocityPerHour, 0),
+        trafficEngagementRate: clampNumber(payload.trafficEngagementRate, 0),
+        trafficReplyRatio: clampNumber(payload.trafficReplyRatio, 0),
+        trafficPhase: String(payload.trafficPhase || "").trim().slice(0, 16),
+        trafficSource: String(payload.trafficSource || "").trim().slice(0, 24),
         baselineReplies: clampNumber(payload.baselineReplies, 0),
         baselineLikes: clampNumber(payload.baselineLikes, 0),
         baselineViews: clampNumber(payload.baselineViews, 0),
@@ -826,16 +987,30 @@ function normalizeReplyQueue(value, fallback = []) {
         authorHandle: String(item.authorHandle || "").trim().slice(0, 64),
         text: String(item.text || "").trim().slice(0, 320),
         score: Math.max(0, Math.min(100, Math.floor(clampNumber(item.score, 0)))),
+        baseScore: Math.max(0, Math.min(100, Math.floor(clampNumber(item.baseScore, clampNumber(item.score, 0))))),
+        opportunityBoost: Math.max(-100, Math.min(100, Math.floor(clampNumber(item.opportunityBoost, 0)))),
         createdAt: clampNumber(item.createdAt, Date.now()),
         scheduledFor: clampNumber(item.scheduledFor, Date.now()),
         completedAt: status === "queued" ? 0 : clampNumber(item.completedAt, Date.now()),
         slot: String(item.slot || "next").trim(),
         draft: String(item.draft || "").trim().slice(0, 560),
         lane: String(item.lane || "").trim().slice(0, 48),
+        relationshipStatus: String(item.relationshipStatus || "").trim().slice(0, 24),
+        attributionKind: String(item.attributionKind || "").trim().slice(0, 32),
         keywordMatched: Boolean(item.keywordMatched),
         matchedTopics: Array.isArray(item.matchedTopics) ? item.matchedTopics.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
         matchedLanguages: Array.isArray(item.matchedLanguages) ? item.matchedLanguages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
         highlights: Array.isArray(item.highlights) ? item.highlights.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
+        retweets: clampNumber(item.retweets, 0),
+        bookmarks: clampNumber(item.bookmarks, 0),
+        trafficCapturedAt: clampNumber(item.trafficCapturedAt, 0),
+        trafficAgeHours: clampNumber(item.trafficAgeHours, 0),
+        trafficVelocityPerHour: clampNumber(item.trafficVelocityPerHour, 0),
+        trafficReplyVelocityPerHour: clampNumber(item.trafficReplyVelocityPerHour, 0),
+        trafficEngagementRate: clampNumber(item.trafficEngagementRate, 0),
+        trafficReplyRatio: clampNumber(item.trafficReplyRatio, 0),
+        trafficPhase: String(item.trafficPhase || "").trim().slice(0, 16),
+        trafficSource: String(item.trafficSource || "").trim().slice(0, 24),
         status
       };
     })
@@ -962,7 +1137,7 @@ function normalizePickupWatch(value, fallback = []) {
 function normalizeRelationshipStates(value, fallback = {}) {
   const source = value && typeof value === "object" ? value : fallback;
   const now = Date.now();
-  const allowedStatuses = new Set(["pinned", "follow-up", "snoozed"]);
+  const allowedStatuses = new Set(["mutual", "pinned", "follow-up", "snoozed"]);
   const entries = Object.entries(source)
     .map(([handle, detail]) => {
       const normalizedHandle = normalizeHandleKey(handle);
@@ -1209,6 +1384,7 @@ async function markTweetAsReplied(url, meta = {}) {
         tier: String(meta.tier || "replied"),
         authorHandle: String(meta.authorHandle || queueMatch?.authorHandle || candidateMatch?.authorHandle || "").trim(),
         authorVerified: Boolean(meta.authorVerified || candidateMatch?.authorVerified),
+        authorVerificationType: normalizeAuthorVerificationType(meta.authorVerificationType || candidateMatch?.authorVerificationType),
         text: String(meta.text || queueMatch?.text || queueMatch?.draft || candidateMatch?.text || "").trim().slice(0, 280),
         lane: String(meta.lane || queueMatch?.lane || "").trim().slice(0, 48),
         slot: String(meta.slot || queueMatch?.slot || "").trim().slice(0, 24),
@@ -1226,6 +1402,16 @@ async function markTweetAsReplied(url, meta = {}) {
         queuedAt: clampNumber(meta.queuedAt, clampNumber(queueMatch?.createdAt, 0)),
         handedOffAt: clampNumber(meta.handedOffAt, clampNumber(publishWatchMatch?.handedOffAt, 0)),
         executionLatencyMs: clampNumber(meta.executionLatencyMs, Math.max(0, replyTimestamp - clampNumber(publishWatchMatch?.handedOffAt, replyTimestamp))),
+        retweets: clampNumber(meta.retweets, clampNumber(queueMatch?.retweets, clampNumber(candidateMatch?.retweets, 0))),
+        bookmarks: clampNumber(meta.bookmarks, clampNumber(queueMatch?.bookmarks, clampNumber(candidateMatch?.bookmarks, 0))),
+        trafficCapturedAt: clampNumber(meta.trafficCapturedAt, clampNumber(queueMatch?.trafficCapturedAt, clampNumber(candidateMatch?.trafficCapturedAt, 0))),
+        trafficAgeHours: clampNumber(meta.trafficAgeHours, clampNumber(queueMatch?.trafficAgeHours, clampNumber(candidateMatch?.trafficAgeHours, 0))),
+        trafficVelocityPerHour: clampNumber(meta.trafficVelocityPerHour, clampNumber(queueMatch?.trafficVelocityPerHour, clampNumber(candidateMatch?.trafficVelocityPerHour, 0))),
+        trafficReplyVelocityPerHour: clampNumber(meta.trafficReplyVelocityPerHour, clampNumber(queueMatch?.trafficReplyVelocityPerHour, clampNumber(candidateMatch?.trafficReplyVelocityPerHour, 0))),
+        trafficEngagementRate: clampNumber(meta.trafficEngagementRate, clampNumber(queueMatch?.trafficEngagementRate, clampNumber(candidateMatch?.trafficEngagementRate, 0))),
+        trafficReplyRatio: clampNumber(meta.trafficReplyRatio, clampNumber(queueMatch?.trafficReplyRatio, clampNumber(candidateMatch?.trafficReplyRatio, 0))),
+        trafficPhase: String(meta.trafficPhase || queueMatch?.trafficPhase || candidateMatch?.trafficPhase || "").trim().slice(0, 16),
+        trafficSource: String(meta.trafficSource || queueMatch?.trafficSource || candidateMatch?.trafficSource || "").trim().slice(0, 24),
         baselineReplies,
         baselineLikes,
         baselineViews,
@@ -1349,6 +1535,7 @@ async function recordPickupSnapshot(url, snapshot = {}) {
         tier: String(replyDetailMatch?.tier || "replied"),
         authorHandle: String(replyDetailMatch?.authorHandle || authorHandle).trim(),
         authorVerified: Boolean(replyDetailMatch?.authorVerified),
+        authorVerificationType: normalizeAuthorVerificationType(replyDetailMatch?.authorVerificationType),
         text: String(replyDetailMatch?.text || "").trim().slice(0, 280),
         lane: String(replyDetailMatch?.lane || lane).trim().slice(0, 48),
         slot: String(replyDetailMatch?.slot || slot).trim().slice(0, 24),

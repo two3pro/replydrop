@@ -2,6 +2,8 @@
 
 这份文档收的是 ReplyDrop 当前这一版可直接照填的 Chrome Web Store 提交答案。
 
+如果后续审核要求补充人工说明，可直接复用 [CHROME-WEB-STORE-REVIEWER-NOTES.md](./CHROME-WEB-STORE-REVIEWER-NOTES.md)。
+
 参考官方文档：
 
 - Listing: [developer.chrome.com/docs/webstore/cws-dashboard-listing](https://developer.chrome.com/docs/webstore/cws-dashboard-listing/)
@@ -10,8 +12,8 @@
 ## 当前提交版本
 
 - 扩展名：`ReplyDrop`
-- 版本：`0.2.137`
-- 打包 zip：`replydrop-p2.137.zip`
+- 版本：`0.2.171`
+- 打包 zip：`replydrop-p2.171.zip`
 - 仓库主页：[github.com/two3pro/replydrop](https://github.com/two3pro/replydrop)
 - 支持页：[github.com/two3pro/replydrop/issues](https://github.com/two3pro/replydrop/issues)
 - 隐私政策页：[github.com/two3pro/replydrop/blob/main/PRIVACY.md](https://github.com/two3pro/replydrop/blob/main/PRIVACY.md)
@@ -51,7 +53,7 @@
 
 ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子打分，帮你在窗口关闭前找到最值得回复的机会。
 
-它开源免费，本地运行，零数据上传，不收钱，不依赖任何外部服务。核心目标不是做网页后台，也不是替你自动发帖，而是把“先发现值得回复的帖子，再决定什么时候跟进”这件事做得更稳、更清楚。
+它开源免费，本地运行，零数据上传，不收钱，不依赖任何外部服务。核心目标不是做网页后台，也不是做无人值守批量发帖工具，而是把“先发现值得回复的帖子，再决定什么时候跟进”这件事做得更稳、更清楚。
 
 当前版本重点提供这些能力：
 
@@ -69,7 +71,7 @@ ReplyDrop 当前坚持几个边界：
 - 本地优先，不依赖云端账号系统
 - 不要求登录 ReplyDrop 自己的服务
 - 不调用远端 AI API
-- 不自动点击发送，不代替用户发帖
+- 不会在后台无人值守批量发帖；只有显式本地操作或本地自动化调用时才会提交当前回复
 
 如果你想要的是一个更接近 ReplyWisely / Hypefury / TweetHunter / Typefully 工作流节奏，但仍然保留浏览器插件轻量感与可解释状态的工具，ReplyDrop 会是一个更容易上手的替代方案。
 
@@ -132,7 +134,7 @@ ReplyDrop 当前坚持几个边界：
 
 建议直接粘贴：
 
-1. Install the extension from the attached `replydrop-p2.137.zip`, or load the unpacked folder in developer mode.
+1. Install the extension from the attached `replydrop-p2.170.zip`, or load the unpacked folder in developer mode.
 2. Open any `x.com` page with visible public posts. A logged-in X account makes review easiest, but any timeline or search page with rendered posts is fine.
 3. Wait a few seconds for the content script to scan visible posts. High-scoring posts show a small ReplyDrop waterdrop near the reply action.
 4. Click the ReplyDrop toolbar icon and confirm the popup opens on the home layer.
@@ -142,8 +144,8 @@ ReplyDrop 当前坚持几个边界：
 
 ## 提交前最后检查
 
-- 确认上传的是 `replydrop-p2.137.zip`
-- 确认 `manifest.json` 版本是 `0.2.137`
+- 确认上传的是 `replydrop-p2.170.zip`
+- 确认 `manifest.json` 版本是 `0.2.171`
 - 确认视频已先传到 YouTube 并拿到不公开链接
 - 确认支持页与隐私页都指向公开仓地址
 - 确认截图顺序与 [CHROME-WEB-STORE-LISTING.md](./CHROME-WEB-STORE-LISTING.md) 一致
