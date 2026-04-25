@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.212
+
+- 新增人工写稿模式接口：`getDraftTargets({ limit })` / `getDraftContext(tweetId)`，只读输出高分帖上下文，让 Codex / Claude / Hermes 在各自窗口生成正式回复草稿
+- 面板从单一 `AI执行` 调整为 `人工写稿 / AI执行`：人工模式复制写稿目标，AI 模式继续使用 `getExecutorInbox/openComposer/submitReply`
+- `getCapabilities()` 公开 draft target 能力，明确 ReplyDrop 负责筛选和打包，外部 agent 负责生成文案，人工模式不自动开框不自动发送
+
 ## 0.2.211
 
 - 继续放宽 executor inbox：高分 `queue-tomorrow` 的执行门槛从 65 调到 60，避免 60+ 可回帖仍造成 0 executable

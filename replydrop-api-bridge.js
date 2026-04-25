@@ -390,6 +390,12 @@
     getTrafficSnapshot(tweetIdOrUrl) {
       return call("getTrafficSnapshot", tweetIdOrUrl);
     },
+    getDraftTargets(options = {}) {
+      return call("getDraftTargets", options);
+    },
+    getDraftContext(tweetId, options = {}) {
+      return call("getDraftContext", tweetId, options);
+    },
     refreshRecommendations(options = {}) {
       return callAction("refreshRecommendations", options);
     },

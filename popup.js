@@ -1225,6 +1225,7 @@ const uiState = {
   draftSourceUrl: "",
   attributionSignalModel: null,
   lastAgentInboxPayload: null,
+  lastDraftTargetsPayload: null,
   lastAgentSchemaPayload: null,
   lastAgentFocusContext: null,
   agentContextByUrl: new Map()
@@ -2045,11 +2046,11 @@ function renderTexts() {
     ko: "대시보드"
   }));
   setText(els.deskSubTabAiLabel, localize({
-    "zh-Hans": "AI执行",
-    "zh-Hant": "AI執行",
-    en: "AI runtime",
-    ja: "AI実行",
-    ko: "AI 실행"
+    "zh-Hans": "写稿/执行",
+    "zh-Hant": "寫稿/執行",
+    en: "Draft / Run",
+    ja: "草稿/実行",
+    ko: "초안/실행"
   }));
   setText(els.deskSubTabQueueLabel, t.deskSectionQueue);
   setText(els.deskSubTabContactsLabel, t.deskSectionContacts);
@@ -2069,18 +2070,18 @@ function renderTexts() {
     ko: "이미 보낸 답글의 노출, 반응, 되돌아오는 신호만 보고 다음 동작을 정합니다."
   }));
   setText(els.aiReplyDeskTitle, localize({
-    "zh-Hans": "AI 执行台",
-    "zh-Hant": "AI 執行台",
-    en: "AI runtime desk",
-    ja: "AI 実行デスク",
-    ko: "AI 실행 데스크"
+    "zh-Hans": "人工写稿 / AI 执行",
+    "zh-Hant": "人工寫稿 / AI 執行",
+    en: "Human drafts / AI runtime",
+    ja: "人手草稿 / AI 実行",
+    ko: "사람 초안 / AI 실행"
   }));
   setText(els.aiReplyDeskMeta, localize({
-    "zh-Hans": "前台只展示 AI 真正要看的 top 6、单条上下文包和输出 schema，不再展示模板逻辑。",
-    "zh-Hant": "前台只展示 AI 真正要看的 top 6、單條上下文包和輸出 schema，不再展示模板邏輯。",
-    en: "Show only the top 6 shortlist, per-candidate context pack, and output schema that an AI runtime actually needs.",
-    ja: "ここでは AI runtime が本当に必要な top 6、候補文脈パック、出力 schema だけを見せます。",
-    ko: "여기에는 AI runtime이 실제로 필요한 top 6, 후보 컨텍스트 팩, 출력 schema만 보여 줍니다."
+    "zh-Hans": "人工模式复制高分帖上下文给 Codex / Claude 写正式草稿；AI 模式才打开回复框并提交。",
+    "zh-Hant": "人工模式複製高分帖上下文給 Codex / Claude 寫正式草稿；AI 模式才打開回覆框並提交。",
+    en: "Human mode copies high-score post context for Codex / Claude to draft; AI runtime mode opens the composer and submits.",
+    ja: "人手モードは高スコア投稿の文脈を Codex / Claude に渡して草稿化し、AI 実行モードだけが返信欄を開いて送信します。",
+    ko: "사람 모드는 고점 게시물 컨텍스트를 Codex / Claude에 넘겨 초안을 만들고, AI 실행 모드만 답글창을 열고 제출합니다."
   }));
   setText(els.queueDeskTitle, localize({"zh-Hans": "回复队列", "zh-Hant": "回覆隊列", en: "Reply queue", ja: "返信キュー", ko: "답글 큐"}));
   setText(els.queueDeskMeta, localize({"zh-Hans": "把候选排进下一轮 / 今晚 / 明早，让发现真正走到执行。", "zh-Hant": "把候選排進下一輪 / 今晚 / 明早，讓發現真正走到執行。", en: "Queue candidates into next-up / tonight / tomorrow so discovery can actually turn into execution.", ja: "候補を次・今夜・明朝に並べて、発見を実行へつなげます。", ko: "후보를 다음 차례 / 오늘 밤 / 내일 아침으로 배치해 발견을 실제 실행으로 잇습니다."}));
@@ -8416,6 +8417,32 @@ function buildPopupAgentInboxPayload(priorityCandidates = [], attributionSummari
   };
 }
 
+function buildPopupDraftTargetsPayload(priorityCandidates = [], attributionSummaries = []) {
+  const inbox = buildPopupAgentInboxPayload(priorityCandidates, attributionSummaries);
+  return {
+    version: "replydrop-draft-targets-v1",
+    generatedAt: Date.now(),
+    mode: "human-draft",
+    instruction: "请按 candidates 顺序为用户生成正式可用回复草稿；同语种回复；不要固定模板；不要自动发送；风险或语义不足就建议跳过。",
+    candidates: inbox.payload.candidates.map((context) => ({
+      ...context,
+      version: "replydrop-draft-target-v1",
+      mode: "human-draft"
+    })),
+    outputSchema: {
+      version: "replydrop-draft-targets-v1",
+      output: {
+        targetTweetId: "string",
+        authorHandle: "string",
+        replyText: "string",
+        language: "same-as-post",
+        confidence: "number",
+        riskFlags: "string[]"
+      }
+    }
+  };
+}
+
 function createAgentRuntimeSummaryCard(summary = {}) {
   const focusCandidate = summary.focusCandidate || null;
   const focusContext = summary.focusContext || null;
@@ -8462,18 +8489,18 @@ function createAgentRuntimeSummaryCard(summary = {}) {
   body.className = "aiCopilotBody";
   body.textContent = focusContext
     ? localize({
-        "zh-Hans": `AI 现在不再看模板草稿，而是直接看 top ${priorityCount || 1} shortlist、当前候选上下文包和输出 schema。当前更像 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
-        "zh-Hant": `AI 現在不再看模板草稿，而是直接看 top ${priorityCount || 1} shortlist、目前候選上下文包和輸出 schema。當前更像 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
-        en: `The AI runtime now works from the top ${priorityCount || 1} shortlist, the current candidate context pack, and the output schema instead of template drafts. Right now the move looks more like ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}.`,
-        ja: `AI runtime はもうテンプレ草稿ではなく、top ${priorityCount || 1} shortlist と候補文脈パック、出力 schema を見ます。今の一手は ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""} に近いです。`,
-        ko: `AI runtime은 이제 템플릿 초안 대신 top ${priorityCount || 1} shortlist, 현재 후보 컨텍스트 팩, 출력 schema를 봅니다. 지금은 ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""} 쪽에 가깝습니다.`
+        "zh-Hans": `人工模式把 top ${priorityCount || 1} 高分帖交给外部 agent 写正式草稿；AI 执行模式才继续开框发送。当前建议动作：${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
+        "zh-Hant": `人工模式把 top ${priorityCount || 1} 高分帖交給外部 agent 寫正式草稿；AI 執行模式才繼續開框發送。目前建議動作：${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
+        en: `Human mode hands the top ${priorityCount || 1} posts to an external agent for finished drafts; AI runtime mode is the one that opens and submits. Suggested move: ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}.`,
+        ja: `人手モードは top ${priorityCount || 1} 件を外部 agent に渡して完成稿を作ります。返信欄を開いて送信するのは AI 実行モードだけです。推奨動作: ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}。`,
+        ko: `사람 모드는 top ${priorityCount || 1}개를 외부 agent에 넘겨 완성 초안을 만들고, AI 실행 모드만 열고 제출합니다. 추천 동작: ${decisionLabel}${slotLabel ? ` · ${slotLabel}` : ""}.`
       })
     : localize({
-        "zh-Hans": "当前还没有可执行候选。这里会在有 top shortlist 时展示给 AI 的真正输入，而不是规则草稿。",
-        "zh-Hant": "目前還沒有可執行候選。這裡會在有 top shortlist 時展示給 AI 的真正輸入，而不是規則草稿。",
-        en: "There is no actionable candidate yet. This panel will show the real AI runtime inputs once a shortlist is ready, not fallback drafts.",
-        ja: "まだ実行候補はありません。shortlist が出たら、ここには規則草稿ではなく AI runtime の実入力を出します。",
-        ko: "아직 실행 후보가 없습니다. shortlist가 잡히면 여기에는 fallback 초안이 아니라 AI runtime 입력이 표시됩니다."
+        "zh-Hans": "当前还没有高分候选。这里有候选后，可以复制写稿目标给 Codex / Claude，也可以走 AI 自动执行。",
+        "zh-Hant": "目前還沒有高分候選。這裡有候選後，可以複製寫稿目標給 Codex / Claude，也可以走 AI 自動執行。",
+        en: "No high-score candidate yet. Once ready, copy draft targets for Codex / Claude or use the AI runtime path.",
+        ja: "まだ高スコア候補はありません。候補が出たら Codex / Claude へ草稿対象を渡すか、AI 実行ルートを使えます。",
+        ko: "아직 고점 후보가 없습니다. 후보가 잡히면 Codex / Claude용 초안 대상을 복사하거나 AI 실행 경로를 사용할 수 있습니다."
       });
 
   const strip = document.createElement("div");
@@ -8540,6 +8567,13 @@ function createAgentRuntimeSummaryCard(summary = {}) {
   actions.className = "deskActionRow";
   if (focusCandidate?.url) {
     actions.append(
+      createDeskActionButton("copy-draft-targets", localize({
+        "zh-Hans": "复制写稿目标",
+        "zh-Hant": "複製寫稿目標",
+        en: "Copy draft targets",
+        ja: "草稿対象をコピー",
+        ko: "초안 대상 복사"
+      }), "", "accent"),
       createDeskActionButton("copy-agent-context", localize({
         "zh-Hans": "复制当前上下文",
         "zh-Hant": "複製目前上下文",
@@ -8626,6 +8660,7 @@ function renderAiReplyDeskPanel(summary = {}) {
   uiState.lastAgentSchemaPayload = buildAgentReplySchemaPayload();
   uiState.lastAgentFocusContext = focusContext;
   uiState.lastAgentInboxPayload = inboxBundle.payload;
+  uiState.lastDraftTargetsPayload = buildPopupDraftTargetsPayload(priorityCandidates, attributionSummaries);
   uiState.agentContextByUrl = inboxBundle.contextByUrl;
 
   els.aiReplyDeskPanel.innerHTML = "";
@@ -8633,17 +8668,17 @@ function renderAiReplyDeskPanel(summary = {}) {
     const empty = document.createElement("div");
     empty.className = "draftDeskEmpty";
     empty.innerHTML = `<strong>${escapeHtml(localize({
-      "zh-Hans": "这里现在展示 AI 真正要看的输入",
-      "zh-Hant": "這裡現在展示 AI 真正要看的輸入",
-      en: "This panel now shows real AI runtime inputs",
-      ja: "ここには AI runtime の実入力を出します",
-      ko: "여기에는 AI runtime 입력이 표시됩니다"
+      "zh-Hans": "这里现在分成人工写稿和 AI 执行",
+      "zh-Hant": "這裡現在分成人工寫稿和 AI 執行",
+      en: "This panel now separates human drafts and AI runtime",
+      ja: "ここは人手草稿と AI 実行に分かれました",
+      ko: "이 패널은 사람 초안과 AI 실행으로 나뉩니다"
     }))}</strong><p>${escapeHtml(localize({
-      "zh-Hans": "等首页里有 shortlist 后，这里会展示 top 6、单条上下文包和输出 schema。",
-      "zh-Hant": "等首頁裡有 shortlist 後，這裡會展示 top 6、單條上下文包和輸出 schema。",
-      en: "Once a shortlist appears, this panel will show the top 6, per-candidate context packs, and the output schema.",
-      ja: "shortlist が出たら、ここに top 6、候補文脈パック、出力 schema を出します。",
-      ko: "shortlist가 잡히면 여기에서 top 6, 후보 컨텍스트 팩, 출력 schema를 보여 줍니다."
+      "zh-Hans": "有 shortlist 后，人工模式复制写稿目标；AI 模式继续使用上下文包、schema 和开框动作。",
+      "zh-Hant": "有 shortlist 後，人工模式複製寫稿目標；AI 模式繼續使用上下文包、schema 和開框動作。",
+      en: "Once a shortlist appears, human mode copies draft targets; AI mode keeps context packs, schema, and composer actions.",
+      ja: "shortlist が出たら、人手モードは草稿対象をコピーし、AI モードは文脈パック・schema・返信欄操作を使います。",
+      ko: "shortlist가 잡히면 사람 모드는 초안 대상을 복사하고, AI 모드는 컨텍스트 팩, schema, 답글창 동작을 계속 사용합니다."
     }))}</p>`;
     els.aiReplyDeskPanel.appendChild(empty);
     return;
@@ -10214,6 +10249,19 @@ async function handleDeskAction(action, url = "") {
           en: "AI shortlist copied",
           ja: "AI shortlist をコピーしました",
           ko: "AI shortlist를 복사했습니다"
+        }));
+      }
+      return;
+    }
+    case "copy-draft-targets": {
+      const payload = uiState.lastDraftTargetsPayload ? JSON.stringify(uiState.lastDraftTargetsPayload, null, 2) : "";
+      if (payload && await copyTextToClipboard(payload)) {
+        flashStatus(localize({
+          "zh-Hans": "已复制人工写稿目标",
+          "zh-Hant": "已複製人工寫稿目標",
+          en: "Draft targets copied",
+          ja: "草稿対象をコピーしました",
+          ko: "초안 대상을 복사했습니다"
         }));
       }
       return;

@@ -1035,6 +1035,22 @@
     };
   }
 
+  function buildReplyDropDraftTargetSchema() {
+    return {
+      version: "replydrop-draft-targets-v1",
+      mode: "human-draft",
+      instruction: "ReplyDrop 只负责筛选和打包高分帖；外部 AI agent 按 candidates 顺序生成同语种、非模板、可直接人工复制的正式回复草稿，不自动打开 composer，不自动发送。",
+      output: {
+        targetTweetId: "string",
+        authorHandle: "string",
+        replyText: "string",
+        language: "same-as-post",
+        confidence: "number",
+        riskFlags: "string[]"
+      }
+    };
+  }
+
   function buildReplyDropExecutorCapabilities() {
     return {
       version: "replydrop-executor-capabilities-v1",
@@ -1070,6 +1086,8 @@
         getQueue: { type: "read" },
         getMediaBundle: { type: "read" },
         getTrafficSnapshot: { type: "read" },
+        getDraftTargets: { type: "read" },
+        getDraftContext: { type: "read" },
         refreshRecommendations: { type: "write" },
         getAgentInbox: { type: "read", legacy: true },
         getCandidateContext: { type: "read", legacy: true },
@@ -1605,6 +1623,92 @@
       executionPolicy: buildReplyDropExecutionPolicy(generatedAt),
       outputSchema: buildReplyDropReplySchema()
     };
+  }
+
+  function isReplyDropDraftTarget(context = {}, minScore = 54) {
+    if (!context || typeof context !== "object") {
+      return false;
+    }
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    if (score < minScore || context.recheck?.skipRecommended) {
+      return false;
+    }
+    if (String(context.scoring?.blockReason || "").trim()) {
+      return false;
+    }
+    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
+      return false;
+    }
+    return true;
+  }
+
+  function summarizeDraftTargetContext(context = {}) {
+    return {
+      version: "replydrop-draft-target-v1",
+      mode: "human-draft",
+      tweetId: String(context.tweetId || "").trim(),
+      url: normalizeTweetUrl(context.url),
+      author: context.author || {},
+      post: context.post || {},
+      scoring: context.scoring || {},
+      routing: context.routing || {},
+      memory: context.memory || {},
+      media: context.media || {},
+      aiHints: {
+        ...(context.aiHints || {}),
+        writingInstruction: "请根据 post.text / scoring / routing / memory 生成正式回复草稿；同语种回复；不要固定模板；不要自动发送；如果风险或语义不足就返回 skip。"
+      }
+    };
+  }
+
+  async function getReplyDropApiDraftTargets(options = {}) {
+    const runtimeState = await getApiRuntimeStateSnapshot();
+    const limit = Math.max(1, Math.min(12, Math.floor(Number(options?.limit) || 6)));
+    const minScore = Math.max(0, Math.min(100, Math.floor(Number(options?.minScore) || getConfiguredExecutorSendFloor(state.settings))));
+    const includeMedia = Boolean(options?.includeMedia);
+    const generatedAt = Date.now();
+    const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
+    const attributionModel = buildApiAttributionModel(runtimeState);
+    const contexts = [];
+
+    for (const candidate of sortedCandidates.slice(0, Math.max(limit * 3, 12))) {
+      const context = await buildReplyDropCandidateContext(candidate, runtimeState, {
+        source: "candidate",
+        includeMedia,
+        attributionModel,
+        generatedAt
+      });
+      contexts.push(context);
+      if (contexts.filter((item) => isReplyDropDraftTarget(item, minScore)).length >= limit) {
+        break;
+      }
+    }
+
+    const candidates = contexts
+      .filter((context) => isReplyDropDraftTarget(context, minScore))
+      .slice(0, limit)
+      .map((context) => summarizeDraftTargetContext(context));
+    const filteredCandidates = contexts
+      .filter((context) => !isReplyDropDraftTarget(context, minScore))
+      .map((context) => summarizeFilteredExecutorCandidate(context));
+
+    return {
+      version: "replydrop-draft-targets-v1",
+      generatedAt,
+      mode: "human-draft",
+      limit,
+      minScore,
+      candidates,
+      filteredCandidates,
+      skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
+      pageCandidateSync: runtimeState?.pageCandidateSync || null,
+      outputSchema: buildReplyDropDraftTargetSchema()
+    };
+  }
+
+  async function getReplyDropApiDraftContext(tweetId, options = {}) {
+    const context = await getReplyDropApiCandidateContext(tweetId, options);
+    return summarizeDraftTargetContext(context);
   }
 
   async function getReplyDropApiExecutorInbox(options = {}) {
@@ -2169,6 +2273,10 @@
         return getReplyDropApiMediaBundle(args[0]);
       case "getTrafficSnapshot":
         return getReplyDropApiTrafficSnapshot(args[0]);
+      case "getDraftTargets":
+        return getReplyDropApiDraftTargets(args[0] || {});
+      case "getDraftContext":
+        return getReplyDropApiDraftContext(args[0], args[1] || {});
       case "refreshRecommendations":
         return refreshReplyDropRecommendations(args[0] || {});
       case "getAgentInbox":

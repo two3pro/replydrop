@@ -6,7 +6,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.211`
+当前重置基线版本：`0.2.212`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -153,6 +153,8 @@ await window.ReplyDropExecutor.getCandidates()
 await window.ReplyDropExecutor.getQueue()
 await window.ReplyDropExecutor.getMediaBundle("2045354208548069468")
 await window.ReplyDropExecutor.getTrafficSnapshot("2045354208548069468")
+await window.ReplyDropExecutor.getDraftTargets({ limit: 6 })
+await window.ReplyDropExecutor.getDraftContext("2045354208548069468")
 await window.ReplyDropExecutor.refreshRecommendations({ mode: "scroll", pages: 2 })
 await window.ReplyDropExecutor.getExecutorInbox({ limit: 6 })
 await window.ReplyDropExecutor.getExecutorContext("2045354208548069468")
@@ -282,7 +284,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-当前会生成 `replydrop-p2.211.zip` 这样的安装包。
+当前会生成 `replydrop-p2.212.zip` 这样的安装包。
 
 ## 文档导航
 
