@@ -1041,11 +1041,24 @@
     return {
       version: "replydrop-draft-targets-v1",
       mode: "human-draft",
-      instruction: "ReplyDrop 只负责筛选和打包高分帖；外部 AI agent 按 candidates 顺序生成同语种、非模板、可直接人工复制的正式回复草稿，不自动打开 composer，不自动发送。",
+      workflow: "external-ai-chat-drafts",
+      instruction: "ReplyDrop 只负责筛选和打包当前首页快照里的高分帖；外部 AI agent 按 candidates 顺序立刻在当前聊天窗口输出同语种、非模板、可直接人工复制的正式回复草稿或不建议回原因。不要自动刷新，不自动打开 composer，不自动排队，不自动发送。",
+      snapshotPolicy: {
+        oneSnapshotOnly: true,
+        noAutoRefresh: true,
+        outputDestination: "current-chat",
+        writeBackOptional: "Only call setDraftPreview or runExecutorAction when the human explicitly asks."
+      },
       output: {
+        snapshotId: "string",
+        capturedAt: "number",
         targetTweetId: "string",
         authorHandle: "string",
+        score: "number",
+        urgency: "string",
+        recommendation: "reply | skip",
         replyText: "string",
+        skipReason: "string",
         language: "same-as-post",
         confidence: "number",
         riskFlags: "string[]"
@@ -1070,6 +1083,14 @@
         timeoutReasonCode: "target-timeout",
         emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
         instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，不能直接结束，必须调用 refreshRecommendations() 或自行刷新/滚动重扫至少3轮。"
+      },
+      externalDraftPolicy: {
+        mode: "human-draft",
+        workflow: "external-ai-chat-drafts",
+        oneSnapshotOnly: true,
+        noAutoRefreshWithoutHumanApproval: true,
+        outputDestination: "current-chat",
+        instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。"
       },
       preferredMethods: {
         getExecutorInbox: "getAgentInbox",
@@ -1657,10 +1678,13 @@
     return true;
   }
 
-  function summarizeDraftTargetContext(context = {}) {
+  function summarizeDraftTargetContext(context = {}, snapshot = {}) {
     return {
       version: "replydrop-draft-target-v1",
       mode: "human-draft",
+      snapshotId: String(snapshot.snapshotId || "").trim(),
+      capturedAt: Number(snapshot.capturedAt || 0),
+      snapshotIndex: Number.isFinite(Number(snapshot.snapshotIndex)) ? Number(snapshot.snapshotIndex) : null,
       tweetId: String(context.tweetId || "").trim(),
       url: normalizeTweetUrl(context.url),
       author: context.author || {},
@@ -1671,7 +1695,7 @@
       media: context.media || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / scoring / routing / memory 生成正式回复草稿；同语种回复；不要固定模板；不要自动发送；如果风险或语义不足就返回 skip。"
+        writingInstruction: "请根据 post.text / scoring / routing / memory 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果风险或语义不足就返回 skip 和不建议回原因。"
       }
     };
   }
@@ -1682,6 +1706,14 @@
     const minScore = Math.max(0, Math.min(100, Math.floor(Number(options?.minScore) || getConfiguredExecutorSendFloor(state.settings))));
     const includeMedia = Boolean(options?.includeMedia);
     const generatedAt = Date.now();
+    const capturedAt = Number(runtimeState?.updatedAt || runtimeState?.lastScanAt || runtimeState?.pageCandidateSync?.updatedAt || generatedAt);
+    const snapshotSeed = [
+      String(capturedAt || generatedAt),
+      String(runtimeState?.recentCandidates?.length || 0),
+      String(runtimeState?.pageCandidateSync?.visibleCount || 0),
+      String(runtimeState?.pageCandidateSync?.scannedCount || 0)
+    ].join("-");
+    const snapshotId = `replydrop-snapshot-${snapshotSeed}`;
     const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
     const attributionModel = buildApiAttributionModel(runtimeState);
     const contexts = [];
@@ -1702,7 +1734,11 @@
     const candidates = contexts
       .filter((context) => isReplyDropDraftTarget(context, minScore))
       .slice(0, limit)
-      .map((context) => summarizeDraftTargetContext(context));
+      .map((context, index) => summarizeDraftTargetContext(context, {
+        snapshotId,
+        capturedAt,
+        snapshotIndex: index + 1
+      }));
     const filteredCandidates = contexts
       .filter((context) => !isReplyDropDraftTarget(context, minScore))
       .map((context) => summarizeFilteredExecutorCandidate(context));
@@ -1710,7 +1746,16 @@
     return {
       version: "replydrop-draft-targets-v1",
       generatedAt,
+      capturedAt,
+      snapshotId,
       mode: "human-draft",
+      workflow: "external-ai-chat-drafts",
+      collaborationPolicy: {
+        oneSnapshotOnly: true,
+        noAutoRefresh: true,
+        outputDestination: "current-chat",
+        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出：handle / score / urgency / 建议回或不建议回 / 可复制 replyText 或 skipReason。不要再次刷新，除非用户明确允许。不要自动 queue、openComposer、submitReply。"
+      },
       limit,
       minScore,
       candidates,
@@ -1723,7 +1768,12 @@
 
   async function getReplyDropApiDraftContext(tweetId, options = {}) {
     const context = await getReplyDropApiCandidateContext(tweetId, options);
-    return summarizeDraftTargetContext(context);
+    const capturedAt = Date.now();
+    return summarizeDraftTargetContext(context, {
+      snapshotId: `replydrop-context-${String(tweetId || context?.tweetId || "unknown").trim()}-${capturedAt}`,
+      capturedAt,
+      snapshotIndex: 1
+    });
   }
 
   async function setReplyDropApiDraftPreview(payload = {}) {

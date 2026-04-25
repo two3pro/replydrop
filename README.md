@@ -6,7 +6,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.214`
+当前重置基线版本：`0.2.215`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -264,6 +264,7 @@ npm run export:oss
 
 - 优先修稳定性、DOM 兼容性、状态一致性、测试和文档
 - UI 可以继续精修，但不要把插件重新做成长网页
+- 人工写稿模式是一次首页快照协作：`getDraftTargets()` 输出 `snapshotId/capturedAt/collaborationPolicy`，外部 AI 应在当前聊天窗口批量给草稿或不建议回原因，不得擅自刷新、排队或发送
 - `AI执行台` 当前负责 runtime 输入与执行闭环，不负责假装内置模型写稿
 
 ## 发版产物
@@ -286,7 +287,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-当前会生成 `replydrop-p2.214.zip` 这样的安装包。
+当前会生成 `replydrop-p2.215.zip` 这样的安装包。
 
 ## 文档导航
 

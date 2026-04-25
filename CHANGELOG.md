@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.215
+
+- 调整人工写稿 / 外部 AI 协作模式：`getDraftTargets()` 现在返回 `snapshotId`、`capturedAt` 和 `collaborationPolicy`，明确这是一次首页快照，不允许 agent 擅自二次刷新
+- 明确外部 AI 应在当前聊天窗口批量输出 `handle / score / urgency / replyText 或 skipReason`，不自动排队、不自动打开回复框、不自动发送
+- 单条 `getDraftContext()` 也带快照字段，方便 agent 把草稿和当时的人类可见时间线绑定起来
+
 ## 0.2.214
 
 - 新增 `setDraftPreview({ tweetId/url, replyText, confidence, riskFlags })`：外部 AI agent 生成草稿后，可回写到首页对应推文卡片，显示“AI 草稿预览”，人工确认后再发
