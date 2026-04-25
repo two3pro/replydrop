@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.204`
+Current version: `0.2.205`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,7 +34,7 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.204` includes the current scorer and executor hardening work:
+Version `0.2.205` includes the current scorer and executor hardening work:
 
 - Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
 - Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.

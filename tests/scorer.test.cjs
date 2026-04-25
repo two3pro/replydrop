@@ -1532,3 +1532,88 @@ test("scorer does not hard-cap substantial technical reports", () => {
 
   assert.ok(!technical.breakdown.some((item) => item.key.startsWith("hardCap")));
 });
+
+test("scorer demotes p2.203 flow leaks below executor floor", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+  const common = {
+    authorFollowers: 52000,
+    likes: 1400,
+    replies: 130,
+    views: 86000,
+    timestamp: now - (28 * 60 * 1000),
+    trafficVelocityPerHour: 160000,
+    trafficReplyVelocityPerHour: 240,
+    trafficReplyRatio: 0.0015,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    sourceSurface: "for-you"
+  };
+
+  const cases = [
+    {
+      text: "BTC industry belief is what makes people win early in a cycle and build real wealth.",
+      langs: ["en"],
+      key: "protocolPromo"
+    },
+    {
+      text: "Xの収益化停止が解除されました。次回の利益も楽しみ、また稼げそうです。",
+      langs: ["ja"],
+      key: "socialGrowthFlex"
+    },
+    {
+      text: "Open source crypto tracker to catch early coins before everyone finds the next gem.",
+      langs: ["en"],
+      key: "protocolPromo"
+    },
+    {
+      text: "Join our XChat Web3 creator community group and grow with early builders.",
+      langs: ["en"],
+      key: "protocolPromo"
+    },
+    {
+      text: "Russia rich migration is accelerating as wealthy people escape with their money.",
+      langs: ["en"],
+      key: "thinGenericPost"
+    },
+    {
+      text: "God paid off my medical debt and healed the hospital bills. Miracle after prayer.",
+      langs: ["en"],
+      key: "riskyContent"
+    }
+  ];
+
+  for (const item of cases) {
+    const analysis = scorer.analyzeTweet({ ...common, ...item });
+    assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+    assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
+  }
+});
+
+test("scorer hard-blocks explicit good morning follower bait", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const bait = scorer.analyzeTweet({
+    text: "999+ followers are active. Comment Good Morning and I will follow you.",
+    authorFollowers: 18000,
+    likes: 280,
+    replies: 110,
+    views: 24000,
+    timestamp: now - (20 * 60 * 1000),
+    trafficVelocityPerHour: 62000,
+    trafficReplyVelocityPerHour: 320,
+    trafficReplyRatio: 0.0048,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(bait.score <= 45);
+  assert.ok(bait.breakdown.some((item) => item.key === "followTrainBait"));
+});

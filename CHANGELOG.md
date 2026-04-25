@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.205
+
+- 修复 `getExecutorInbox()` 映射丢字段：当 DOM fallback 候选缺 score / text / author 时，不再覆盖 background 里的真实候选数据
+- 补 p2.203 / p2.204 压测漏网：日文 X 收益停止解除 / 下一轮收益、BTC 行业信仰、open-source early coin 工具、XChat / Web3 社群邀约会被压到自动发送线以下
+- 加重低信息地缘财富 / 移民叙事、宗教医疗 / 债务 miracle claim、通用鸡汤短句扣分，避免被流速抬高
+- 明确拦截 `999+ followers / comment Good Morning` 这类变体互关诱饵，避免进入 composer 后变成 `empty-result`
+
 ## 0.2.204
 
 - `getExecutorInbox()` 新增 `pageCandidateSync`、`filteredCandidates`、`skipReasons`，让 OpenClaw / Hermes 能看到“扫描到了但为什么没有进入可执行推荐”

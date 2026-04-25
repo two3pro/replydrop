@@ -577,10 +577,54 @@
     const previousPeakFinalScore = Number(previous?.peakFinalScore ?? previous?.finalScore ?? previous?.score ?? 0);
     const nextPeakFinalScore = Number(next?.peakFinalScore ?? next?.finalScore ?? next?.score ?? 0);
     const useNextPeak = nextPeakFinalScore >= previousPeakFinalScore;
+    const merged = {
+      ...(previous && typeof previous === "object" ? previous : {}),
+      ...(next && typeof next === "object" ? next : {})
+    };
+
+    [
+      "score",
+      "baseScore",
+      "postScore",
+      "reachLikelihood",
+      "understandingConfidence",
+      "authorFit",
+      "finalScore"
+    ].forEach((key) => {
+      const previousValue = Number(previous?.[key] || 0);
+      const nextValue = Number(next?.[key] || 0);
+      if (previousValue > 0 && nextValue <= 0) {
+        merged[key] = previous[key];
+      }
+    });
+
+    [
+      "text",
+      "authorHandle",
+      "authorName",
+      "mediaAltText",
+      "mediaKind",
+      "sourceSurface",
+      "trafficPhase",
+      "trafficSource"
+    ].forEach((key) => {
+      if (String(previous?.[key] || "").trim() && !String(next?.[key] || "").trim()) {
+        merged[key] = previous[key];
+      }
+    });
+
+    [
+      "matchedTopics",
+      "matchedLanguages",
+      "highlights"
+    ].forEach((key) => {
+      if (Array.isArray(previous?.[key]) && previous[key].length && (!Array.isArray(next?.[key]) || !next[key].length)) {
+        merged[key] = previous[key];
+      }
+    });
 
     return {
-      ...(previous && typeof previous === "object" ? previous : {}),
-      ...(next && typeof next === "object" ? next : {}),
+      ...merged,
       url,
       peakFinalScore: Math.max(previousPeakFinalScore, nextPeakFinalScore),
       peakSourceSurface: String(

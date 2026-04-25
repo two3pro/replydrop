@@ -224,7 +224,7 @@
   const FOLLOW_TRAIN_CTA_TERMS = [
     "say hello", "say hey", "say hi", "drop hello", "drop hey", "drop hi",
     "say want", "say need", "reply me", "reply hello", "reply hey", "reply hi",
-    "reply want", "reply need", "comment hello", "comment hey", "comment hi",
+    "reply want", "reply need", "comment hello", "comment hey", "comment hi", "comment good morning",
     "comment want", "comment need", "type hello", "type hey", "type hi",
     "type want", "type need", "say yes", "write help", "type help",
     "comment help", "reply help", "just write help", "write \"help\"", "write 'help'",
@@ -285,8 +285,8 @@
     /\bdrop\s+(?:your\s+)?(?:handle|@|username)\b/i,
     /\b(?:reply|comment)\s+done\b/i,
     /\b(?:gain|get)\s+\d+(?:[.,]\d+)?\s+followers?\b/i,
-    /\b\d+(?:[.,]\d+)?\+?\s*(?:k\s*)?followers?\b.{0,90}\b(?:say|reply|comment|type|want|need|hi|hello|grow|page|active|follow)\b/i,
-    /\b(?:say|reply|comment|type|want|need|hi|hello)\b.{0,90}\b\d+(?:[.,]\d+)?\+?\s*(?:k\s*)?followers?\b/i,
+    /\b\d+(?:[.,]\d+)?\+?\s*(?:k\s*)?followers?\b.{0,90}\b(?:say|reply|comment|type|want|need|hi|hello|good\s*morning|grow|page|active|follow)\b/i,
+    /\b(?:say|reply|comment|type|want|need|hi|hello|good\s*morning)\b.{0,90}\b\d+(?:[.,]\d+)?\+?\s*(?:k\s*)?followers?\b/i,
     /\b(?:0|zero)\s*(?:to|->|→|-|到)\s*\d+(?:[.,]\d+)?\s*k?\s+followers?\b/i,
     /\b\d+(?:[.,]\d+)?\s*k\s+followers?\b.{0,80}\b(?:case\s*study|growth|moneti[sz]e|impressions?)\b/i,
     /\b(?:\d+(?:[.,]\d+)?\s*[kmb]?\s*)?impressions?\b.{0,80}\bmoneti[sz]e\b/i,
@@ -364,6 +364,8 @@
     "passport", "agent passport", "early access", "early experience", "private beta",
     "closed beta", "beta access", "waitlist", "sign up", "register now", "join beta",
     "join the waitlist", "invite code", "try it now", "limited spots", "cta",
+    "catch early", "early coins", "early coin", "early gems", "gem finder", "open source crypto",
+    "xchat", "x chat", "web3 community", "creator community", "join our group", "group chat",
     "100x", "1000x", "10x", "x100", "x1000", "moonshot", "pump", "pumping",
     "next 100x", "next 1000x", "gem call", "hidden gem", "degen", "bullish",
     "meme wealth", "wealth effect", "money printer", "trenches", "degen trenches",
@@ -380,6 +382,8 @@
     /\b(?:tvl|liquidity|buyback|airdrop|staking|yield|mainnet|testnet|mint(?:ed|ing)?|stablecoin|usdt)\b.{0,90}\b(?:protocol|token|defi|web3|launch|narrative|premium|growth)\b/i,
     /\b(?:protocol|defi|web3)\b.{0,90}\b(?:tvl|backstop|mainnet|launch|airdrop|liquidity|token|mint(?:ed|ing)?)\b/i,
     /\b(?:web3|crypto|exchange|bybit|okx|binance|kucoin|bitget|mexc)\b.{0,120}\b(?:event|summit|conference|networking|booth|sponsor|partner|campaign|promo|airdrop|listing|strategy)\b/i,
+    /\b(?:web3|crypto|x\s*chat|xchat|creator)\b.{0,120}\b(?:community|group|chat|invite|join|network|circle|club)\b/i,
+    /\b(?:join|invite|build|grow)\b.{0,120}\b(?:web3|crypto|x\s*chat|xchat|creator)\b.{0,80}\b(?:community|group|chat|network|circle|club)\b/i,
     /\b(?:market\s+maker|institutional|liquidity\s+provider)\b.{0,100}\b(?:crypto|exchange|token|web3|event|strategy|promo|partnership)\b/i,
     /\b(?:early|private|closed)?\s*(?:beta|access|experience)\b.{0,110}\b(?:passport|agent|product|app|launch|waitlist|sign\s*up|register|invite|cta)\b/i,
     /\b(?:passport|agent\s+passport|payment\s+product)\b.{0,110}\b(?:early|beta|access|experience|waitlist|sign\s*up|register|invite|try)\b/i,
@@ -391,6 +395,9 @@
     /\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b.{0,100}\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b/i,
     /\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b.{0,100}\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b/i,
     /\b(?:eth|crypto|degen)\s+trenches\b.{0,100}\b(?:product|thesis|trade|alpha|launch|token|coin|profit|narrative)\b/i,
+    /\b(?:open\s*source|github|tool|scanner|tracker)\b.{0,120}\b(?:catch|find|discover|spot)\b.{0,80}\b(?:early|new)\b.{0,40}\b(?:coins?|tokens?|gems?|crypto)\b/i,
+    /\b(?:catch|find|discover|spot)\b.{0,80}\b(?:early|new)\b.{0,40}\b(?:coins?|tokens?|gems?|crypto)\b.{0,120}\b(?:open\s*source|github|tool|scanner|tracker)\b/i,
+    /\b(?:btc|bitcoin|crypto|web3)\b.{0,120}\b(?:industry|belief|conviction|future|faith|thesis)\b.{0,100}\b(?:early|cycle|rich|wealth|win|profit|millionaire)\b/i,
     /\b(?:btc|bitcoin|eth|ethereum)\b.{0,100}\b(?:support|resistance|breakout|price\s+target|long|short|entry|exit)\b/i,
     /\b(?:support|resistance|breakout|price\s+target|long|short|entry|exit)\b.{0,100}\b(?:btc|bitcoin|eth|ethereum)\b/i,
     /\b(?:eth|ethereum)\b.{0,100}\b(?:staking|inflection\s+point|yield|rewards?|apr|apy)\b/i,
@@ -425,10 +432,20 @@
     /\b(?:reward|challenge|prize|winner)\b.{0,80}\b(?:insult|roast|attack|bully)\b.{0,80}\b(?:ai|bot|gpt|model)\b/i,
     /(?:会议|會議|大会|大會|峰会|峰會|活动|活動|现场|現場).{0,50}(?:冲突|衝突|吵架|互骂|互罵|辱骂|辱罵|骂战|罵戰|打架|羞辱)/u
   ];
+  const MIRACLE_CLAIM_PATTERNS = [
+    /\b(?:god|jesus|lord|prayer|miracle|blessed)\b.{0,120}\b(?:healed|cured|cancer|surgery|hospital|medical|debt|bills?|paid\s*off|paid)\b/i,
+    /\b(?:healed|cured|cancer|surgery|hospital|medical|debt|bills?|paid\s*off|paid)\b.{0,120}\b(?:god|jesus|lord|prayer|miracle|blessed)\b/i
+  ];
+  const GEOPOLITICAL_LOW_INFO_PATTERNS = [
+    /\b(?:russia|russian|china|chinese|america|american|europe|uae|dubai)\b.{0,120}\b(?:wealth|rich|millionaires?|billionaires?|migration|migrate|moved?|leaving|escape)\b/i,
+    /\b(?:wealth|rich|millionaires?|billionaires?|migration|migrate|moved?|leaving|escape)\b.{0,120}\b(?:russia|russian|china|chinese|america|american|europe|uae|dubai)\b/i,
+    /(?:俄罗斯|俄羅斯|中国|中國|美国|美國|欧洲|歐洲|迪拜|阿联酋|阿聯酋).{0,60}(?:富人|有钱人|有錢人|财富|財富|移民|润|潤|外逃|逃离|逃離)/u
+  ];
   const GENERIC_SHORT_POST_TERMS = [
     "good news", "great news", "big day", "keep going", "never give up", "stay strong",
     "believe in yourself", "trust the process", "one day", "soon", "blessed",
-    "grateful", "thank god", "gm", "gn", "vibes", "facts", "real talk",
+    "grateful", "thank god", "god did", "god is good", "miracle", "debt free",
+    "healed", "healing miracle", "medical debt", "gm", "gn", "vibes", "facts", "real talk",
     "好消息", "坚持", "堅持", "加油", "冲", "衝", "稳了", "穩了", "太好了",
     "やった", "最高", "頑張る", "おはよう", "おやすみ",
     "좋은 소식", "화이팅", "가즈아"
@@ -467,6 +484,8 @@
     /(?:展示量|浏览量|瀏覽量|曝光|阅读量|閱讀量|粉丝|粉絲|收益|分成|打款|到账|到賬).{0,50}(?:增长|增長|账号|帳號|賬號|变现|變現|收益|炫耀|突破|收到|来了|來了|捐)/u,
     /(?:インプレッション|表示回数|閲覧数|フォロワー|収益|広告収益|振込|入金|支払い|支払|ペイアウト).{0,55}(?:伸び|収益|突破|増え|来た|きた|届い|ありがとう|寄付|記録|最高)/u,
     /(?:X|x).{0,16}(?:収益|広告収益|振込|入金|支払い|ペイアウト).{0,55}(?:来た|きた|届い|ありがとう|寄付|記録|最高)/u,
+    /(?:X|x).{0,18}(?:収益|広告収益|支払い|ペイアウト|収益化).{0,70}(?:停止|止ま|解除|復活|戻っ|戻り|次回|利益|稼げ|稼ぐ)/u,
+    /(?:収益|広告収益|支払い|ペイアウト|収益化).{0,70}(?:停止|止ま|解除|復活|戻っ|戻り|次回|利益|稼げ|稼ぐ)/u,
     /(?:노출|조회수|팔로워).{0,45}(?:수익|증가|돌파|늘)/u,
     /(?:주급|주간\s*수익|수익금|광고\s*수익|블루\s*수익|프리미엄\s*수익|x\s*수익|조회수\s*수익|정산).{0,55}(?:인증|비교|감사|고맙|받았|규칙|룰|블루|프리미엄|노출|조회수)/iu,
     /(?:댓글|답글|리플|reply|replies).{0,18}(?:1000|1,000|천).{0,45}(?:달성|돌파|수익|정산|인증|참여|감사)/iu
@@ -1676,16 +1695,18 @@
     const dialogueHits = countTermMatches(semanticText, DIALOGUE_TEXT_TERMS) + (/[?？]/.test(semanticText) ? 1 : 0);
     const genericHits = countTermMatches(semanticText, GENERIC_SHORT_POST_TERMS);
     const relationshipHits = countTermMatches(semanticText, RELATIONSHIP_BAIT_TERMS);
+    const geopoliticalLowInfoHits = countRegexMatches(semanticText, GEOPOLITICAL_LOW_INFO_PATTERNS);
     const shortFit = semanticText.length <= 72 || semanticTokens <= 9;
 
-    if (topicHits > 0 || dialogueHits > 0) {
+    if (!geopoliticalLowInfoHits && (topicHits > 0 || dialogueHits > 0)) {
       return false;
     }
 
     return Boolean(
       (shortFit && semanticTokens <= 7) ||
       (shortFit && genericHits > 0) ||
-      (semanticTokens <= 14 && relationshipHits > 0)
+      (semanticTokens <= 14 && relationshipHits > 0) ||
+      geopoliticalLowInfoHits > 0
     );
   }
 
@@ -1720,11 +1741,12 @@
 
   function computeThinGenericPostPenalty(tweet, weight = 34) {
     const lowInfoPileOn = isLowInfoPileOnQuestion(tweet);
-    if (!isThinGenericLowInfoPost(tweet) && !lowInfoPileOn) {
+    const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
+    const geopoliticalLowInfo = countRegexMatches(semanticText, GEOPOLITICAL_LOW_INFO_PATTERNS) > 0;
+    if (!isThinGenericLowInfoPost(tweet) && !lowInfoPileOn && !geopoliticalLowInfo) {
       return null;
     }
 
-    const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
     const semanticTokens = countSemanticTokens(semanticText);
     const views = Number.isFinite(tweet.views) ? tweet.views : 0;
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
@@ -1740,7 +1762,7 @@
       1
     );
     const penalty = thinFit * heatFit * weight;
-    return penalty >= 3 ? Math.max(penalty, lowInfoPileOn ? 34 : 28) : null;
+    return penalty >= 3 ? Math.max(penalty, geopoliticalLowInfo ? 42 : (lowInfoPileOn ? 34 : 28)) : null;
   }
 
   function computeSocialGrowthFlexPenalty(tweet, weight = 42) {
@@ -1824,7 +1846,8 @@
     }
 
     const termHits = countTermMatches(normalized, RISKY_CONTENT_TERMS);
-    const patternHits = countRegexMatches(normalized, RISKY_CONTENT_PATTERNS);
+    const patternHits = countRegexMatches(normalized, RISKY_CONTENT_PATTERNS) +
+      countRegexMatches(normalized, MIRACLE_CLAIM_PATTERNS);
     if (!termHits && !patternHits) {
       return null;
     }
@@ -1934,6 +1957,9 @@
     }
     if (signals.protocolPromoPenalty != null && !substantialAnalysis) {
       return { cap: 52, key: "hardCapCryptoPromo", label: "Crypto promo cap" };
+    }
+    if (signals.riskyContentPenalty != null && !substantialAnalysis) {
+      return { cap: 48, key: "hardCapRisky", label: "Risky content cap" };
     }
     if (signals.thinGenericPostPenalty != null) {
       return { cap: 50, key: "hardCapLowInfo", label: "Low-info cap" };
@@ -2514,6 +2540,7 @@
       verifiedPileOnPenalty,
       politicalFigurePenalty,
       broadcastAccountPenalty,
+      riskyContentPenalty,
       protocolPromoPenalty,
       thinGenericPostPenalty
     });
