@@ -426,6 +426,9 @@
     openComposer(payload = {}) {
       return callAction("openComposer", payload);
     },
+    replyFromTimeline(payload = {}) {
+      return callAction("replyFromTimeline", payload);
+    },
     submitReply(options = {}) {
       return callAction("submitReply", options);
     },

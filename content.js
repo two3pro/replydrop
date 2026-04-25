@@ -1103,9 +1103,21 @@
             url: "string",
             tweetId: "string",
             draft: "string",
+            timelineFirst: "boolean",
             targetStartedAt: "number",
             targetDeadlineAt: "number"
           }
+        },
+        replyFromTimeline: {
+          type: "write",
+          accepts: {
+            url: "string",
+            tweetId: "string",
+            draft: "string",
+            targetStartedAt: "number",
+            targetDeadlineAt: "number"
+          },
+          fallback: "openComposer detail page path"
         },
         submitReply: {
           type: "write",
@@ -1942,6 +1954,10 @@
       case "open-composer":
       case "open-reply":
         return "open-composer";
+      case "timeline-reply":
+      case "reply-from-timeline":
+      case "timeline-open-composer":
+        return "reply-from-timeline";
       case "refresh":
       case "refresh-recommendations":
       case "rescan":
@@ -1979,7 +1995,7 @@
         resolvedTargetUrl = `https://x.com/i/status/${tweetId}`;
       }
     }
-    if (["open-composer", "submit-reply", "reply"].includes(action)) {
+    if (["open-composer", "reply-from-timeline", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
       const timeoutFailure = beginReplyTargetAttempt(targetForDeadline, {
         ...normalizedPayload,
@@ -2011,6 +2027,11 @@
         return addReplyDropCandidateToQueue(tweetId);
       case "open-composer":
         return openReplyDropComposer(normalizedPayload);
+      case "reply-from-timeline":
+        return openReplyDropComposer({
+          ...normalizedPayload,
+          timelineFirst: true
+        });
       case "submit-reply": {
         const submitOptions = normalizedPayload.options && typeof normalizedPayload.options === "object"
           ? normalizedPayload.options
@@ -2301,6 +2322,11 @@
         return skipReplyDropCandidate(args[0]);
       case "openComposer":
         return openReplyDropComposer(args[0] || {});
+      case "replyFromTimeline":
+        return openReplyDropComposer({
+          ...(args[0] || {}),
+          timelineFirst: true
+        });
       case "submitReply":
         return submitReplyDropComposer(args[0] || {});
       case "runExecutorAction":
@@ -5540,6 +5566,119 @@
     return sanitizeSnippet(editor.textContent, 640) === sanitizeSnippet(value, 640);
   }
 
+  function canAttemptTimelineReply(targetUrl = "", payload = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || getCurrentStatusUrl() === normalizedTarget || isComposePostPath()) {
+      return false;
+    }
+    if (payload?.preferDetailPage === true || payload?.timelineFirst === false || payload?.preferTimeline === false) {
+      return false;
+    }
+    const path = String(global.location.pathname || "").toLowerCase();
+    return path === "/home" || path.startsWith("/home/") || path === "/" || path.startsWith("/i/bookmarks") || path.startsWith("/notifications");
+  }
+
+  async function openTimelineComposerHandoff(targetUrl = "", payload = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!canAttemptTimelineReply(normalizedTarget, payload)) {
+      return null;
+    }
+
+    const article = findReplyArticle(normalizedTarget);
+    if (!(article instanceof Element) || !hasVisibleRect(article)) {
+      return null;
+    }
+
+    const candidateRecord = { url: normalizedTarget };
+    let runtimeState = null;
+    try {
+      runtimeState = await getRuntimeStateSnapshot();
+      Object.assign(candidateRecord, getCandidateByUrlFromState(runtimeState, normalizedTarget) || getQueueItemByUrlFromState(runtimeState, normalizedTarget) || {});
+    } catch {
+      // Keep the visible article as the fallback context.
+    }
+
+    const recheck = buildLiveCandidateRecheck(candidateRecord, article);
+    if (recheck?.skipRecommended) {
+      const belowExecutorSendFloor = Boolean(recheck.belowExecutorSendFloor);
+      return buildReplyActionFailure({
+        ...buildReplyPageContext(normalizedTarget, article),
+        reason: belowExecutorSendFloor ? "score-below-agent-send-floor" : "score-degraded-below-average",
+        reasonCode: belowExecutorSendFloor ? "value-below-send-floor" : "value-dropped-on-open",
+        recheck,
+        timelineAttempted: true,
+        timelineMode: "inline"
+      });
+    }
+
+    const replyButton = queryPrimaryArticleActionNode(article, ["reply"]);
+    if (!(replyButton instanceof HTMLElement)) {
+      return null;
+    }
+
+    article.scrollIntoView({ block: "center", behavior: "smooth" });
+    await waitFor(180);
+    state.pendingReplyTargetUrl = normalizedTarget;
+    state.pendingReplyStartedAt = Date.now();
+    state.pendingReplyMeta = buildReplyMetaFromArticle(article);
+    replyButton.click();
+
+    const composerState = await waitForReplyComposer(normalizedTarget, {
+      timeoutMs: 2800,
+      replyOnly: true,
+      requireLocked: true
+    });
+    if (!composerState?.ok || !(composerState.editor instanceof HTMLElement)) {
+      return null;
+    }
+
+    const draft = String(payload?.draft || "").trim().slice(0, 560);
+    const draftLoaded = draft ? setReplyComposerText(composerState.editor, draft) : true;
+    const readyState = await waitForReplySubmitReady(normalizedTarget, draft, {
+      timeoutMs: 2600,
+      rewriteDraft: Boolean(draft)
+    });
+    if (!readyState?.ok) {
+      return buildReplyActionFailure({
+        ...buildReplyPageContext(normalizedTarget, article),
+        ...buildReplyComposerFailurePayload(normalizedTarget, readyState?.context || composerState.context),
+        reason: readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready",
+        reasonCode: readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready",
+        recheck,
+        draftLoaded,
+        timelineAttempted: true,
+        timelineMode: "inline",
+        composerDiagnostics: {
+          editorFound: Boolean(readyState?.editorFound),
+          sendButtonFound: Boolean(readyState?.sendButtonFound),
+          buttonDisabled: Boolean(readyState?.buttonDisabled),
+          draftReady: Boolean(readyState?.draftReady),
+          composerLocked: Boolean(readyState?.composerLocked)
+        }
+      });
+    }
+
+    return {
+      ok: true,
+      ...buildReplyActionMeta({
+        ...buildReplyPageContext(normalizedTarget, article),
+        reason: "timeline-composer-ready"
+      }),
+      href: normalizeTweetUrl(global.location.href),
+      draftLoaded,
+      composerReady: true,
+      timelineAttempted: true,
+      timelineMode: "inline",
+      recheck,
+      context: {
+        composerLocked: Boolean(readyState.context?.composerLocked),
+        pageLocked: Boolean(readyState.context?.pageLocked),
+        currentUrl: readyState.context?.currentUrl || normalizeTweetUrl(global.location.href),
+        articleUrl: readyState.context?.articleUrl || normalizedTarget
+      }
+    };
+  }
+
   async function openQueueComposerHandoff(payload = {}) {
     const targetUrl = normalizeTweetUrl(payload.url);
     const draft = String(payload.draft || "").trim().slice(0, 560);
@@ -5559,6 +5698,21 @@
         reason: "already-replied",
         reasonCode: "already-replied"
       });
+    }
+
+    const timelineResult = await openTimelineComposerHandoff(targetUrl, payload);
+    const timelineTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
+      ...payload,
+      stage: "timeline-open-composer"
+    });
+    if (timelineTimeoutFailure) {
+      return timelineTimeoutFailure;
+    }
+    if (timelineResult?.ok) {
+      return timelineResult;
+    }
+    if (timelineResult && ["value-below-send-floor", "value-dropped-on-open"].includes(String(timelineResult.reasonCode || ""))) {
+      return timelineResult;
     }
 
     const contextLock = await ensureTargetReplyContext(targetUrl, { maxRetry: 1 });

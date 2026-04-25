@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.213
+
+- 新增首页原地回复通道：`openComposer()` 默认先尝试在当前时间线卡片内打开回复框，成功则不进详情页、不刷新首页
+- 新增显式 API：`replyFromTimeline(payload)`；时间线 composer 无法锁定目标、按钮不可用或分数掉线时，自动回落原详情页安全路径
+- 原地回复仍保留实时分数复核、composer 目标锁定、120 秒目标超时和发送按钮校验，避免为了提速回错帖
+
 ## 0.2.212
 
 - 新增人工写稿模式接口：`getDraftTargets({ limit })` / `getDraftContext(tweetId)`，只读输出高分帖上下文，让 Codex / Claude / Hermes 在各自窗口生成正式回复草稿
