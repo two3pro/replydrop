@@ -1941,6 +1941,62 @@
     return penalty >= 2 ? Math.max(penalty, 36) : null;
   }
 
+  function getDeveloperUpdateSignal(tweet) {
+    const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
+    if (!semanticText) {
+      return { detected: false, bonus: null };
+    }
+
+    const normalized = semanticText.toLowerCase();
+    const semanticTokens = countSemanticTokens(semanticText);
+    const technicalHits = countTermMatches(normalized, [
+      "api", "api docs", "docs", "quick start", "model", "context", "tokens", "cache hit",
+      "cache miss", "input", "output", "inference", "pricing", "claude code", "opencode",
+      "openclaw", "sdk", "integration", "integrations", "developer", "developers",
+      "模型", "接口", "文档", "上下文", "开发者", "開發者", "料金", "価格", "ドキュメント"
+    ]);
+    const concreteHits = countRegexMatches(semanticText, [
+      /\bv?\d+(?:\.\d+){1,3}\+?\b/i,
+      /\b\d+\s*m\s+context\b/i,
+      /\b\d+%\s*off\b/i,
+      /\$\s*\d+(?:\.\d+)?/i,
+      /\b(?:update|set|upgrade)\s+(?:to|model)\b/i,
+      /\b(?:api[-.\w/]*docs|docs?[-.\w/]*quick[-_\w/]*)\b/i
+    ]);
+    const integrationHits = countTermMatches(normalized, [
+      "claude code", "opencode", "openclaw", "cursor", "vscode", "windsurf", "aider",
+      "integration", "integrations", "集成", "統合", "連携"
+    ]);
+    const cryptoHits = countTermMatches(normalized, [
+      "token", "tvl", "mainnet", "testnet", "airdrop", "staking", "liquidity",
+      "exchange listing", "holders", "holder count", "代币", "代幣", "空投", "主网", "主網"
+    ]);
+    const detected = Boolean(
+      semanticTokens >= 22 &&
+      technicalHits >= 3 &&
+      concreteHits >= 2 &&
+      (integrationHits >= 1 || /deepseek|openai|anthropic|claude|gpt|model/i.test(semanticText)) &&
+      cryptoHits <= 1
+    );
+
+    if (!detected) {
+      return { detected: false, bonus: null };
+    }
+
+    return {
+      detected: true,
+      bonus: Math.min(18, 10 + technicalHits + concreteHits + integrationHits)
+    };
+  }
+
+  function applyDeveloperUpdateRelief(penalty, signal, multiplier = 0.3) {
+    if (penalty == null || !signal?.detected) {
+      return penalty;
+    }
+    const relieved = penalty * multiplier;
+    return relieved >= 2 ? relieved : null;
+  }
+
   function computeProtocolPromoPenalty(tweet, weight = 38) {
     const text = getSemanticText(tweet) || String(tweet?.text || "");
     const normalized = normalizeSemanticText(text);
@@ -2014,7 +2070,7 @@
   }
 
   function computeExecutorHardCap(tweet, signals = {}) {
-    const substantialAnalysis = hasSubstantialOriginalAnalysis(tweet);
+    const substantialAnalysis = hasSubstantialOriginalAnalysis(tweet) || getDeveloperUpdateSignal(tweet).detected;
     if (signals.followTrainBaitPenalty != null) {
       return { cap: 42, key: "hardCapFollowLoop", label: "Follow loop cap" };
     }
@@ -2242,6 +2298,7 @@
     });
 
     const keywordMatched = Object.values(matches).some(Boolean);
+    const developerUpdateSignal = getDeveloperUpdateSignal(tweet);
     let score = (parts.length && availableWeight > 0)
       ? (parts.reduce((sum, current) => sum + current, 0) / availableWeight) * 100
       : 0;
@@ -2254,7 +2311,7 @@
         isLowInfoPileOnQuestion(tweet) ||
         getFollowTrainBaitSignal(tweet).detected ||
         computeSocialGrowthFlexPenalty(tweet, 44) != null ||
-        computeProtocolPromoPenalty(tweet, 46) != null ||
+        (computeProtocolPromoPenalty(tweet, 46) != null && !developerUpdateSignal.detected) ||
         computeRiskyContentPenalty(tweet, 42) != null
       )
     ) {
@@ -2325,6 +2382,17 @@
       });
     }
 
+    const developerUpdateBonus = developerUpdateSignal.bonus;
+    if (developerUpdateBonus != null) {
+      score += developerUpdateBonus;
+      breakdown.push({
+        key: "developerUpdate",
+        label: "Developer update",
+        amount: developerUpdateBonus,
+        kind: "quality"
+      });
+    }
+
     const crowdingPenalty = computeCrowdingPenalty(tweet);
     if (crowdingPenalty != null) {
       score -= crowdingPenalty;
@@ -2369,7 +2437,11 @@
       });
     }
 
-    const verifiedOrganizationPenalty = computeVerifiedOrganizationPenalty(tweet, 38);
+    let verifiedOrganizationPenalty = applyDeveloperUpdateRelief(
+      computeVerifiedOrganizationPenalty(tweet, 38),
+      developerUpdateSignal,
+      0.24
+    );
     if (verifiedOrganizationPenalty != null) {
       score -= verifiedOrganizationPenalty;
       breakdown.push({
@@ -2380,7 +2452,11 @@
       });
     }
 
-    const verifiedPileOnPenalty = computeVerifiedPileOnPenalty(tweet, 24);
+    let verifiedPileOnPenalty = applyDeveloperUpdateRelief(
+      computeVerifiedPileOnPenalty(tweet, 24),
+      developerUpdateSignal,
+      0.32
+    );
     if (verifiedPileOnPenalty != null) {
       score -= verifiedPileOnPenalty;
       breakdown.push({
@@ -2402,7 +2478,11 @@
       });
     }
 
-    const broadcastAccountPenalty = computeBroadcastAccountPenalty(tweet, 40);
+    let broadcastAccountPenalty = applyDeveloperUpdateRelief(
+      computeBroadcastAccountPenalty(tweet, 40),
+      developerUpdateSignal,
+      0.22
+    );
     if (broadcastAccountPenalty != null) {
       score -= broadcastAccountPenalty;
       breakdown.push({
@@ -2435,7 +2515,11 @@
       });
     }
 
-    const protocolPromoPenalty = computeProtocolPromoPenalty(tweet, 46);
+    let protocolPromoPenalty = applyDeveloperUpdateRelief(
+      computeProtocolPromoPenalty(tweet, 46),
+      developerUpdateSignal,
+      0.18
+    );
     if (protocolPromoPenalty != null) {
       score -= protocolPromoPenalty;
       breakdown.push({

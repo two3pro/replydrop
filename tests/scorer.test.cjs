@@ -1579,6 +1579,55 @@ test("scorer does not hard-cap substantial technical reports", () => {
   assert.ok(!technical.breakdown.some((item) => item.key.startsWith("hardCap")));
 });
 
+test("scorer keeps actionable official developer updates competitive", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const deepseekUpdate = scorer.analyzeTweet({
+    text: "DeepSeek-V4-Pro API is 75% OFF until May 5th, 2026. Integration Updates: Claude Code: set model to deepseek-v4-pro[1m] to unlock 1M context. OpenCode: update to v1.14.24+. OpenClaw: update to v2026.4.24+. Check the latest official API docs for full details.",
+    authorName: "DeepSeek",
+    authorHandle: "deepseek_ai",
+    authorFollowers: 3000000,
+    likes: 792,
+    replies: 63,
+    retweets: 121,
+    bookmarks: 126,
+    views: 20000,
+    timestamp: now - (30 * 60 * 1000),
+    trafficVelocityPerHour: 40000,
+    trafficReplyVelocityPerHour: 126,
+    trafficReplyRatio: 0.00315,
+    authorVerified: true,
+    authorVerificationType: "gold",
+    hasMedia: true,
+    mediaKind: "photo",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const shallowBrandUpdate = scorer.analyzeTweet({
+    text: "DeepSeek V4 is now supported in OpenCode. Update today for faster coding.",
+    authorName: "OpenCode",
+    authorHandle: "opencode",
+    authorFollowers: 210000,
+    likes: 3200,
+    replies: 55,
+    views: 180000,
+    timestamp: now - (24 * 60 * 1000),
+    authorVerified: true,
+    authorVerificationType: "gold",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"]
+  });
+
+  assert.ok(deepseekUpdate.score >= 70, `DeepSeek update scored ${deepseekUpdate.score}`);
+  assert.ok(deepseekUpdate.breakdown.some((item) => item.key === "developerUpdate"));
+  assert.ok(!deepseekUpdate.breakdown.some((item) => item.key.startsWith("hardCap")));
+  assert.ok(shallowBrandUpdate.score < 54, `Shallow brand update scored ${shallowBrandUpdate.score}`);
+  assert.ok(shallowBrandUpdate.breakdown.some((item) => item.key === "protocolPromo"));
+});
+
 test("scorer demotes p2.203 flow leaks below executor floor", () => {
   const scorer = loadScorer();
   const now = Date.now();

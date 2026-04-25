@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.221
+
+- 官方/品牌号评分改为区分内容类型：低信息品牌广播继续压低，带 API/模型/集成版本/上下文窗口/价格或文档等明确开发者讨论点的官方更新保留高分
+- 新增 `developerUpdate` 质量信号，DeepSeek API/Claude Code/OpenCode/OpenClaw 这类高流速技术更新不会被 `verifiedOrganization` / `broadcastAccount` / `protocolPromo` 一刀切压死
+
 ## 0.2.220
 
 - 外部写稿输出拆成 `replyNow` / `needsDetail` / `notRecommended` / `watchLater` 四个 lanes，主 `candidates` 只放真正可立即回复的干净目标
