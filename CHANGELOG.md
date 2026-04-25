@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.206
+
+- 修复部分非广告纯文字帖不显示水滴分数：低于 10 分的可读帖子也会显示 `low-outline` 分数，不再只给低分媒体帖兜底
+
 ## 0.2.205
 
 - 修复 `getExecutorInbox()` 映射丢字段：当 DOM fallback 候选缺 score / text / author 时，不再覆盖 background 里的真实候选数据

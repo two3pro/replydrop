@@ -4158,7 +4158,9 @@
         const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, opportunityContext);
         const effectiveTier = (
           analysis.tier === "hidden" &&
-          tweet.hasMedia
+          Number.isFinite(Number(analysis.score)) &&
+          tweet.url &&
+          (tweet.text || tweet.hasMedia)
         ) ? "low-outline" : analysis.tier;
 
         renderBadge(article, String(analysis.score), effectiveTier, analysis.tooltip || `Reply score ${analysis.score}`);
