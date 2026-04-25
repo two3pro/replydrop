@@ -1052,9 +1052,16 @@
       output: {
         snapshotId: "string",
         capturedAt: "number",
+        rank: "number",
+        domIndex: "number|null",
+        visibleOnPage: "boolean",
         targetTweetId: "string",
         authorHandle: "string",
+        handle: "string",
         score: "number",
+        ageMinutes: "number",
+        textPreview: "string",
+        mediaKind: "string",
         urgency: "string",
         recommendation: "reply | skip",
         replyText: "string",
@@ -1678,15 +1685,54 @@
     return true;
   }
 
+  function buildDraftTargetDomLocationMap() {
+    const byUrl = new Map();
+    const byTweetId = new Map();
+    getTweetNodes().forEach((article, index) => {
+      const url = normalizeTweetUrl(readTweetUrl(article));
+      const tweetId = extractTweetIdFromUrl(url);
+      const location = {
+        visibleOnPage: true,
+        domIndex: index + 1,
+        handle: readAuthorHandle(article),
+        textPreview: String(readText(article) || "").replace(/\s+/g, " ").trim().slice(0, 80),
+        mediaKind: String(readMediaKind(article) || "").trim()
+      };
+      if (url) {
+        byUrl.set(url, location);
+      }
+      if (tweetId) {
+        byTweetId.set(tweetId, location);
+      }
+    });
+    return { byUrl, byTweetId, count: getTweetNodes().length };
+  }
+
   function summarizeDraftTargetContext(context = {}, snapshot = {}) {
+    const normalizedUrl = normalizeTweetUrl(context.url);
+    const tweetId = String(context.tweetId || "").trim();
+    const location = snapshot.location || {};
+    const textPreview = String(location.textPreview || context.post?.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const ageMinutes = Number(context.post?.ageMinutes || 0);
+    const mediaKind = String(location.mediaKind || context.post?.mediaKind || "").trim();
+    const handle = String(location.handle || context.author?.handle || "").replace(/^@/, "").trim();
     return {
       version: "replydrop-draft-target-v1",
       mode: "human-draft",
       snapshotId: String(snapshot.snapshotId || "").trim(),
       capturedAt: Number(snapshot.capturedAt || 0),
       snapshotIndex: Number.isFinite(Number(snapshot.snapshotIndex)) ? Number(snapshot.snapshotIndex) : null,
-      tweetId: String(context.tweetId || "").trim(),
-      url: normalizeTweetUrl(context.url),
+      rank: Number.isFinite(Number(snapshot.rank)) ? Number(snapshot.rank) : null,
+      domIndex: Number.isFinite(Number(location.domIndex)) ? Number(location.domIndex) : null,
+      visibleOnPage: Boolean(location.visibleOnPage),
+      handle,
+      score,
+      ageMinutes,
+      textPreview,
+      mediaKind,
+      tweetId,
+      url: normalizedUrl,
       author: context.author || {},
       post: context.post || {},
       scoring: context.scoring || {},
@@ -1716,6 +1762,7 @@
     const snapshotId = `replydrop-snapshot-${snapshotSeed}`;
     const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
     const attributionModel = buildApiAttributionModel(runtimeState);
+    const domLocations = buildDraftTargetDomLocationMap();
     const contexts = [];
 
     for (const candidate of sortedCandidates.slice(0, Math.max(limit * 3, 12))) {
@@ -1737,7 +1784,14 @@
       .map((context, index) => summarizeDraftTargetContext(context, {
         snapshotId,
         capturedAt,
-        snapshotIndex: index + 1
+        snapshotIndex: index + 1,
+        rank: index + 1,
+        location: domLocations.byUrl.get(normalizeTweetUrl(context.url)) ||
+          domLocations.byTweetId.get(String(context.tweetId || "").trim()) ||
+          {
+            visibleOnPage: false,
+            domIndex: null
+          }
       }));
     const filteredCandidates = contexts
       .filter((context) => !isReplyDropDraftTarget(context, minScore))
@@ -1755,6 +1809,11 @@
         noAutoRefresh: true,
         outputDestination: "current-chat",
         instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出：handle / score / urgency / 建议回或不建议回 / 可复制 replyText 或 skipReason。不要再次刷新，除非用户明确允许。不要自动 queue、openComposer、submitReply。"
+      },
+      pageOrder: {
+        domArticleCount: domLocations.count,
+        rankMeaning: "rank 是本 getDraftTargets() 推荐列表排序，不是水滴徽标编号。",
+        domIndexMeaning: "domIndex 是当前 DOM 中可见推文卡片的 1-based 顺序；不可见时为 null。"
       },
       limit,
       minScore,

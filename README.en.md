@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.215`
+Current version: `0.2.216`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,12 +34,13 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.215` includes the current scorer and executor hardening work:
+Version `0.2.216` includes the current scorer and executor hardening work:
 
 - Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
 - Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
 - Added 90-second target guidance and a 120-second hard timeout for executor flows.
 - Added a snapshot-based external draft workflow: `getDraftTargets()` now returns `snapshotId`, `capturedAt`, and `collaborationPolicy` so AI agents generate copyable drafts in the current chat without refreshing, queueing, or sending unless the human explicitly asks.
+- Added draft target location metadata: `rank`, `visibleOnPage`, `domIndex`, `handle`, `score`, `ageMinutes`, `textPreview`, and `mediaKind`, while keeping the waterdrop badge score-only.
 - Added local fallback snapshots so `getExecutorInbox()` does not fail just because background state sync is late.
 - Tightened scoring against X payout / revenue flex posts, follower bait, big-account low-info controversy questions, political / official broadcasters, crypto wealth narratives, and one-way viral traffic.
 - Restored media competitiveness when the caption or available metadata is meaningful, while still flagging low-confidence image / video posts for external vision handling.

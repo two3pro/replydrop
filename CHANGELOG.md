@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.216
+
+- 外部 AI 写稿目标增加人机对照字段：`rank`、`visibleOnPage`、`domIndex`、`handle`、`score`、`ageMinutes`、`textPreview`、`mediaKind`
+- `getDraftTargets()` 增加 `pageOrder` 说明：`rank` 是推荐列表排序，`domIndex` 才是当前 X 页面推文卡片顺序；水滴徽标仍只显示分数
+- 继续保持外部写稿模式只在当前聊天窗口输出草稿，不默认写回 ReplyDrop、不自动排队或发送
+
 ## 0.2.215
 
 - 调整人工写稿 / 外部 AI 协作模式：`getDraftTargets()` 现在返回 `snapshotId`、`capturedAt` 和 `collaborationPolicy`，明确这是一次首页快照，不允许 agent 擅自二次刷新
