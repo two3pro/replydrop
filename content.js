@@ -1449,10 +1449,16 @@
       tweetId: String(context.tweetId || "").trim(),
       url: normalizeTweetUrl(context.url),
       authorHandle: String(context.author?.handle || "").trim(),
+      authorName: String(context.author?.name || "").trim(),
+      text: String(context.post?.text || "").trim().slice(0, 280),
+      textSummary: String(context.post?.text || "").trim().slice(0, 160),
       score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
       finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
+      laneKey: String(context.routing?.laneKey || "").trim(),
+      laneLabel: String(context.routing?.laneLabel || "").trim(),
       skipRecommended: Boolean(context.recheck?.skipRecommended),
+      recheckHint: String(context.aiHints?.recheckHint || "").trim(),
       reasons
     };
   }

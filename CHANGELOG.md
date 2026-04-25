@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.209
+
+- `filteredCandidates` 现在直接带 `authorHandle / authorName / text / score / lane / reasons`，runner 不必再手动读 raw `diagnosticCandidates` 才知道为什么 0 executable
+- 补 p2.208 inboxzero 漏网：中文 X 收益暂停 + 重启万粉账号、韩文 / 英文 X payday、BTC ETF / BlackRock / Morgan Stanley 机构牛市叙事会被压到发送线以下
+- 保持 `candidates` 只放 `reply-now`，不把 `queue-tonight` 强行当可发，避免为了凑数量把低确定性候选送出去
+
 ## 0.2.208
 
 - Executor policy 新增整轮预算：默认最多处理 16 条或 18 分钟，先到即停止并回首页

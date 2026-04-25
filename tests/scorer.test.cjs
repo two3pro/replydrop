@@ -1708,3 +1708,47 @@ test("scorer demotes p2.206 payout, follow-growth, political, and low-info leaks
     assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
   }
 });
+
+test("scorer demotes p2.208 inboxzero revenue restart and institutional bull-market leaks", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+  const common = {
+    authorFollowers: 58000,
+    likes: 1200,
+    replies: 96,
+    views: 70000,
+    timestamp: now - (32 * 60 * 1000),
+    trafficVelocityPerHour: 120000,
+    trafficReplyVelocityPerHour: 180,
+    trafficReplyRatio: 0.0015,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    sourceSurface: "for-you"
+  };
+
+  const cases = [
+    {
+      text: "X收益暂停以后只能重启账号，从0冲到10万粉再来一次。",
+      langs: ["zh"],
+      key: "socialGrowthFlex"
+    },
+    {
+      text: "X payday is real. Earning money on X finally works for premium creators.",
+      langs: ["en"],
+      key: "socialGrowthFlex"
+    },
+    {
+      text: "BTC ETF inflows from BlackRock and Morgan Stanley prove the institutional bull market is here.",
+      langs: ["en"],
+      key: "protocolPromo"
+    }
+  ];
+
+  for (const item of cases) {
+    const analysis = scorer.analyzeTweet({ ...common, ...item });
+    assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+    assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
+  }
+});
