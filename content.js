@@ -1068,9 +1068,42 @@
         skipReason: "string",
         language: "same-as-post",
         confidence: "number",
-        riskFlags: "string[]"
+        riskFlags: "string[]",
+        draftAngleHints: "string[]"
       }
     };
+  }
+
+  function buildExternalDraftAngleHints(context = {}) {
+    const text = String(context.post?.text || "").replace(/\s+/g, " ").trim();
+    const lower = text.toLowerCase();
+    const hints = [];
+    const hasAssetLanguage = (
+      /\b(?:stock|stocks|share|shares|btc|bitcoin|eth|crypto|coin|token|portfolio|holding|holdings|invest|investment|profit|gain|gains|wealth|rich|millionaire|billionaire)\b/i.test(text) ||
+      /(?:股票|股价|股價|持仓|持倉|投资|投資|收益|盈利|财富|財富|暴富|涨幅|漲幅|币|幣|比特币|比特幣|以太坊|加密货币|加密貨幣)/u.test(text) ||
+      /(?:株|株式|投資|利益|資産|億|暗号資産|仮想通貨|ビットコイン)/u.test(text) ||
+      /(?:주식|투자|수익|자산|부자|비트코인|암호화폐|코인)/u.test(text)
+    );
+    const hasStoryLanguage = (
+      /\b(?:story|case|after|years?|prison|jail|forgot|forced|accidental|held|holding|long-term|long term|unrealized)\b/i.test(text) ||
+      /(?:故事|案例|多年|长期|長期|被迫|监狱|監獄|忘记|忘記|持有|浮盈|账面|賬面)/u.test(text) ||
+      /(?:物語|事例|長期|刑務所|偶然|保有|含み益)/u.test(text) ||
+      /(?:사례|이야기|장기|감옥|교도소|강제|보유|수익률)/u.test(text)
+    );
+    const hasAdviceLanguage = (
+      /\b(?:buy|sell|long|short|entry|exit|target|price prediction|worth buying|what to buy)\b/i.test(lower) ||
+      /(?:买入|買入|卖出|賣出|做多|做空|入场|入場|出场|出場|目标价|目標價|价格预测|價格預測|值得买|值得買)/u.test(text)
+    );
+
+    if (hasAssetLanguage && hasStoryLanguage) {
+      hints.push("可以保留为人工预览机会：按行为金融 / 人性耐心 / 长期持有的反直觉故事角度写，不要因财富相邻自动跳过。");
+      hints.push("避免投资建议、买卖建议、价格预测、 ticker 推广、喊单或低信息 FOMO。");
+      hints.push("可用角度：讨论人通常很难长期持有，特殊处境反而制造了罕见耐心。");
+    } else if (hasAssetLanguage || hasAdviceLanguage) {
+      hints.push("如需回复，只能写中性观察；避免投资建议、买卖建议、价格预测和项目推广。");
+    }
+
+    return hints;
   }
 
   function buildReplyDropExecutorCapabilities() {
@@ -1097,7 +1130,8 @@
         oneSnapshotOnly: true,
         noAutoRefreshWithoutHumanApproval: true,
         outputDestination: "current-chat",
-        instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。"
+        instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。",
+        wealthStoryGuidance: "高流速财富/资产故事不应仅因 wealth/hype 相邻而自动跳过；人工预览模式下应保留机会，并用 draftAngleHints 约束为中性行为金融/故事观察角度。只有涉及投资建议、买卖、价格预测、项目推广、喊单或低信息 FOMO 时才跳过或强警告。"
       },
       preferredMethods: {
         getExecutorInbox: "getAgentInbox",
@@ -1364,6 +1398,7 @@
       },
       executionPolicy: buildReplyDropExecutionPolicy(options?.targetStartedAt || options?.generatedAt || Date.now())
     };
+    context.aiHints.draftAngleHints = buildExternalDraftAngleHints(context);
 
     if (options?.includeMedia && mediaPresent) {
       try {
@@ -1741,7 +1776,7 @@
       media: context.media || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / scoring / routing / memory 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果风险或语义不足就返回 skip 和不建议回原因。"
+        writingInstruction: "请根据 post.text / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果风险或语义不足就返回 skip 和不建议回原因。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
       }
     };
   }

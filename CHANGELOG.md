@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.217
+
+- 调整外部 AI 写稿模式的风险口径：高流速财富/资产故事不再仅因 wealth/hype 相邻就要求跳过，人工预览中保留机会
+- 新增 `aiHints.draftAngleHints`：对财富故事给出中性行为金融 / 长期持有 / 人性耐心角度，并明确禁止投资建议、买卖、价格预测、ticker 推广、喊单和低信息 FOMO
+- `externalDraftPolicy` 增加 wealth story guidance，避免 agent 在聊天出稿层过度拦截可写机会
+
 ## 0.2.216
 
 - 外部 AI 写稿目标增加人机对照字段：`rank`、`visibleOnPage`、`domIndex`、`handle`、`score`、`ageMinutes`、`textPreview`、`mediaKind`
