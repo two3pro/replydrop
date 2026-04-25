@@ -164,6 +164,7 @@
     "official_", "_official", "breaking",
     "arkham", "opencode", "protocol", "protocolfx", "protocol_fx", "labs", "research",
     "bricsinfo", "brics", "letsvpn", "kojipro", "kojipro2015", "kojima", "sciencegirl",
+    "jacksonhinklle", "hinkle", "ajenglish", "aljazeera", "wallstreet0name",
     "cryptobrave", "cryptobravehq", "exchange", "marketmaker", "market_maker",
     "binance", "coinbase", "okx", "bybit", "kraken", "kucoin", "bitget", "mexc", "gateio",
     "cointelegraph", "coindesk", "openai", "google", "microsoft",
@@ -182,6 +183,7 @@
     "日报", "日報", "电视", "電視", "政府", "警察", "公安", "外交部", "教育部", "交通部",
     "arkham", "opencode", "protocol", "protocol fx", "labs", "research",
     "brics", "brics info", "letsvpn", "vpn", "kojima productions", "koji pro",
+    "jackson hinkle", "hinkle", "al jazeera", "aj english", "wall street",
     "crypto brave", "market maker", "exchange", "web3 event", "web3 summit",
     "binance", "coinbase", "okx", "bybit", "kraken", "kucoin", "bitget", "mexc", "gate.io",
     "cointelegraph", "coindesk", "openai", "google", "microsoft",
@@ -255,6 +257,9 @@
     "monetize x account", "monetise x account", "5m impression", "million impression",
     "million impressions", "impression farming", "creator revenue", "x payout", "payout is coming",
     "grow your account", "growing your account", "active followers", "boost followers",
+    "gain train", "follow chain", "support all", "support everyone", "support chain",
+    "drop your handle", "handle drop", "under 10k", "under 10 k", "small accounts",
+    "like rt", "like + rt", "like and rt", "rt and like", "comment and rt",
     "grow your page", "growing your page", "grow page", "page growth",
     "turn notifications on", "notifications on", "notification gang",
     "互关", "互關", "互粉", "回关", "回關", "互推", "求关注", "求關注",
@@ -291,6 +296,13 @@
     /\b(?:i\s*(?:'ll|will)|we\s*(?:'ll|will))\s+(?:follow|boost|support)\s+you\b/i,
     /\b(?:active\s+on\s+x|say\s+yes|let'?s\s+connect|follow\s+everyone)\b/i,
     /\b(?:active\s+followers?|reply\s+here|reply\s+under\s+this|comment\s+under\s+this)\b/i,
+    /\b(?:gain|follow|support|engagement)\s+train\b/i,
+    /\b(?:verified\s*)?(?:follow|support)\s+chain\b/i,
+    /\b(?:drop|share|post)\s+(?:your\s+)?(?:handle|@|account)\b/i,
+    /\b(?:like|comment|reply)\b.{0,28}\b(?:rt|retweet|repost)\b.{0,28}\b(?:follow|support|active)\b/i,
+    /\b(?:rt|retweet|repost)\b.{0,28}\b(?:like|comment|reply)\b.{0,28}\b(?:follow|support|active)\b/i,
+    /\b(?:under|below)\s+10\s*k\b.{0,90}\b(?:follow|support|reply|comment|drop|handle|active)\b/i,
+    /\b(?:active|small)\s+accounts?\b.{0,90}\b(?:follow|support|reply|comment|drop|handle)\b/i,
     /\b(?:creator\s+revenue|x\s+payout|payout\s+is\s+coming|impression\s+farming)\b/i,
     /\bgr?owing\s+your\s+account\b/i,
     /\bgr?ow(?:ing)?\s+your\s+page\b/i,
@@ -339,6 +351,8 @@
   const PROTOCOL_PROMO_TERMS = [
     "tvl", "mainnet", "testnet", "airdrop", "buyback", "liquidity premium", "liquidity",
     "staking", "yield", "token", "tge", "listing", "minting", "minted", "usdt",
+    "btc", "bitcoin", "eth", "ethereum", "support", "resistance", "breakout",
+    "price target", "long entry", "short entry", "next long", "next short",
     "stablecoin", "protocol", "defi", "web3 event", "backstop", "launch", "launched",
     "now supports", "support for", "is now supported", "available in", "deepseek v4",
     "opencode", "product update", "roadmap", "ecosystem", "claim", "chase up",
@@ -354,6 +368,8 @@
     "next 100x", "next 1000x", "gem call", "hidden gem", "degen", "bullish",
     "meme wealth", "wealth effect", "money printer", "trenches", "degen trenches",
     "meme coin", "memecoin", "generational wealth", "life changing money",
+    "support resistance", "support/resistance", "resistance support", "price target",
+    "inflection point", "staking yield", "staking rewards", "eth staking",
     "追高", "回购", "回購", "流动性", "流動性", "溢价", "溢價", "协议", "協議",
     "主网", "主網", "测试网", "測試網", "空投", "上币", "上幣", "代币", "代幣",
     "交易所", "做市", "做市商", "大会", "大會", "峰会", "峰會", "路演", "生态活动", "生態活動",
@@ -375,6 +391,10 @@
     /\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b.{0,100}\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b/i,
     /\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b.{0,100}\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b/i,
     /\b(?:eth|crypto|degen)\s+trenches\b.{0,100}\b(?:product|thesis|trade|alpha|launch|token|coin|profit|narrative)\b/i,
+    /\b(?:btc|bitcoin|eth|ethereum)\b.{0,100}\b(?:support|resistance|breakout|price\s+target|long|short|entry|exit)\b/i,
+    /\b(?:support|resistance|breakout|price\s+target|long|short|entry|exit)\b.{0,100}\b(?:btc|bitcoin|eth|ethereum)\b/i,
+    /\b(?:eth|ethereum)\b.{0,100}\b(?:staking|inflection\s+point|yield|rewards?|apr|apy)\b/i,
+    /\b(?:staking|inflection\s+point|yield|rewards?|apr|apy)\b.{0,100}\b(?:eth|ethereum)\b/i,
     /\b(?:next|easy|minimum|potential)\s+(?:10|100|1000)\s*x\b/i,
     /(?:#\s*PR\b|#PR\b|\bPR\s*[:：])/i,
     /\$[A-Za-z]{2,10}(?:\s*[\/,|+]\s*\$?[A-Za-z]{2,10}){1,}/,
@@ -427,6 +447,7 @@
     "payout", "paid out", "got paid", "payment received", "creator payout",
     "creator revenue", "ad revenue", "ads revenue", "revenue share", "revenue sharing",
     "x payout", "x revenue", "x monetization", "monetization payout",
+    "back pay", "backpay", "retro pay", "retroactive pay", "payday",
     "展示量", "浏览量", "瀏覽量", "曝光", "阅读量", "閱讀量", "主页访问", "主頁訪問",
     "收益", "收益额", "收益額", "分成", "到账", "到賬", "打款",
     "インプレッション", "表示回数", "閲覧数", "フォロワー", "収益", "収益化",
@@ -440,6 +461,8 @@
     /\b(?:impressions?|views?|followers?|profile\s+visits?|engagements?)\b.{0,80}\b(?:grow|growth|page|account|notifications?|moneti[sz]e|payday|flex|hit|reached|crossed)\b/i,
     /\b(?:x|creator|ad|ads)?\s*(?:payout|revenue|moneti[sz]ation|payment)\b.{0,90}\b(?:received|got|paid|arrived|hit|works?|proof|thanks?|donat(?:e|ion)|charity)\b/i,
     /\b(?:received|got|paid|arrived|hit|works?|proof|thanks?)\b.{0,90}\b(?:x|creator|ad|ads)?\s*(?:payout|revenue|moneti[sz]ation|payment)\b/i,
+    /\b(?:back\s*pay|backpay|retro(?:active)?\s*pay|payday)\b.{0,90}\b(?:x|creator|revenue|payout|moneti[sz]ation|paid|payment)\b/i,
+    /\b(?:x|creator|revenue|payout|moneti[sz]ation|paid|payment)\b.{0,90}\b(?:back\s*pay|backpay|retro(?:active)?\s*pay|payday)\b/i,
     /(?:\d+(?:\.\d+)?\s*(?:万|萬|亿|億)?).{0,12}(?:展示量|浏览量|瀏覽量|曝光|阅读量|閱讀量|粉丝|粉絲).{0,50}(?:增长|增長|账号|帳號|賬號|变现|變現|收益|炫耀|突破)/u,
     /(?:展示量|浏览量|瀏覽量|曝光|阅读量|閱讀量|粉丝|粉絲|收益|分成|打款|到账|到賬).{0,50}(?:增长|增長|账号|帳號|賬號|变现|變現|收益|炫耀|突破|收到|来了|來了|捐)/u,
     /(?:インプレッション|表示回数|閲覧数|フォロワー|収益|広告収益|振込|入金|支払い|支払|ペイアウト).{0,55}(?:伸び|収益|突破|増え|来た|きた|届い|ありがとう|寄付|記録|最高)/u,
@@ -1877,6 +1900,47 @@
     return penalty >= 3 ? Math.max(penalty, 32) : null;
   }
 
+  function hasSubstantialOriginalAnalysis(tweet) {
+    const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
+    if (!semanticText) {
+      return false;
+    }
+
+    const semanticTokens = countSemanticTokens(semanticText);
+    const technicalHits = countTermMatches(semanticText, [
+      "benchmark", "architecture", "technical report", "paper", "dataset", "eval",
+      "open source", "github", "implementation", "latency", "throughput", "reasoning",
+      "api", "model", "weights", "inference", "training", "fine-tuning",
+      "技术报告", "技術報告", "论文", "論文", "开源", "開源", "架构", "架構",
+      "実装", "論文", "ベンチマーク", "評価", "기술 보고서", "논문", "오픈소스"
+    ]);
+
+    return semanticTokens >= 28 && technicalHits > 0;
+  }
+
+  function computeExecutorHardCap(tweet, signals = {}) {
+    const substantialAnalysis = hasSubstantialOriginalAnalysis(tweet);
+    if (signals.followTrainBaitPenalty != null) {
+      return { cap: 45, key: "hardCapFollowLoop", label: "Follow loop cap" };
+    }
+    if (signals.socialGrowthFlexPenalty != null) {
+      return { cap: 50, key: "hardCapPayoutFlex", label: "Payout or growth cap" };
+    }
+    if (signals.politicalFigurePenalty != null) {
+      return { cap: 47, key: "hardCapPolitical", label: "Political account cap" };
+    }
+    if (signals.broadcastAccountPenalty != null && !substantialAnalysis) {
+      return { cap: 50, key: "hardCapBroadcast", label: "Broadcast cap" };
+    }
+    if (signals.protocolPromoPenalty != null && !substantialAnalysis) {
+      return { cap: 52, key: "hardCapCryptoPromo", label: "Crypto promo cap" };
+    }
+    if (signals.thinGenericPostPenalty != null) {
+      return { cap: 50, key: "hardCapLowInfo", label: "Low-info cap" };
+    }
+    return null;
+  }
+
   function computeEmptySemanticPenalty(tweet, mediaSemanticContext, weight = 64) {
     const semanticText = normalizeSemanticText(mediaSemanticContext?.semanticText || getSemanticText(tweet) || tweet?.text || "");
     if (semanticText) {
@@ -2442,7 +2506,27 @@
       authorFit * 0.1 -
       penalties
     );
-    const clampedScore = Math.round(clamp((score * 0.35) + (weightedScore * 0.65), 0, 100));
+    let clampedScore = Math.round(clamp((score * 0.35) + (weightedScore * 0.65), 0, 100));
+    const executorHardCap = computeExecutorHardCap(tweet, {
+      followTrainBaitPenalty,
+      socialGrowthFlexPenalty,
+      verifiedOrganizationPenalty,
+      verifiedPileOnPenalty,
+      politicalFigurePenalty,
+      broadcastAccountPenalty,
+      protocolPromoPenalty,
+      thinGenericPostPenalty
+    });
+    if (executorHardCap && clampedScore > executorHardCap.cap) {
+      const capPenalty = clampedScore - executorHardCap.cap;
+      clampedScore = executorHardCap.cap;
+      breakdown.push({
+        key: executorHardCap.key,
+        label: executorHardCap.label,
+        amount: -capPenalty,
+        kind: "penalty"
+      });
+    }
     const tier = getTier(clampedScore, merged, keywordMatched);
     const scoredBreakdown = breakdown
       .filter((item) => Number.isFinite(item.amount) && Math.abs(item.amount) > 0);

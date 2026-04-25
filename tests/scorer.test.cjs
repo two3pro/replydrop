@@ -1380,3 +1380,155 @@ test("scorer demotes big-account low-info controversy questions", () => {
   assert.ok(pileOnQuestion.score < 54);
   assert.ok(pileOnQuestion.breakdown.some((item) => item.key === "thinGenericPost"));
 });
+
+test("scorer hard-caps explicit follow reward loops", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const loop = scorer.analyzeTweet({
+    text: "Under 10k followers? Drop your handle. Like + RT + comment and support all active accounts.",
+    authorFollowers: 64000,
+    likes: 1400,
+    replies: 180,
+    views: 82000,
+    timestamp: now - (24 * 60 * 1000),
+    trafficVelocityPerHour: 160000,
+    trafficReplyVelocityPerHour: 360,
+    trafficReplyRatio: 0.0022,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(loop.score <= 45);
+  assert.ok(loop.breakdown.some((item) => item.key === "followTrainBait"));
+});
+
+test("scorer hard-caps payout and back-pay claims", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const payout = scorer.analyzeTweet({
+    text: "X back pay finally arrived. Creator payout and ad revenue are working again.",
+    authorFollowers: 72000,
+    likes: 1600,
+    replies: 120,
+    views: 76000,
+    timestamp: now - (30 * 60 * 1000),
+    trafficVelocityPerHour: 120000,
+    trafficReplyVelocityPerHour: 190,
+    trafficReplyRatio: 0.00158,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(payout.score <= 50);
+  assert.ok(payout.breakdown.some((item) => item.key === "socialGrowthFlex"));
+});
+
+test("scorer hard-caps directional crypto wealth narratives", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const directional = scorer.analyzeTweet({
+    text: "BTC support and resistance are clear. Breakout above this level is the next long entry.",
+    authorFollowers: 90000,
+    likes: 1800,
+    replies: 92,
+    views: 110000,
+    timestamp: now - (38 * 60 * 1000),
+    trafficVelocityPerHour: 150000,
+    trafficReplyVelocityPerHour: 130,
+    trafficReplyRatio: 0.00084,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(directional.score <= 52);
+  assert.ok(directional.breakdown.some((item) => item.key === "protocolPromo"));
+});
+
+test("scorer hard-caps official political and broadcast accounts", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const political = scorer.analyzeTweet({
+    text: "BREAKING: the regime just exposed itself again. Everyone can see what is happening.",
+    authorName: "Jackson Hinkle",
+    authorHandle: "jacksonhinklle",
+    authorFollowers: 3000000,
+    likes: 9000,
+    replies: 360,
+    views: 600000,
+    timestamp: now - (50 * 60 * 1000),
+    trafficVelocityPerHour: 500000,
+    trafficReplyVelocityPerHour: 300,
+    trafficReplyRatio: 0.0006,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const broadcaster = scorer.analyzeTweet({
+    text: "Video shows the latest escalation. Follow our live updates for more.",
+    authorName: "AJ English",
+    authorHandle: "AJEnglish",
+    authorFollowers: 9000000,
+    likes: 5000,
+    replies: 160,
+    views: 480000,
+    timestamp: now - (40 * 60 * 1000),
+    trafficVelocityPerHour: 420000,
+    trafficReplyVelocityPerHour: 180,
+    trafficReplyRatio: 0.00033,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(political.score <= 47);
+  assert.ok(broadcaster.score <= 50);
+  assert.ok(political.breakdown.some((item) => item.key === "politicalFigure" || item.key === "broadcastAccount"));
+  assert.ok(broadcaster.breakdown.some((item) => item.key === "broadcastAccount"));
+});
+
+test("scorer does not hard-cap substantial technical reports", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const technical = scorer.analyzeTweet({
+    text: "DeepSeek technical report is out. The paper details architecture changes, inference latency, benchmark results, dataset mix, and open source implementation notes.",
+    authorFollowers: 42000,
+    likes: 620,
+    replies: 42,
+    views: 26000,
+    timestamp: now - (35 * 60 * 1000),
+    trafficVelocityPerHour: 42000,
+    trafficReplyVelocityPerHour: 72,
+    trafficReplyRatio: 0.0016,
+    authorVerified: false,
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(!technical.breakdown.some((item) => item.key.startsWith("hardCap")));
+});

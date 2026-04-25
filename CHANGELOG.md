@@ -1,7 +1,13 @@
 # Changelog
 
-## 0.2.202
+## 0.2.203
 
+- 补 p2.202 双轮 Windows 压测漏网：follow / RT / like reward loop、handle drop、under-10k follower chain、support-all 互助链会被硬压到自动发送线以下
+- X payout / back-pay / creator revenue 类收益炫耀继续加硬上限，不再靠流速冲过发送线
+- BTC/ETH support-resistance、staking inflection、方向性 crypto wealth 叙事会被归入 crypto promo 风险并压线以下
+- 官方 / 政治 / 大型广播账号的低信息帖继续加硬上限，但保留较长技术报告 / 开源技术内容的通过空间
+- 修复 Mac 端 fallback inbox 可能读到 0 分候选：当前页候选分数缺失时会从真实 article 重新分析并回填本地候选快照
+- `getExecutorInbox()` 现在只把可执行候选放进 `candidates`；低分 / 跳过项改放 `diagnosticCandidates`，避免 agent 把 0 分候选当成可处理推荐
 - 补 p2.200 Windows 压测漏网：英文 / 日文 X payout、广告收益、入金 / 振込 / 寄付类收益炫耀会被压到自动发送线以下
 - 加重 BNB meme wealth、ETH trenches、degen alpha 这类币圈财富叙事 / 产品短 thesis 扣分
 - 大号低信息争议问句不再吃流速加分，避免靠回复量冲进自动发送线

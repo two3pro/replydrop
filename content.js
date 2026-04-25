@@ -538,18 +538,34 @@
     const byUrl = new Map();
 
     getTweetNodes().forEach((article) => {
-      const candidate = readStoredCandidate(article);
+      let candidate = readStoredCandidate(article);
       const badge = article.querySelector(`.${BADGE_CLASS}`);
       const tier = String(badge?.getAttribute("data-tier") || candidate?.tier || "").trim();
+      if (
+        article instanceof Element &&
+        typeof global.XReplyScorer?.analyzeTweet === "function" &&
+        (!candidate || !Number(candidate?.finalScore || candidate?.score || 0))
+      ) {
+        try {
+          const tweet = getTweetData(article);
+          if (tweet?.url && !tweet.promoted && !tweet.isOwnTweet) {
+            const baseAnalysis = global.XReplyScorer.analyzeTweet(tweet, state.settings);
+            const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, buildOpportunityContext());
+            candidate = buildCandidatePayload(tweet, analysis, String(analysis.tier || tier || "low-outline"));
+            storeCandidatePayload(article, candidate);
+          }
+        } catch (_error) {}
+      }
       const url = normalizeTweetUrl(candidate?.url);
-      if (!url || !tier || tier === "hidden" || tier === "replied") {
+      const candidateTier = String(candidate?.tier || tier || "").trim();
+      if (!url || !candidateTier || candidateTier === "hidden" || candidateTier === "replied") {
         return;
       }
 
       byUrl.set(url, {
         ...(candidate && typeof candidate === "object" ? candidate : {}),
         url,
-        tier
+        tier: candidateTier
       });
     });
 
@@ -1437,11 +1453,14 @@
       }));
     }
 
+    const actionableContexts = contexts.filter(isReplyDropContextActionable);
+
     return {
       version: "replydrop-agent-inbox-v1",
       generatedAt,
       limit,
-      candidates: contexts,
+      candidates: actionableContexts,
+      diagnosticCandidates: contexts,
       emptyInboxRecovery: buildEmptyInboxRecovery(contexts, generatedAt),
       executionPolicy: buildReplyDropExecutionPolicy(generatedAt),
       outputSchema: buildReplyDropReplySchema()
