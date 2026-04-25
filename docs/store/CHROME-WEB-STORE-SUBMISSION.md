@@ -134,7 +134,7 @@ ReplyDrop 当前坚持几个边界：
 
 建议直接粘贴：
 
-1. Install the extension from the attached `replydrop-p2.203.zip`, or load the unpacked folder in developer mode.
+1. Install the extension from the attached `replydrop-p2.204.zip`, or load the unpacked folder in developer mode.
 2. Open any `x.com` page with visible public posts. A logged-in X account makes review easiest, but any timeline or search page with rendered posts is fine.
 3. Wait a few seconds for the content script to scan visible posts. High-scoring posts show a small ReplyDrop score hint near the reply action.
 4. Click the ReplyDrop toolbar icon and confirm the popup opens on the home layer.
@@ -144,7 +144,7 @@ ReplyDrop 当前坚持几个边界：
 
 ## 提交前最后检查
 
-- 确认上传的是 `replydrop-p2.203.zip`
+- 确认上传的是 `replydrop-p2.204.zip`
 - 确认 `manifest.json` 版本是 `0.2.171`
 - 确认视频已先传到 YouTube 并拿到不公开链接
 - 确认支持页与隐私页都指向公开仓地址

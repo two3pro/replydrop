@@ -1,7 +1,9 @@
 # Changelog
 
-## 0.2.203
+## 0.2.204
 
+- `getExecutorInbox()` 新增 `pageCandidateSync`、`filteredCandidates`、`skipReasons`，让 OpenClaw / Hermes 能看到“扫描到了但为什么没有进入可执行推荐”
+- 空 inbox 不再只返回 `candidates: []`，同时会暴露被过滤候选的分数、作者、推荐决策和跳过原因，方便区分“没扫描到”和“扫描到但不合格”
 - 补 p2.202 双轮 Windows 压测漏网：follow / RT / like reward loop、handle drop、under-10k follower chain、support-all 互助链会被硬压到自动发送线以下
 - X payout / back-pay / creator revenue 类收益炫耀继续加硬上限，不再靠流速冲过发送线
 - BTC/ETH support-resistance、staking inflection、方向性 crypto wealth 叙事会被归入 crypto promo 风险并压线以下

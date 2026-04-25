@@ -1351,6 +1351,74 @@
     return true;
   }
 
+  function getReplyDropContextFilterReasons(context = {}) {
+    const reasons = [];
+    if (!context || typeof context !== "object") {
+      return ["invalid-context"];
+    }
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
+    if (context.routing?.recommendedDecision !== "reply-now") {
+      reasons.push(`decision-${String(context.routing?.recommendedDecision || "unknown")}`);
+    }
+    if (context.recheck?.skipRecommended) {
+      reasons.push("skip-recommended");
+    }
+    if (score < executorSendFloor) {
+      reasons.push("below-executor-send-floor");
+    }
+    if (String(context.scoring?.blockReason || "").trim()) {
+      reasons.push(String(context.scoring.blockReason).trim());
+    }
+    if (Array.isArray(context.recheck?.flags)) {
+      context.recheck.flags.forEach((flag) => {
+        const normalized = String(flag || "").trim();
+        if (normalized) {
+          reasons.push(normalized);
+        }
+      });
+    }
+    if (Array.isArray(context.aiHints?.riskFlags)) {
+      context.aiHints.riskFlags.forEach((flag) => {
+        const normalized = String(flag || "").trim();
+        if (normalized) {
+          reasons.push(normalized);
+        }
+      });
+    }
+    if (!reasons.length && !isReplyDropContextActionable(context)) {
+      reasons.push("not-actionable");
+    }
+    return Array.from(new Set(reasons));
+  }
+
+  function summarizeFilteredExecutorCandidate(context = {}) {
+    const reasons = getReplyDropContextFilterReasons(context);
+    return {
+      tweetId: String(context.tweetId || "").trim(),
+      url: normalizeTweetUrl(context.url),
+      authorHandle: String(context.author?.handle || "").trim(),
+      score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
+      finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
+      recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
+      skipRecommended: Boolean(context.recheck?.skipRecommended),
+      reasons
+    };
+  }
+
+  function summarizeExecutorSkipReasons(filteredCandidates = []) {
+    return filteredCandidates.reduce((summary, candidate) => {
+      (Array.isArray(candidate?.reasons) ? candidate.reasons : []).forEach((reason) => {
+        const key = String(reason || "").trim();
+        if (!key) {
+          return;
+        }
+        summary[key] = (summary[key] || 0) + 1;
+      });
+      return summary;
+    }, {});
+  }
+
   function buildEmptyInboxRecovery(contexts = [], generatedAt = Date.now()) {
     const actionableCount = contexts.filter(isReplyDropContextActionable).length;
     return {
@@ -1454,6 +1522,9 @@
     }
 
     const actionableContexts = contexts.filter(isReplyDropContextActionable);
+    const filteredCandidates = contexts
+      .filter((context) => !isReplyDropContextActionable(context))
+      .map((context) => summarizeFilteredExecutorCandidate(context));
 
     return {
       version: "replydrop-agent-inbox-v1",
@@ -1461,6 +1532,9 @@
       limit,
       candidates: actionableContexts,
       diagnosticCandidates: contexts,
+      filteredCandidates,
+      skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
+      pageCandidateSync: runtimeState?.pageCandidateSync || null,
       emptyInboxRecovery: buildEmptyInboxRecovery(contexts, generatedAt),
       executionPolicy: buildReplyDropExecutionPolicy(generatedAt),
       outputSchema: buildReplyDropReplySchema()
