@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.218
+
+- 外部 AI 写稿目标增加 `needsDetailContext`、`mediaContextMissing`、`draftContextLabel` 和 `contextCompleteness`，区分首页 quick preview draft 与详情页可定稿上下文
+- 图文、视频、引用卡、疑似 `show more` 或媒体语义缺失的候选会提示打开详情页后重写，避免首页草稿误读图片/视频/隐藏正文
+- 已回复 / 已发出的帖文不再进入 `getDraftTargets()` 推荐列表，避免占用人工写稿槽位
+
 ## 0.2.217
 
 - 调整外部 AI 写稿模式的风险口径：高流速财富/资产故事不再仅因 wealth/hype 相邻就要求跳过，人工预览中保留机会

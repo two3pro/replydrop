@@ -1062,6 +1062,9 @@
         ageMinutes: "number",
         textPreview: "string",
         mediaKind: "string",
+        needsDetailContext: "boolean",
+        mediaContextMissing: "boolean",
+        draftContextLabel: "quick-preview-draft | detail-ready-draft",
         urgency: "string",
         recommendation: "reply | skip",
         replyText: "string",
@@ -1104,6 +1107,71 @@
     }
 
     return hints;
+  }
+
+  function hasRecordedReplyInRuntime(runtimeState = {}, targetUrl = "") {
+    const normalized = normalizeTweetUrl(targetUrl);
+    if (!normalized) {
+      return false;
+    }
+    return Boolean(
+      state.repliedTweetUrls.has(normalized) ||
+      state.replyDetails?.[normalized] ||
+      runtimeState?.repliedTweets?.[normalized] ||
+      runtimeState?.replyDetails?.[normalized]
+    );
+  }
+
+  function articleHasQuoteCard(article) {
+    if (!(article instanceof Element)) {
+      return false;
+    }
+    const primaryUrl = normalizeTweetUrl(readTweetUrl(article));
+    return Array.from(article.querySelectorAll('a[href*="/status/"]')).some((link) => {
+      if (link.closest(ARTICLE_SELECTOR) !== article) {
+        return false;
+      }
+      const url = normalizeTweetUrl(link.href || link.getAttribute("href") || "");
+      return Boolean(url && primaryUrl && url !== primaryUrl);
+    });
+  }
+
+  function articleHasShowMoreCue(article) {
+    if (!(article instanceof Element)) {
+      return false;
+    }
+    const text = String(article.textContent || "").replace(/\s+/g, " ").trim();
+    return /(?:Show more|显示更多|顯示更多|查看更多|さらに表示|もっと見る|더 보기|자세히 보기)/i.test(text);
+  }
+
+  function buildDraftContextCompleteness(candidate = {}, article = null, includeMedia = false) {
+    const mediaKind = String(candidate?.mediaKind || "").trim();
+    const hasVisualMedia = hasVisualMediaKind(mediaKind);
+    const hasQuote = articleHasQuoteCard(article);
+    const hasShowMore = articleHasShowMoreCue(article);
+    const text = String(candidate?.text || candidate?.draft || "").trim();
+    const mediaContextMissing = hasVisualMedia && !includeMedia;
+    const needsDetailContext = Boolean(
+      mediaContextMissing ||
+      hasQuote ||
+      hasShowMore ||
+      (hasVisualMedia && text.length < 80)
+    );
+    const flags = [];
+    if (mediaContextMissing) flags.push("media_context_missing");
+    if (hasVisualMedia) flags.push("media_post");
+    if (hasQuote) flags.push("quote_context_possible");
+    if (hasShowMore) flags.push("show_more_possible");
+    if (needsDetailContext) flags.push("needs_detail_context");
+    return {
+      needsDetailContext,
+      mediaContextMissing,
+      draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
+      flags,
+      detailRewriteInstruction: needsDetailContext
+        ? "这条首页预览上下文不完整；如果用户打开详情页，应基于展开正文/引用卡/图片OCR/视频首帧重新写一版。"
+        : ""
+    };
   }
 
   function buildReplyDropExecutorCapabilities() {
@@ -1303,6 +1371,8 @@
       ? options.article
       : findTweetArticleByTweetId(tweetId, normalizedUrl);
     const recheck = buildLiveCandidateRecheck(candidate, liveArticle);
+    const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia));
+    const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
     const recommendedDecision = recheck?.skipRecommended ? "skip" : mapQueueSlotToDecision(recommendedSlot);
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
       ? global.ReplyDropDraftCore.buildDraftPlan(candidate, attributionSummary, { laneKey: lane.key })
@@ -1316,7 +1386,9 @@
       : [];
     const riskFlags = Array.from(new Set([
       String(candidate?.blockReason || "").trim(),
-      ...(Array.isArray(recheck?.flags) ? recheck.flags : [])
+      ...(Array.isArray(recheck?.flags) ? recheck.flags : []),
+      ...(Array.isArray(contextCompleteness.flags) ? contextCompleteness.flags : []),
+      alreadyReplied ? "already_replied" : ""
     ].filter(Boolean)));
 
     const context = {
@@ -1390,11 +1462,16 @@
         available: mediaPresent,
         bundleIncluded: false
       },
+      lifecycle: {
+        alreadyReplied
+      },
+      contextCompleteness,
       aiHints: {
         draftKeys: recheck?.skipRecommended ? [] : draftPlans.map((plan) => String(plan?.key || "").trim()).filter(Boolean),
         routePlans: recheck?.skipRecommended ? [] : routePlans.map((route) => simplifyRoutePlanForApi(route)),
         riskFlags,
-        recheckHint: getCandidateRecheckHint(recheck)
+        recheckHint: getCandidateRecheckHint(recheck),
+        detailRewriteInstruction: contextCompleteness.detailRewriteInstruction
       },
       executionPolicy: buildReplyDropExecutionPolicy(options?.targetStartedAt || options?.generatedAt || Date.now())
     };
@@ -1714,6 +1791,9 @@
     if (String(context.scoring?.blockReason || "").trim()) {
       return false;
     }
+    if (context.lifecycle?.alreadyReplied) {
+      return false;
+    }
     if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
       return false;
     }
@@ -1752,6 +1832,9 @@
     const ageMinutes = Number(context.post?.ageMinutes || 0);
     const mediaKind = String(location.mediaKind || context.post?.mediaKind || "").trim();
     const handle = String(location.handle || context.author?.handle || "").replace(/^@/, "").trim();
+    const needsDetailContext = Boolean(context.contextCompleteness?.needsDetailContext);
+    const mediaContextMissing = Boolean(context.contextCompleteness?.mediaContextMissing);
+    const draftContextLabel = String(context.contextCompleteness?.draftContextLabel || (needsDetailContext ? "quick-preview-draft" : "detail-ready-draft")).trim();
     return {
       version: "replydrop-draft-target-v1",
       mode: "human-draft",
@@ -1766,6 +1849,9 @@
       ageMinutes,
       textPreview,
       mediaKind,
+      needsDetailContext,
+      mediaContextMissing,
+      draftContextLabel,
       tweetId,
       url: normalizedUrl,
       author: context.author || {},
@@ -1774,9 +1860,11 @@
       routing: context.routing || {},
       memory: context.memory || {},
       media: context.media || {},
+      lifecycle: context.lifecycle || {},
+      contextCompleteness: context.contextCompleteness || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果风险或语义不足就返回 skip 和不建议回原因。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
+        writingInstruction: "请根据 post.text / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果 needsDetailContext 或 mediaContextMissing 为 true，必须标注这是 quick preview draft，避免断言图片/视频/引用卡里没有提供的内容，并建议打开详情页后重写。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
       }
     };
   }
@@ -1843,7 +1931,7 @@
         oneSnapshotOnly: true,
         noAutoRefresh: true,
         outputDestination: "current-chat",
-        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出：handle / score / urgency / 建议回或不建议回 / 可复制 replyText 或 skipReason。不要再次刷新，除非用户明确允许。不要自动 queue、openComposer、submitReply。"
+        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出：handle / score / urgency / 建议回或不建议回 / 可复制 replyText 或 skipReason。不要再次刷新，除非用户明确允许。不要自动 queue、openComposer、submitReply。若 needsDetailContext/mediaContextMissing 为 true，输出必须标注 quick preview draft，并提示打开详情页后可重写。"
       },
       pageOrder: {
         domArticleCount: domLocations.count,
