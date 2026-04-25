@@ -523,10 +523,6 @@ def generate_readme_hero() -> None:
     place_screenshot_card(canvas, (1198, 140, 1468, 564), "replydrop-dashboard-tabs.png", accent="#efe5c6", serial="DASHBOARD", tag="LAYERED")
     place_screenshot_card(canvas, (1108, 392, 1388, 778), "replydrop-growth-dashboard.png", accent="#dfeff5", serial="GROWTH", tag="REVIEW")
 
-    draw_drop(draw, 1450, 170, 44, fill=BLUE, outline=BLUE_DEEP, outline_width=4)
-    draw_drop(draw, 1450, 176, 29, fill="#95c8ff")
-    draw.ellipse((1460, 138, 1480, 158), fill=(255, 255, 255, 160))
-
     canvas.convert("RGB").save(README_HERO_PATH, quality=95)
 
 
@@ -640,9 +636,8 @@ def generate_small_promo_tile() -> None:
     body = wrap(draw, "Live scoring for visible X posts. Local-first queue, pickup, and review.", body_font, 232)
     draw.multiline_text((126, 164), body, fill="#5f564a", font=body_font, spacing=5)
 
-    draw_drop(draw, 86, 142, 34, fill=BLUE, outline=BLUE_DEEP, outline_width=4)
-    draw_drop(draw, 86, 148, 22, fill="#95c8ff")
-    draw.ellipse((92, 106, 108, 122), fill=(255, 255, 255, 170))
+    draw.rounded_rectangle((54, 86, 112, 198), radius=18, fill="#171412")
+    draw.text((66, 118), "RD", fill=PAPER_COLOR, font=load_font(22, kind="title"))
 
     chip_box = (124, 220, 230, 248)
     draw.rounded_rectangle(chip_box, radius=14, fill="#171412")
@@ -699,9 +694,8 @@ def generate_marquee_promo_tile() -> None:
     place_screenshot_card(canvas, (1038, 86, 1314, 366), "replydrop-dashboard-tabs.png", accent="#efe5c6", serial="DASH", tag="LAYERED")
     place_screenshot_card(canvas, (1002, 284, 1288, 486), "replydrop-growth-dashboard.png", accent="#dfeff5", serial="GROWTH", tag="REVIEW")
 
-    draw_drop(draw, 1270, 76, 28, fill=BLUE, outline=BLUE_DEEP, outline_width=3)
-    draw_drop(draw, 1270, 80, 18, fill="#95c8ff")
-    draw.ellipse((1278, 56, 1292, 70), fill=(255, 255, 255, 160))
+    draw.rounded_rectangle((1234, 62, 1304, 118), radius=20, fill="#171412")
+    draw.text((1254, 78), "RD", fill=PAPER_COLOR, font=load_font(24, kind="title"))
 
     canvas.convert("RGB").save(MARQUEE_PROMO_TILE_PATH, quality=95)
 

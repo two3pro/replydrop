@@ -1,0 +1,98 @@
+# ReplyDrop
+
+Language: [中文](./README.md) | English
+
+ReplyDrop is a local-first browser extension for X. It scores already-visible posts in your timeline, helps you find reply-worthy windows before they close, and keeps reply workflow state on your device.
+
+Open source, free, local-first, and zero data upload by default.
+
+Current version: `0.2.202`
+
+![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
+
+<p align="center">
+  <a href="./SMOKE-TEST.md">Quick Start</a> ·
+  <a href="./AUTOMATION.md">ReplyDropAPI</a> ·
+  <a href="./docs/store/CHROME-WEB-STORE-LISTING.md">Store Listing</a> ·
+  <a href="./PRIVACY.md">Privacy</a>
+</p>
+
+| Live discovery | Local workflow | Executor ready |
+| --- | --- | --- |
+| Scores posts already rendered in the current X timeline and marks high-value reply windows | Reply queue, publish watch, pickup review, attribution memory, and settings stay in the browser | `window.ReplyDropExecutor` / `window.ReplyDropAPI` lets Codex, OpenClaw, Hermes, Claude, or any local CDP script read shortlist context, open the real composer, submit, verify, and skip safely |
+
+## Why It Exists
+
+ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is a lightweight browser extension that helps users and local agents choose better X replies:
+
+- It scans the visible X / Twitter timeline and scores reply opportunities locally.
+- It favors posts with realistic interaction potential instead of only boosting giant accounts.
+- It tracks reply queue, publish handoff, pickup review, attribution memory, and growth signals in `chrome.storage.local`.
+- It exposes a stable page-world automation API for local agents through `window.ReplyDropExecutor`.
+- It can package post text, scoring details, traffic signals, media references, and route hints for external AI agents.
+- It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
+
+## Latest Updates
+
+Version `0.2.202` includes the current scorer and executor hardening work:
+
+- Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
+- Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
+- Added 90-second target guidance and a 120-second hard timeout for executor flows.
+- Added local fallback snapshots so `getExecutorInbox()` does not fail just because background state sync is late.
+- Tightened scoring against X payout / revenue flex posts, follower bait, big-account low-info controversy questions, political / official broadcasters, crypto wealth narratives, and one-way viral traffic.
+- Restored media competitiveness when the caption or available metadata is meaningful, while still flagging low-confidence image / video posts for external vision handling.
+
+## Screenshots
+
+![ReplyDrop popup home](./docs/assets/replydrop-popup-home.png)
+
+![ReplyDrop dashboard tabs](./docs/assets/replydrop-dashboard-tabs.png)
+
+![ReplyDrop growth dashboard](./docs/assets/replydrop-growth-dashboard.png)
+
+## Automation API
+
+ReplyDrop injects a page-world global object only on `x.com`:
+
+```js
+window.ReplyDropExecutor
+```
+
+The legacy alias remains available:
+
+```js
+window.ReplyDropAPI
+```
+
+Common calls:
+
+```js
+await window.ReplyDropExecutor.getCapabilities()
+await window.ReplyDropExecutor.getCandidates()
+await window.ReplyDropExecutor.getMediaBundle("2045354208548069468")
+await window.ReplyDropExecutor.getTrafficSnapshot("2045354208548069468")
+await window.ReplyDropExecutor.refreshRecommendations({ mode: "scroll", pages: 2 })
+await window.ReplyDropExecutor.getExecutorInbox({ limit: 6 })
+await window.ReplyDropExecutor.getExecutorContext("2045354208548069468")
+await window.ReplyDropExecutor.openComposer({ tweetId: "2045354208548069468", draft: "your reply text" })
+await window.ReplyDropExecutor.submitReply({ autoLikeIfChinese: true })
+await window.ReplyDropExecutor.runExecutorAction({ action: "reply", tweetId: "2045354208548069468", draft: "your reply text" })
+await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
+```
+
+See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP examples, empty-inbox recovery, and timeout rules.
+
+## Local Install
+
+1. Open `chrome://extensions` in Chrome or Brave.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select this repository root.
+5. Open `x.com` or `twitter.com`, then wait a few seconds for ReplyDrop to scan visible posts.
+
+## Privacy
+
+ReplyDrop reads already-rendered public content inside the browser tab and stores workflow state locally in `chrome.storage.local`. It does not require a ReplyDrop account, does not upload timeline data to ReplyDrop-owned servers, and does not use a remote AI API by default.
+
+See [PRIVACY.md](./PRIVACY.md) for the full boundary.

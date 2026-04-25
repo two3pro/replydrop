@@ -1,5 +1,7 @@
 # ReplyDrop
 
+语言：中文 | [English](./README.en.md)
+
 ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子打分，帮你在窗口关闭前找到最值得回复的机会。
 
 开源免费，本地运行，零数据上传。
@@ -7,10 +9,6 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 当前重置基线版本：`0.2.202`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
-
-ReplyDrop is a local-first browser extension for X. It scores already-visible posts in your timeline, helps you find reply-worthy windows before they close, and keeps reply workflow state on your device.
-
-Open source, free, local-first, and zero data upload by default.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -27,10 +25,6 @@ Open source, free, local-first, and zero data upload by default.
 | --- | --- | --- |
 | 为当前 X 时间线已经可见的帖子实时打分，并用水滴提示高价值回复窗口 | 回复队列、publish watch、pickup 复查都保留在浏览器本地，不依赖外部服务 | `window.ReplyDropExecutor` / `window.ReplyDropAPI` 支持 Codex / OpenClaw / Hermes / Claude 直接读 shortlist、上下文、媒体引用、排队、开框、提交与校验 |
 
-| Live discovery | Local workflow | Executor ready |
-| --- | --- | --- |
-| Scores posts already rendered in the current X timeline and marks high-value reply windows with a small waterdrop | Reply queue, publish watch, pickup review, attribution memory, and settings stay in the browser | `window.ReplyDropExecutor` / `window.ReplyDropAPI` lets Codex, OpenClaw, Hermes, Claude, or any local CDP script read shortlist context, open the real composer, submit, verify, and skip safely |
-
 ## 你有竞品没有的
 
 - 界面支持简体中文、繁體中文、English、日本語、한국어
@@ -40,28 +34,6 @@ Open source, free, local-first, and zero data upload by default.
 - `window.ReplyDropExecutor` / `window.ReplyDropAPI` 让外部执行器可通过 CDP 直接接管 shortlist、上下文打包、排队与执行闭环
 
 不收钱，不上传数据，不依赖任何外部服务。
-
-## English Overview
-
-ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is a lightweight browser extension that helps you choose better X replies:
-
-- It scans the visible X / Twitter timeline and scores reply opportunities locally.
-- It favors posts with realistic interaction potential instead of only boosting giant accounts.
-- It tracks reply queue, publish handoff, pickup review, attribution memory, and growth signals in `chrome.storage.local`.
-- It exposes a stable page-world automation API for local agents through `window.ReplyDropExecutor`.
-- It can package post text, scoring details, traffic signals, media references, and route hints for external AI agents.
-- It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
-
-## Latest Updates
-
-Version `0.2.202` includes the current scorer and executor hardening work:
-
-- Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
-- Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
-- Added 90-second target guidance and a 120-second hard timeout for executor flows.
-- Added local fallback snapshots so `getExecutorInbox()` does not fail just because background state sync is late.
-- Tightened scoring against X payout / revenue flex posts, follower bait, big-account low-info controversy questions, political / official broadcasters, crypto wealth narratives, and one-way viral traffic.
-- Restored media competitiveness when the caption or available metadata is meaningful, while still flagging low-confidence image / video posts for external vision handling.
 
 ## 开源快照
 

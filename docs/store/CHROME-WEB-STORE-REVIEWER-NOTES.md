@@ -105,6 +105,6 @@ ReplyDrop 的定位是“帮助发现、排队和复查”，不是无人值守�
 1. Install the submitted build.
 2. Open any `x.com` page with visible public posts.
 3. Wait a few seconds for the content script to scan visible posts.
-4. Look for ReplyDrop waterdrop hints near reply actions.
+4. Look for ReplyDrop score hints near reply actions.
 5. Open the toolbar popup and confirm the layered home/dashboard flow.
 6. In the page console, run `window.ReplyDropAPI.getCandidates()` to verify the local automation bridge.

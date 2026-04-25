@@ -102,7 +102,7 @@ ReplyDrop 当前坚持几个边界：
 
 ## Full Description In English
 
-ReplyDrop is a local-first browser extension for X. It scores posts that are already visible in your current timeline, highlights reply-worthy windows with a small waterdrop marker, and helps you organize replies before the opportunity fades.
+ReplyDrop is a local-first browser extension for X. It scores posts that are already visible in your current timeline, highlights reply-worthy windows with a compact score marker, and helps you organize replies before the opportunity fades.
 
 ReplyDrop is open source, free, and local-first. It does not require a ReplyDrop account, does not call a remote AI model, and does not upload timeline data to developer-owned servers. Workflow state is stored locally in `chrome.storage.local`.
 
