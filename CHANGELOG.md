@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.207
+
+- 补 p2.206 Windows 压测漏网：ETH/ASTEROID whale-buy、平台币 worth buying、295% pump / $200->$850、bull market 等 crypto 财富叙事压到发送线以下
+- 加重 X earnings / minimum payout、Elon paid me + like/retweet、follow each other / gain massively 这类收益互助诱饵
+- 压低 White House / Iran talks 类政治广播帖，以及 Tesla investor pizza、after all my millions、hover-tech 这类低信息炫耀帖
+
 ## 0.2.206
 
 - 修复部分非广告纯文字帖不显示水滴分数：低于 10 分的可读帖子也会显示 `low-outline` 分数，不再只给低分媒体帖兜底

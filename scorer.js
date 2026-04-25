@@ -259,8 +259,10 @@
     "grow your account", "growing your account", "active followers", "boost followers",
     "gain train", "follow chain", "support all", "support everyone", "support chain",
     "drop your handle", "handle drop", "under 10k", "under 10 k", "small accounts",
-    "like rt", "like + rt", "like and rt", "rt and like", "comment and rt",
+    "like rt", "like + rt", "like and rt", "rt and like", "like and retweet",
+    "retweet and like", "like and repost", "repost and like", "comment and rt",
     "grow your page", "growing your page", "grow page", "page growth",
+    "follow each other", "gain massively", "massive gain", "gain followers massively",
     "turn notifications on", "notifications on", "notification gang",
     "互关", "互關", "互粉", "回关", "回關", "互推", "求关注", "求關注",
     "涨粉", "漲粉", "点关注", "點關注", "关注我", "關注我", "帮转", "幫轉",
@@ -301,6 +303,9 @@
     /\b(?:drop|share|post)\s+(?:your\s+)?(?:handle|@|account)\b/i,
     /\b(?:like|comment|reply)\b.{0,28}\b(?:rt|retweet|repost)\b.{0,28}\b(?:follow|support|active)\b/i,
     /\b(?:rt|retweet|repost)\b.{0,28}\b(?:like|comment|reply)\b.{0,28}\b(?:follow|support|active)\b/i,
+    /\b(?:like|retweet|repost)\b.{0,60}\b(?:paid|payout|earn(?:ed|ing)?|follow|gain|support)\b/i,
+    /\b(?:paid|payout|earn(?:ed|ing)?|follow|gain|support)\b.{0,60}\b(?:like|retweet|repost)\b/i,
+    /\bfollow\s+each\s+other\b.{0,80}\b(?:gain|massive|grow|support|followers?)\b/i,
     /\b(?:under|below)\s+10\s*k\b.{0,90}\b(?:follow|support|reply|comment|drop|handle|active)\b/i,
     /\b(?:active|small)\s+accounts?\b.{0,90}\b(?:follow|support|reply|comment|drop|handle)\b/i,
     /\b(?:creator\s+revenue|x\s+payout|payout\s+is\s+coming|impression\s+farming)\b/i,
@@ -366,10 +371,13 @@
     "join the waitlist", "invite code", "try it now", "limited spots", "cta",
     "catch early", "early coins", "early coin", "early gems", "gem finder", "open source crypto",
     "xchat", "x chat", "web3 community", "creator community", "join our group", "group chat",
+    "whale buy", "whale-buy", "whale bought", "whale accumulation", "platform token",
+    "worth buying", "best token to buy", "which token", "which are worth buying",
     "100x", "1000x", "10x", "x100", "x1000", "moonshot", "pump", "pumping",
     "next 100x", "next 1000x", "gem call", "hidden gem", "degen", "bullish",
     "meme wealth", "wealth effect", "money printer", "trenches", "degen trenches",
     "meme coin", "memecoin", "generational wealth", "life changing money",
+    "bull market", "bull run", "asteroid",
     "support resistance", "support/resistance", "resistance support", "price target",
     "inflection point", "staking yield", "staking rewards", "eth staking",
     "追高", "回购", "回購", "流动性", "流動性", "溢价", "溢價", "协议", "協議",
@@ -395,6 +403,10 @@
     /\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b.{0,100}\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b/i,
     /\b(?:wealth\s+effect|money\s+printer|generational\s+wealth|life\s+changing|rich|millionaire|profit|gains?|bags?)\b.{0,100}\b(?:bnb|eth|btc|crypto|coin|token|memecoin|meme)\b/i,
     /\b(?:eth|crypto|degen)\s+trenches\b.{0,100}\b(?:product|thesis|trade|alpha|launch|token|coin|profit|narrative)\b/i,
+    /\b(?:eth|btc|crypto|token|coin|asteroid|altcoin|memecoin)\b.{0,100}\b(?:whale\s*(?:buy|bought|accumulation)|worth\s+buying|which\s+(?:are|is).{0,30}buying|bull\s*(?:market|run)|pump(?:ed)?)\b/i,
+    /\b(?:whale\s*(?:buy|bought|accumulation)|worth\s+buying|which\s+(?:are|is).{0,30}buying|bull\s*(?:market|run)|pump(?:ed)?)\b.{0,100}\b(?:eth|btc|crypto|token|coin|asteroid|altcoin|memecoin)\b/i,
+    /\b\d+(?:\.\d+)?\s*%\b.{0,80}\b(?:pump|gain|profit|bull|market|token|coin|crypto)\b/i,
+    /\$\s*\d+(?:[.,]\d+)?\s*(?:to|->|→|-)\s*\$\s*\d+(?:[.,]\d+)?\b.{0,100}\b(?:pump|gain|profit|bull|market|token|coin|crypto)\b/i,
     /\b(?:open\s*source|github|tool|scanner|tracker)\b.{0,120}\b(?:catch|find|discover|spot)\b.{0,80}\b(?:early|new)\b.{0,40}\b(?:coins?|tokens?|gems?|crypto)\b/i,
     /\b(?:catch|find|discover|spot)\b.{0,80}\b(?:early|new)\b.{0,40}\b(?:coins?|tokens?|gems?|crypto)\b.{0,120}\b(?:open\s*source|github|tool|scanner|tracker)\b/i,
     /\b(?:btc|bitcoin|crypto|web3)\b.{0,120}\b(?:industry|belief|conviction|future|faith|thesis)\b.{0,100}\b(?:early|cycle|rich|wealth|win|profit|millionaire)\b/i,
@@ -444,7 +456,8 @@
   const GENERIC_SHORT_POST_TERMS = [
     "good news", "great news", "big day", "keep going", "never give up", "stay strong",
     "believe in yourself", "trust the process", "one day", "soon", "blessed",
-    "grateful", "thank god", "god did", "god is good", "miracle", "debt free",
+    "grateful", "thank god", "god did", "god is good", "after all my millions",
+    "my millions", "miracle", "debt free",
     "healed", "healing miracle", "medical debt", "gm", "gn", "vibes", "facts", "real talk",
     "好消息", "坚持", "堅持", "加油", "冲", "衝", "稳了", "穩了", "太好了",
     "やった", "最高", "頑張る", "おはよう", "おやすみ",
@@ -463,7 +476,8 @@
     "followers", "follower count", "notifications", "engagement", "analytics",
     "payout", "paid out", "got paid", "payment received", "creator payout",
     "creator revenue", "ad revenue", "ads revenue", "revenue share", "revenue sharing",
-    "x payout", "x revenue", "x monetization", "monetization payout",
+    "x payout", "x revenue", "x earnings", "x monetization", "monetization payout",
+    "minimum payout", "minimum payment", "earnings minimum", "payout threshold",
     "back pay", "backpay", "retro pay", "retroactive pay", "payday",
     "展示量", "浏览量", "瀏覽量", "曝光", "阅读量", "閱讀量", "主页访问", "主頁訪問",
     "收益", "收益额", "收益額", "分成", "到账", "到賬", "打款",
@@ -480,6 +494,8 @@
     /\b(?:received|got|paid|arrived|hit|works?|proof|thanks?)\b.{0,90}\b(?:x|creator|ad|ads)?\s*(?:payout|revenue|moneti[sz]ation|payment)\b/i,
     /\b(?:back\s*pay|backpay|retro(?:active)?\s*pay|payday)\b.{0,90}\b(?:x|creator|revenue|payout|moneti[sz]ation|paid|payment)\b/i,
     /\b(?:x|creator|revenue|payout|moneti[sz]ation|paid|payment)\b.{0,90}\b(?:back\s*pay|backpay|retro(?:active)?\s*pay|payday)\b/i,
+    /\b(?:x|creator|ad|ads)?\s*(?:earnings?|payout|revenue|payment)\b.{0,90}\b(?:minimum|threshold|eligible|requirement|withdraw)\b/i,
+    /\b(?:minimum|threshold|eligible|requirement|withdraw)\b.{0,90}\b(?:x|creator|ad|ads)?\s*(?:earnings?|payout|revenue|payment)\b/i,
     /(?:\d+(?:\.\d+)?\s*(?:万|萬|亿|億)?).{0,12}(?:展示量|浏览量|瀏覽量|曝光|阅读量|閱讀量|粉丝|粉絲).{0,50}(?:增长|增長|账号|帳號|賬號|变现|變現|收益|炫耀|突破)/u,
     /(?:展示量|浏览量|瀏覽量|曝光|阅读量|閱讀量|粉丝|粉絲|收益|分成|打款|到账|到賬).{0,50}(?:增长|增長|账号|帳號|賬號|变现|變現|收益|炫耀|突破|收到|来了|來了|捐)/u,
     /(?:インプレッション|表示回数|閲覧数|フォロワー|収益|広告収益|振込|入金|支払い|支払|ペイアウト).{0,55}(?:伸び|収益|突破|増え|来た|きた|届い|ありがとう|寄付|記録|最高)/u,
@@ -518,7 +534,8 @@
     "campaign trail", "election day", "donald trump", "trump", "narendra modi", "modi", "joe biden",
     "biden", "putin", "zelensky", "netanyahu", "选举", "選舉", "竞选", "競選", "投票", "选民", "選民",
     "国会", "國會", "议会", "議會", "施政", "政策声明", "政策聲明", "内阁", "內閣"
-    , "brics", "sanctions", "geopolitical", "diplomatic", "uae", "crown prince", "royal court",
+    , "brics", "sanctions", "geopolitical", "diplomatic", "white house", "iran talks",
+    "iran nuclear", "ceasefire talks", "uae", "crown prince", "royal court",
     "特朗普", "川普", "拜登", "奥巴马", "奧巴馬", "莫迪", "普京"
   ];
   const GENERIC_MEDIA_ALT_PATTERNS = [
@@ -1696,9 +1713,16 @@
     const genericHits = countTermMatches(semanticText, GENERIC_SHORT_POST_TERMS);
     const relationshipHits = countTermMatches(semanticText, RELATIONSHIP_BAIT_TERMS);
     const geopoliticalLowInfoHits = countRegexMatches(semanticText, GEOPOLITICAL_LOW_INFO_PATTERNS);
+    const lowInfoWealthHits = countRegexMatches(semanticText, [
+      /\bafter\s+all\s+my\s+millions\b/i,
+      /\bmy\s+millions\b/i,
+      /\bmillions?\b.{0,40}\b(?:lunch|pizza|joke|line|finally|still)\b/i,
+      /\b(?:tesla|investor)\b.{0,60}\b(?:pizza|lunch|millions?|nothing|lol)\b/i,
+      /\b(?:hover|hovering|hover\s*tech|hovertech)\b.{0,80}\b(?:future|soon|finally|wild|crazy)\b/i
+    ]);
     const shortFit = semanticText.length <= 72 || semanticTokens <= 9;
 
-    if (!geopoliticalLowInfoHits && (topicHits > 0 || dialogueHits > 0)) {
+    if (!geopoliticalLowInfoHits && !lowInfoWealthHits && (topicHits > 0 || dialogueHits > 0)) {
       return false;
     }
 
@@ -1706,7 +1730,8 @@
       (shortFit && semanticTokens <= 7) ||
       (shortFit && genericHits > 0) ||
       (semanticTokens <= 14 && relationshipHits > 0) ||
-      geopoliticalLowInfoHits > 0
+      geopoliticalLowInfoHits > 0 ||
+      lowInfoWealthHits > 0
     );
   }
 
@@ -1743,7 +1768,14 @@
     const lowInfoPileOn = isLowInfoPileOnQuestion(tweet);
     const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
     const geopoliticalLowInfo = countRegexMatches(semanticText, GEOPOLITICAL_LOW_INFO_PATTERNS) > 0;
-    if (!isThinGenericLowInfoPost(tweet) && !lowInfoPileOn && !geopoliticalLowInfo) {
+    const lowInfoWealth = countRegexMatches(semanticText, [
+      /\bafter\s+all\s+my\s+millions\b/i,
+      /\bmy\s+millions\b/i,
+      /\bmillions?\b.{0,40}\b(?:lunch|pizza|joke|line|finally|still)\b/i,
+      /\b(?:tesla|investor)\b.{0,60}\b(?:pizza|lunch|millions?|nothing|lol)\b/i,
+      /\b(?:hover|hovering|hover\s*tech|hovertech)\b.{0,80}\b(?:future|soon|finally|wild|crazy)\b/i
+    ]) > 0;
+    if (!isThinGenericLowInfoPost(tweet) && !lowInfoPileOn && !geopoliticalLowInfo && !lowInfoWealth) {
       return null;
     }
 
@@ -1762,7 +1794,7 @@
       1
     );
     const penalty = thinFit * heatFit * weight;
-    return penalty >= 3 ? Math.max(penalty, geopoliticalLowInfo ? 42 : (lowInfoPileOn ? 34 : 28)) : null;
+    return penalty >= 3 ? Math.max(penalty, (geopoliticalLowInfo || lowInfoWealth) ? 42 : (lowInfoPileOn ? 34 : 28)) : null;
   }
 
   function computeSocialGrowthFlexPenalty(tweet, weight = 42) {

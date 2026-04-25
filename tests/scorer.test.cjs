@@ -1617,3 +1617,94 @@ test("scorer hard-blocks explicit good morning follower bait", () => {
   assert.ok(bait.score <= 45);
   assert.ok(bait.breakdown.some((item) => item.key === "followTrainBait"));
 });
+
+test("scorer demotes p2.206 crypto wealth and investment leaks", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+  const common = {
+    authorFollowers: 64000,
+    likes: 1600,
+    replies: 120,
+    views: 92000,
+    timestamp: now - (30 * 60 * 1000),
+    trafficVelocityPerHour: 150000,
+    trafficReplyVelocityPerHour: 210,
+    trafficReplyRatio: 0.00135,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  };
+
+  const cases = [
+    "ETH ASTEROID whale buy is starting. This platform token is still worth buying.",
+    "Which platform tokens are worth buying before the next bull market?",
+    "295% pump already: $200 -> $850 and this bull market is just starting."
+  ];
+
+  for (const text of cases) {
+    const analysis = scorer.analyzeTweet({ ...common, text });
+    assert.ok(analysis.score < 54, `${text} scored ${analysis.score}`);
+    assert.ok(analysis.breakdown.some((item) => item.key === "protocolPromo"));
+  }
+});
+
+test("scorer demotes p2.206 payout, follow-growth, political, and low-info leaks", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+  const common = {
+    authorFollowers: 42000,
+    likes: 900,
+    replies: 88,
+    views: 54000,
+    timestamp: now - (34 * 60 * 1000),
+    trafficVelocityPerHour: 96000,
+    trafficReplyVelocityPerHour: 150,
+    trafficReplyRatio: 0.00155,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  };
+
+  const expected = [
+    {
+      text: "Elon paid me again. Like and retweet if you want X earnings too.",
+      key: "followTrainBait"
+    },
+    {
+      text: "Follow each other and gain massively. Support everyone in the replies.",
+      key: "followTrainBait"
+    },
+    {
+      text: "X earnings minimum payout threshold is finally here. Who can withdraw now?",
+      key: "socialGrowthFlex"
+    },
+    {
+      text: "White House and Iran talks continue today as officials discuss the next deal.",
+      key: "politicalFigure"
+    },
+    {
+      text: "After all my millions, I still just want pizza for lunch.",
+      key: "thinGenericPost"
+    },
+    {
+      text: "Tesla investor lunch was just pizza lol, millions can wait.",
+      key: "thinGenericPost"
+    },
+    {
+      text: "Hover tech future is finally here and it looks wild.",
+      key: "thinGenericPost"
+    }
+  ];
+
+  for (const item of expected) {
+    const analysis = scorer.analyzeTweet({ ...common, text: item.text });
+    assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+    assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
+  }
+});
