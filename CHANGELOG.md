@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.214
+
+- 新增 `setDraftPreview({ tweetId/url, replyText, confidence, riskFlags })`：外部 AI agent 生成草稿后，可回写到首页对应推文卡片，显示“AI 草稿预览”，人工确认后再发
+- 明确 `getDraftTargets/getDraftContext` 仍是输入上下文，不内置模型；`setDraftPreview` 才是把外部 agent 生成结果显示回首页的通道
+- 继续压低 p2.213 漏网：X payout/earnings、蓝勾/可见度互助、AI 产品额度/KOL 活动、评论进群、交易订阅/自动化、薪资资产焦虑类候选
+
 ## 0.2.213
 
 - 新增首页原地回复通道：`openComposer()` 默认先尝试在当前时间线卡片内打开回复框，成功则不进详情页、不刷新首页

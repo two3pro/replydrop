@@ -1752,3 +1752,61 @@ test("scorer demotes p2.208 inboxzero revenue restart and institutional bull-mar
     assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
   }
 });
+
+test("scorer demotes p2.213 preview leaks", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+  const common = {
+    authorFollowers: 65000,
+    likes: 980,
+    replies: 76,
+    views: 88000,
+    timestamp: now - (28 * 60 * 1000),
+    trafficVelocityPerHour: 110000,
+    trafficReplyVelocityPerHour: 140,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    sourceSurface: "for-you"
+  };
+
+  const cases = [
+    {
+      text: "X payout finally hit again. Premium revenue is real and I got paid today.",
+      langs: ["en"],
+      key: "socialGrowthFlex"
+    },
+    {
+      text: "69k followers now, blue-check account interaction is back. Reply if your visibility is also shadowbanned.",
+      langs: ["en"],
+      key: "followTrainBait"
+    },
+    {
+      text: "这个 AI 产品还有 KOL 活动额度，评论区留言加入体验名单。",
+      langs: ["zh"],
+      key: "protocolPromo"
+    },
+    {
+      text: "Comment to join our crypto community group, we share alpha and trading signals.",
+      langs: ["en"],
+      key: "protocolPromo"
+    },
+    {
+      text: "My market automation trading bot subscription is open again for crypto signals.",
+      langs: ["en"],
+      key: "protocolPromo"
+    },
+    {
+      text: "工资和资产对比太焦虑了，为什么同龄人的财富差距越来越大？",
+      langs: ["zh"],
+      key: "socialGrowthFlex"
+    }
+  ];
+
+  for (const item of cases) {
+    const analysis = scorer.analyzeTweet({ ...common, ...item });
+    assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+    assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
+  }
+});

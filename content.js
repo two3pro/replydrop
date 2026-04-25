@@ -3,6 +3,7 @@
   const BADGE_CLASS = "xrs-score-badge";
   const BADGE_LABEL_CLASS = "xrs-score-label";
   const BADGE_ANCHOR_CLASS = "xrs-badge-anchor";
+  const DRAFT_PREVIEW_CLASS = "xrs-draft-preview";
   const FLOAT_WIDGET_ID = "xrs-floating-widget";
   const FLOAT_BUTTON_CLASS = "xrs-floating-button";
   const FLOAT_COUNT_CLASS = "xrs-floating-count";
@@ -138,6 +139,7 @@
     executorReplyTargetStartedAt: 0,
     timedOutReplyTargets: {},
     lastReplyOpenFailure: null,
+    draftPreviewsByUrl: {},
     pendingReplyOutcomeUrl: "",
     pendingReplyOutcomeTimer: null,
     apiSubmitInFlightTargetUrl: "",
@@ -1088,6 +1090,7 @@
         getTrafficSnapshot: { type: "read" },
         getDraftTargets: { type: "read" },
         getDraftContext: { type: "read" },
+        setDraftPreview: { type: "write" },
         refreshRecommendations: { type: "write" },
         getAgentInbox: { type: "read", legacy: true },
         getCandidateContext: { type: "read", legacy: true },
@@ -1723,6 +1726,50 @@
     return summarizeDraftTargetContext(context);
   }
 
+  async function setReplyDropApiDraftPreview(payload = {}) {
+    const normalizedPayload = payload && typeof payload === "object" ? payload : {};
+    let runtimeState = null;
+    try {
+      runtimeState = await getApiRuntimeStateSnapshot();
+    } catch {
+      runtimeState = null;
+    }
+    const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
+    const targetUrl = resolveApiTargetUrlFromPayload(normalizedPayload, runtimeState);
+    const normalizedUrl = normalizeTweetUrl(targetUrl);
+    const replyText = String(
+      normalizedPayload.replyText ||
+      normalizedPayload.previewText ||
+      normalizedPayload.draft ||
+      ""
+    ).trim().slice(0, 560);
+    if (!normalizedUrl || !replyText) {
+      return {
+        ok: false,
+        reason: normalizedUrl ? "missing-reply-text" : "missing-target"
+      };
+    }
+
+    const preview = {
+      url: normalizedUrl,
+      tweetId: tweetId || extractTweetIdFromUrl(normalizedUrl),
+      replyText,
+      confidence: Number(normalizedPayload.confidence || 0),
+      riskFlags: Array.isArray(normalizedPayload.riskFlags)
+        ? normalizedPayload.riskFlags.slice(0, 6).map((flag) => String(flag || "").trim()).filter(Boolean)
+        : [],
+      updatedAt: Date.now()
+    };
+    state.draftPreviewsByUrl[normalizedUrl] = preview;
+    const article = findReplyArticle(normalizedUrl) || findTweetArticleByTweetId(preview.tweetId, normalizedUrl);
+    const rendered = article instanceof HTMLElement ? renderDraftPreview(article, preview) : false;
+    return {
+      ok: true,
+      rendered,
+      preview
+    };
+  }
+
   async function getReplyDropApiExecutorInbox(options = {}) {
     const inbox = await getReplyDropApiAgentInbox(options);
     return {
@@ -2298,6 +2345,8 @@
         return getReplyDropApiDraftTargets(args[0] || {});
       case "getDraftContext":
         return getReplyDropApiDraftContext(args[0], args[1] || {});
+      case "setDraftPreview":
+        return setReplyDropApiDraftPreview(args[0] || {});
       case "refreshRecommendations":
         return refreshReplyDropRecommendations(args[0] || {});
       case "getAgentInbox":
@@ -2686,6 +2735,32 @@
       }
       .${BADGE_CLASS}[data-tier="hidden"] {
         display: none !important;
+      }
+      .${DRAFT_PREVIEW_CLASS} {
+        margin: 10px 16px 8px 56px;
+        padding: 10px 12px 11px;
+        border: 1px solid rgba(14, 165, 233, 0.26);
+        border-radius: 16px;
+        background:
+          linear-gradient(135deg, rgba(240, 253, 250, 0.96), rgba(239, 246, 255, 0.94));
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        color: #0f172a;
+        font: 500 13px/1.48 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .${DRAFT_PREVIEW_CLASS} strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #0369a1;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      .${DRAFT_PREVIEW_CLASS} p {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+      .${DRAFT_PREVIEW_CLASS}[data-risk="1"] {
+        border-color: rgba(245, 158, 11, 0.34);
+        background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(255, 247, 237, 0.94));
       }
       #${FLOAT_WIDGET_ID} {
         position: fixed;
@@ -4042,6 +4117,48 @@
     }
   }
 
+  function removeDraftPreview(article) {
+    const existing = article instanceof Element ? article.querySelector(`:scope > .${DRAFT_PREVIEW_CLASS}`) : null;
+    if (existing instanceof HTMLElement) {
+      existing.remove();
+    }
+  }
+
+  function renderDraftPreview(article, preview = null) {
+    if (!(article instanceof HTMLElement)) {
+      return false;
+    }
+    removeDraftPreview(article);
+    const normalizedUrl = normalizeTweetUrl(preview?.url || readTweetUrl(article));
+    const replyText = String(preview?.replyText || preview?.previewText || preview?.draft || "").trim().slice(0, 560);
+    if (!normalizedUrl || !replyText) {
+      return false;
+    }
+    const riskFlags = Array.isArray(preview?.riskFlags) ? preview.riskFlags.map((flag) => String(flag || "").trim()).filter(Boolean) : [];
+    const node = document.createElement("div");
+    node.className = DRAFT_PREVIEW_CLASS;
+    node.dataset.tweetId = extractTweetIdFromUrl(normalizedUrl);
+    node.dataset.risk = riskFlags.length ? "1" : "0";
+    const label = riskFlags.length
+      ? `AI 草稿预览 · 需确认 ${riskFlags.slice(0, 2).join(" / ")}`
+      : "AI 草稿预览 · 人工确认后发送";
+    node.innerHTML = `<strong></strong><p></p>`;
+    node.querySelector("strong").textContent = label;
+    node.querySelector("p").textContent = replyText;
+    article.appendChild(node);
+    return true;
+  }
+
+  function renderStoredDraftPreview(article) {
+    const url = normalizeTweetUrl(readTweetUrl(article));
+    const preview = url ? state.draftPreviewsByUrl[url] : null;
+    if (preview) {
+      renderDraftPreview(article, preview);
+    } else {
+      removeDraftPreview(article);
+    }
+  }
+
   function readStoredCandidate(article) {
     return decodeCandidate(article.dataset.xrsCandidate || "");
   }
@@ -4326,8 +4443,10 @@
           const candidate = buildCandidatePayload(tweet, analysis, effectiveTier);
           storeCandidatePayload(article, candidate);
           recentCandidates.push(candidate);
+          renderStoredDraftPreview(article);
         } else {
           delete article.dataset.xrsCandidate;
+          removeDraftPreview(article);
         }
         if (effectiveTier === "high" || effectiveTier === "good") {
           highScoreCount += 1;

@@ -396,6 +396,9 @@
     getDraftContext(tweetId, options = {}) {
       return call("getDraftContext", tweetId, options);
     },
+    setDraftPreview(payload = {}) {
+      return callAction("setDraftPreview", payload);
+    },
     refreshRecommendations(options = {}) {
       return callAction("refreshRecommendations", options);
     },
