@@ -404,6 +404,14 @@
       bookmarks: Number(candidate.bookmarks || 0),
       blockReason: String(candidate.blockReason || "").trim(),
       lowSemanticConfidence: Boolean(candidate.lowSemanticConfidence),
+      breakdown: Array.isArray(candidate.breakdown)
+        ? candidate.breakdown.slice(0, 8).map((item) => ({
+            key: String(item?.key || "").trim(),
+            label: String(item?.label || "").trim(),
+            amount: Number(item?.amount || 0),
+            kind: String(item?.kind || "").trim()
+          }))
+        : [],
       textSummary,
       "text摘要": textSummary,
       url
@@ -1088,10 +1096,12 @@
         textPreview: "string",
         mediaKind: "string",
         needsDetailContext: "boolean",
-        mediaContextMissing: "boolean",
-        mediaSummaryAvailable: "boolean",
-        draftContextLabel: "quick-preview-draft | detail-ready-draft",
-        urgency: "string",
+      mediaContextMissing: "boolean",
+      mediaSummaryAvailable: "boolean",
+      draftContextLabel: "quick-preview-draft | detail-ready-draft",
+      lanes: "{ replyNow, needsDetail, notRecommended, watchLater }",
+      visibleScoredPosts: "all currently visible scored posts for page/API alignment",
+      urgency: "string",
         recommendation: "reply | skip",
         replyText: "string",
         skipReason: "string",
@@ -1471,7 +1481,15 @@
         peakSourceSurface: String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim(),
         peakObservedAt: Number(candidate?.peakObservedAt || candidate?.timestamp || 0),
         blockReason: String(candidate?.blockReason || "").trim(),
-        lowSemanticConfidence: Boolean(candidate?.lowSemanticConfidence)
+        lowSemanticConfidence: Boolean(candidate?.lowSemanticConfidence),
+        breakdown: Array.isArray(candidate?.breakdown)
+          ? candidate.breakdown.slice(0, 8).map((item) => ({
+              key: String(item?.key || "").trim(),
+              label: String(item?.label || "").trim(),
+              amount: Number(item?.amount || 0),
+              kind: String(item?.kind || "").trim()
+            }))
+          : []
       },
       recheck,
       routing: {
@@ -1868,20 +1886,84 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
-    if (score < minScore || context.recheck?.skipRecommended) {
-      return false;
-    }
-    if (String(context.scoring?.blockReason || "").trim()) {
-      return false;
-    }
-    if (context.lifecycle?.alreadyReplied) {
-      return false;
-    }
-    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
+    if (getReplyDropDraftLaneKey(context, minScore) !== "replyNow") {
       return false;
     }
     return true;
+  }
+
+  function hasDraftRiskFlag(context = {}, patterns = []) {
+    const flags = Array.isArray(context.aiHints?.riskFlags) ? context.aiHints.riskFlags : [];
+    const scoringKeys = Array.isArray(context.scoring?.breakdown) ? context.scoring.breakdown : [];
+    const values = [
+      ...flags,
+      ...scoringKeys.map((item) => item?.key),
+      String(context.scoring?.blockReason || "")
+    ].map((item) => String(item || "").trim()).filter(Boolean);
+    return values.some((value) => patterns.some((pattern) => pattern.test(value)));
+  }
+
+  function getReplyDropDraftLaneKey(context = {}, minScore = 54) {
+    if (!context || typeof context !== "object") {
+      return "notRecommended";
+    }
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const decision = String(context.routing?.recommendedDecision || "").trim();
+    const slot = String(context.routing?.recommendedSlot || "").trim();
+    const flags = Array.isArray(context.aiHints?.riskFlags) ? context.aiHints.riskFlags : [];
+    const hardRisk = (
+      String(context.scoring?.blockReason || "").trim() ||
+      context.lifecycle?.alreadyReplied ||
+      context.recheck?.skipRecommended ||
+      hasDraftRiskFlag(context, [
+        /already_replied/i,
+        /follow|growth|payout|risk|political|broadcast|protocol|promo|lowinfo/i,
+        /hardCap/i
+      ])
+    );
+
+    if (hardRisk) {
+      return "notRecommended";
+    }
+
+    if (
+      flags.includes("vision_required_but_missing") ||
+      flags.includes("media_context_missing") ||
+      flags.includes("needs_detail_context") ||
+      Boolean(context.contextCompleteness?.needsDetailContext) ||
+      Boolean(context.contextCompleteness?.mediaContextMissing)
+    ) {
+      return "needsDetail";
+    }
+
+    if (score < minScore) {
+      return score >= Math.max(30, minScore - 18) ? "watchLater" : "notRecommended";
+    }
+
+    if (decision === "queue-tonight" || decision === "queue-tomorrow" || slot === "tonight" || slot === "tomorrow") {
+      return "watchLater";
+    }
+
+    if (decision && decision !== "reply-now") {
+      return "notRecommended";
+    }
+
+    return "replyNow";
+  }
+
+  function getReplyDropDraftLaneLabel(key = "") {
+    switch (key) {
+      case "replyNow":
+        return "可立即回";
+      case "needsDetail":
+        return "需进详情";
+      case "notRecommended":
+        return "不建议碰";
+      case "watchLater":
+        return "稍后观察";
+      default:
+        return "未分类";
+    }
   }
 
   function buildDraftTargetDomLocationMap() {
@@ -1890,9 +1972,11 @@
     getTweetNodes().forEach((article, index) => {
       const url = normalizeTweetUrl(readTweetUrl(article));
       const tweetId = extractTweetIdFromUrl(url);
+      const rect = article.getBoundingClientRect();
       const location = {
         visibleOnPage: true,
         domIndex: index + 1,
+        viewportPosition: Number.isFinite(rect.top) ? Math.round(rect.top) : null,
         handle: readAuthorHandle(article),
         textPreview: String(readText(article) || "").replace(/\s+/g, " ").trim().slice(0, 80),
         mediaKind: String(readMediaKind(article) || "").trim()
@@ -1928,6 +2012,7 @@
       snapshotIndex: Number.isFinite(Number(snapshot.snapshotIndex)) ? Number(snapshot.snapshotIndex) : null,
       rank: Number.isFinite(Number(snapshot.rank)) ? Number(snapshot.rank) : null,
       domIndex: Number.isFinite(Number(location.domIndex)) ? Number(location.domIndex) : null,
+      viewportPosition: Number.isFinite(Number(location.viewportPosition)) ? Number(location.viewportPosition) : null,
       visibleOnPage: Boolean(location.visibleOnPage),
       handle,
       score,
@@ -1938,6 +2023,8 @@
       mediaContextMissing,
       mediaSummaryAvailable,
       draftContextLabel,
+      laneKey: String(snapshot.laneKey || "").trim(),
+      laneLabel: getReplyDropDraftLaneLabel(String(snapshot.laneKey || "").trim()),
       tweetId,
       url: normalizedUrl,
       author: context.author || {},
@@ -1973,8 +2060,10 @@
     const attributionModel = buildApiAttributionModel(runtimeState);
     const domLocations = buildDraftTargetDomLocationMap();
     const contexts = [];
+    const contextByTweetId = new Map();
+    const contextByUrl = new Map();
 
-    for (const candidate of sortedCandidates.slice(0, Math.max(limit * 3, 12))) {
+    for (const candidate of sortedCandidates.slice(0, Math.max(limit * 5, 24))) {
       const context = await buildReplyDropCandidateContext(candidate, runtimeState, {
         source: "candidate",
         includeMedia,
@@ -1982,26 +2071,71 @@
         generatedAt
       });
       contexts.push(context);
-      if (contexts.filter((item) => isReplyDropDraftTarget(item, minScore)).length >= limit) {
-        break;
+      if (context?.tweetId) {
+        contextByTweetId.set(String(context.tweetId), context);
+      }
+      if (context?.url) {
+        contextByUrl.set(normalizeTweetUrl(context.url), context);
       }
     }
 
-    const candidates = contexts
-      .filter((context) => isReplyDropDraftTarget(context, minScore))
-      .slice(0, limit)
-      .map((context, index) => summarizeDraftTargetContext(context, {
+    const decorate = (context, index, laneKey) => summarizeDraftTargetContext(context, {
         snapshotId,
         capturedAt,
         snapshotIndex: index + 1,
         rank: index + 1,
+        laneKey,
         location: domLocations.byUrl.get(normalizeTweetUrl(context.url)) ||
           domLocations.byTweetId.get(String(context.tweetId || "").trim()) ||
           {
             visibleOnPage: false,
             domIndex: null
           }
-      }));
+      });
+
+    const lanes = {
+      replyNow: [],
+      needsDetail: [],
+      notRecommended: [],
+      watchLater: []
+    };
+
+    contexts.forEach((context) => {
+      const laneKey = getReplyDropDraftLaneKey(context, minScore);
+      const safeLaneKey = Object.prototype.hasOwnProperty.call(lanes, laneKey) ? laneKey : "notRecommended";
+      if (lanes[safeLaneKey].length >= limit) {
+        return;
+      }
+      lanes[safeLaneKey].push(decorate(context, lanes[safeLaneKey].length, safeLaneKey));
+    });
+
+    const candidates = lanes.replyNow.slice(0, limit);
+    const visibleScoredPosts = Array.from(domLocations.byTweetId.entries())
+      .map(([tweetId, location]) => {
+        const context = contextByTweetId.get(tweetId) || contextByUrl.get(normalizeTweetUrl(readTweetUrl(getTweetNodes()[Number(location.domIndex || 1) - 1])));
+        const score = Number(context?.scoring?.score || context?.scoring?.finalScore || 0);
+        return {
+          version: "replydrop-visible-scored-post-v1",
+          snapshotId,
+          capturedAt,
+          tweetId,
+          url: normalizeTweetUrl(context?.url || ""),
+          handle: String(location.handle || context?.author?.handle || "").replace(/^@/, "").trim(),
+          score,
+          laneKey: context ? getReplyDropDraftLaneKey(context, minScore) : "notRecommended",
+          laneLabel: getReplyDropDraftLaneLabel(context ? getReplyDropDraftLaneKey(context, minScore) : "notRecommended"),
+          domIndex: Number.isFinite(Number(location.domIndex)) ? Number(location.domIndex) : null,
+          viewportPosition: Number.isFinite(Number(location.viewportPosition)) ? Number(location.viewportPosition) : null,
+          visibleOnPage: Boolean(location.visibleOnPage),
+          textPreview: String(location.textPreview || context?.post?.text || "").replace(/\s+/g, " ").trim().slice(0, 120),
+          mediaKind: String(location.mediaKind || context?.post?.mediaKind || "").trim(),
+          inDraftTargets: Boolean(context && candidates.some((candidate) => candidate.tweetId === tweetId))
+        };
+      })
+      .filter((item) => item.score > 0 || item.textPreview || item.handle)
+      .sort((left, right) => (
+        Number(left.domIndex || 9999) - Number(right.domIndex || 9999)
+      ));
     const filteredCandidates = contexts
       .filter((context) => !isReplyDropDraftTarget(context, minScore))
       .map((context) => summarizeFilteredExecutorCandidate(context));
@@ -2017,7 +2151,7 @@
         oneSnapshotOnly: true,
         noAutoRefresh: true,
         outputDestination: "current-chat",
-        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出：handle / score / urgency / 建议回或不建议回 / 可复制 replyText 或 skipReason。不要再次刷新，除非用户明确允许。不要自动 queue、openComposer、submitReply。若 needsDetailContext/mediaContextMissing 为 true，输出必须标注 quick preview draft，并提示打开详情页后可重写。"
+        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出。优先只写 lanes.replyNow；lanes.needsDetail 只标注需进详情/需视觉摘要，不写确定性草稿；lanes.notRecommended 只给跳过原因；lanes.watchLater 不占主回复槽。不要自动刷新、queue、openComposer、submitReply。"
       },
       pageOrder: {
         domArticleCount: domLocations.count,
@@ -2027,6 +2161,8 @@
       limit,
       minScore,
       candidates,
+      lanes,
+      visibleScoredPosts,
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
       pageCandidateSync: runtimeState?.pageCandidateSync || null,
@@ -4097,6 +4233,14 @@
       trafficReplyRatio: tweet.trafficReplyRatio || 0,
       trafficPhase: tweet.trafficPhase || "",
       trafficSource: tweet.trafficSource || "",
+      breakdown: Array.isArray(analysis.breakdown)
+        ? analysis.breakdown.slice(0, 8).map((item) => ({
+            key: String(item?.key || "").trim(),
+            label: String(item?.label || "").trim(),
+            amount: Number(item?.amount || 0),
+            kind: String(item?.kind || "").trim()
+          }))
+        : [],
       highlights: Array.isArray(analysis.highlights) ? analysis.highlights.slice(0, 4) : [],
       keywordMatched: Boolean(analysis.keywordMatched),
       matchedTopics: Array.isArray(analysis.matchedTopics) ? analysis.matchedTopics.slice(0, 4) : [],

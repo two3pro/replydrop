@@ -1433,6 +1433,52 @@ test("scorer hard-caps payout and back-pay claims", () => {
   assert.ok(payout.breakdown.some((item) => item.key === "socialGrowthFlex"));
 });
 
+test("scorer hard-caps payment freeze and exchange withdrawal risk threads", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const chineseRisk = scorer.analyzeTweet({
+    text: "支付宝冻结后交易所出金一直不到账，银行卡也被冻卡了，OTC 到底还能不能走？",
+    authorFollowers: 68000,
+    likes: 1900,
+    replies: 160,
+    views: 98000,
+    timestamp: now - (26 * 60 * 1000),
+    trafficVelocityPerHour: 180000,
+    trafficReplyVelocityPerHour: 320,
+    trafficReplyRatio: 0.0032,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["zh"],
+    sourceSurface: "for-you"
+  });
+
+  const englishRisk = scorer.analyzeTweet({
+    text: "Exchange withdrawal failed again after a bank freeze. Anyone using OTC off-ramp for cash-out right now?",
+    authorFollowers: 52000,
+    likes: 1200,
+    replies: 118,
+    views: 73000,
+    timestamp: now - (29 * 60 * 1000),
+    trafficVelocityPerHour: 110000,
+    trafficReplyVelocityPerHour: 180,
+    trafficReplyRatio: 0.0024,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(chineseRisk.score <= 44);
+  assert.ok(englishRisk.score <= 44);
+  assert.ok(chineseRisk.breakdown.some((item) => item.key === "riskyContent"));
+  assert.ok(englishRisk.breakdown.some((item) => item.key === "riskyContent"));
+});
+
 test("scorer hard-caps directional crypto wealth narratives", () => {
   const scorer = loadScorer();
   const now = Date.now();

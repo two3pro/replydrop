@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.220
+
+- 外部写稿输出拆成 `replyNow` / `needsDetail` / `notRecommended` / `watchLater` 四个 lanes，主 `candidates` 只放真正可立即回复的干净目标
+- 新增 `visibleScoredPosts`，用于对齐当前首页可见水滴与 API 推荐，避免页面高分项找不到
+- 支付冻结、提现/出金、OTC、交易所提现、银行卡冻卡等风险内容新增硬帽，不能再占主回复槽
+- 互关增长链、收益炫耀、follow-loop 类继续收紧，并保留 scoring breakdown 给 agent 判断跳过原因
+
 ## 0.2.219
 
 - 新增 `setMediaSummary({ tweetId, summary, ocrText, confidence })`：外部 agent 看图/OCR/视频首帧后可把视觉摘要回填给 ReplyDrop

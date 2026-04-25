@@ -507,6 +507,14 @@ function summarizeApiCandidate(candidate = {}) {
     bookmarks: clampNumber(candidate.bookmarks, 0),
     blockReason: String(candidate.blockReason || "").trim(),
     lowSemanticConfidence: Boolean(candidate.lowSemanticConfidence),
+    breakdown: Array.isArray(candidate.breakdown)
+      ? candidate.breakdown.slice(0, 8).map((item) => ({
+          key: String(item?.key || "").trim(),
+          label: String(item?.label || "").trim(),
+          amount: clampNumber(item?.amount, 0),
+          kind: String(item?.kind || "").trim()
+        }))
+      : [],
     textSummary,
     "text摘要": textSummary,
     url
@@ -895,6 +903,14 @@ function normalizeRecentCandidates(value, fallback = []) {
         trafficReplyRatio: clampNumber(item.trafficReplyRatio, 0),
         trafficPhase: String(item.trafficPhase || "").trim().slice(0, 16),
         trafficSource: String(item.trafficSource || "").trim().slice(0, 24),
+        breakdown: Array.isArray(item.breakdown)
+          ? item.breakdown.slice(0, 8).map((entry) => ({
+              key: String(entry?.key || "").trim().slice(0, 48),
+              label: String(entry?.label || "").trim().slice(0, 80),
+              amount: clampNumber(entry?.amount, 0),
+              kind: String(entry?.kind || "").trim().slice(0, 24)
+            })).filter((entry) => entry.key)
+          : [],
         keywordMatched: Boolean(item.keywordMatched),
         matchedTopics: Array.isArray(item.matchedTopics) ? item.matchedTopics.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
         matchedLanguages: Array.isArray(item.matchedLanguages) ? item.matchedLanguages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],

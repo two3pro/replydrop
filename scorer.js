@@ -452,7 +452,13 @@
     "insult", "insult ai", "roast ai", "fight", "brawl", "beef", "drama", "conflict", "clash", "slammed",
     "reward challenge", "challenge reward", "prize challenge", "winner gets", "win reward",
     "heated argument", "conference incident", "冲突", "衝突", "吵架", "互骂", "互罵",
-    "辱骂", "辱罵", "骂战", "罵戰", "撕逼", "打架", "羞辱"
+    "辱骂", "辱罵", "骂战", "罵戰", "撕逼", "打架", "羞辱",
+    "payment freeze", "payment frozen", "cash-out", "cash out", "withdrawal", "withdraw",
+    "off-ramp", "off ramp", "otc", "bank freeze", "bank frozen", "frozen card",
+    "exchange withdrawal", "exchange withdraw", "card frozen",
+    "支付宝冻结", "支付寶凍結", "银行卡冻结", "銀行卡凍結", "冻卡", "凍卡",
+    "提现", "提現", "出金", "入金", "法币出金", "法幣出金", "交易所提现", "交易所提現",
+    "交易所出金", "场外", "場外", "跑分", "洗钱", "洗錢"
   ];
   const RISKY_CONTENT_PATTERNS = [
     /(?:没|沒)救.{0,6}(?:去世|死亡|死了)/u,
@@ -464,7 +470,12 @@
     /\b(?:insult|fight|brawl|clash|argument|drama|heated|called\s+out|slammed)\b.{0,90}\b(?:conference|event|panel|summit|meeting)\b/i,
     /\b(?:insult|roast|attack|bully)\b.{0,80}\b(?:ai|bot|gpt|model)\b.{0,80}\b(?:reward|challenge|prize|winner|reply|comment)\b/i,
     /\b(?:reward|challenge|prize|winner)\b.{0,80}\b(?:insult|roast|attack|bully)\b.{0,80}\b(?:ai|bot|gpt|model)\b/i,
-    /(?:会议|會議|大会|大會|峰会|峰會|活动|活動|现场|現場).{0,50}(?:冲突|衝突|吵架|互骂|互罵|辱骂|辱罵|骂战|罵戰|打架|羞辱)/u
+    /(?:会议|會議|大会|大會|峰会|峰會|活动|活動|现场|現場).{0,50}(?:冲突|衝突|吵架|互骂|互罵|辱骂|辱罵|骂战|罵戰|打架|羞辱)/u,
+    /\b(?:payment|bank|card|account|alipay|exchange|otc)\b.{0,90}\b(?:freez(?:e|ing|en)|withdraw(?:al)?|cash[-\s]?out|off[-\s]?ramp|frozen)\b/i,
+    /\b(?:freez(?:e|ing|en)|withdraw(?:al)?|cash[-\s]?out|off[-\s]?ramp|frozen)\b.{0,90}\b(?:payment|bank|card|account|alipay|exchange|otc)\b/i,
+    /(?:支付宝|支付寶|银行卡|銀行卡|银行账户|銀行賬戶|账户|賬戶|交易所|币安|幣安|欧易|歐易|OKX|otc|OTC|场外|場外).{0,50}(?:冻结|凍結|冻卡|凍卡|提现|提現|出金|入金|转账|轉賬|跑分|洗钱|洗錢)/u,
+    /(?:冻结|凍結|冻卡|凍卡|提现|提現|出金|入金|跑分|洗钱|洗錢).{0,50}(?:支付宝|支付寶|银行卡|銀行卡|银行账户|銀行賬戶|账户|賬戶|交易所|币安|幣安|欧易|歐易|OKX|otc|OTC|场外|場外)/u,
+    /(?:出金|提现|提現).{0,40}(?:被拒|失败|失敗|不到账|不到賬|冻|凍|卡|风控|風控)/u
   ];
   const MIRACLE_CLAIM_PATTERNS = [
     /\b(?:god|jesus|lord|prayer|miracle|blessed)\b.{0,120}\b(?:healed|cured|cancer|surgery|hospital|medical|debt|bills?|paid\s*off|paid)\b/i,
@@ -2005,10 +2016,10 @@
   function computeExecutorHardCap(tweet, signals = {}) {
     const substantialAnalysis = hasSubstantialOriginalAnalysis(tweet);
     if (signals.followTrainBaitPenalty != null) {
-      return { cap: 45, key: "hardCapFollowLoop", label: "Follow loop cap" };
+      return { cap: 42, key: "hardCapFollowLoop", label: "Follow loop cap" };
     }
     if (signals.socialGrowthFlexPenalty != null) {
-      return { cap: 50, key: "hardCapPayoutFlex", label: "Payout or growth cap" };
+      return { cap: 48, key: "hardCapPayoutFlex", label: "Payout or growth cap" };
     }
     if (signals.politicalFigurePenalty != null) {
       return { cap: 47, key: "hardCapPolitical", label: "Political account cap" };
@@ -2020,7 +2031,7 @@
       return { cap: 52, key: "hardCapCryptoPromo", label: "Crypto promo cap" };
     }
     if (signals.riskyContentPenalty != null && !substantialAnalysis) {
-      return { cap: 48, key: "hardCapRisky", label: "Risky content cap" };
+      return { cap: 44, key: "hardCapRisky", label: "Risky content cap" };
     }
     if (signals.thinGenericPostPenalty != null) {
       return { cap: 50, key: "hardCapLowInfo", label: "Low-info cap" };
