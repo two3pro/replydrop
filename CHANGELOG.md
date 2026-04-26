@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.225
+
+- 默认策略切回流量优先：政治、暴力、争议等内容不再作为主评分硬拦截，只保留 `risk` 标签供用户/agent 判断
+- `getDraftTargets()` 不再因为 `risk/political/broadcast/promo` 类标签把高分窗口期候选踢出主槽，避免连续刷新 ready lane 为空
+- 高分 `queue-tonight` / `queue-tomorrow` 在外部写稿视角可进入 `ready_now`，优先保证窗口期和可回复数量
+- 修复 0.2.224 中 `getDraftTargets()` 路由变量丢失导致 API 返回 `flags is not defined` 的回归
+
 ## 0.2.223
 
 - 修复 p2.222 可用性回退：`show_more_possible` 不再自动把“正文已足够”的媒体帖踢出 `ready_now`

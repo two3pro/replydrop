@@ -1976,11 +1976,8 @@
     const hardRisk = (
       String(context.scoring?.blockReason || "").trim() ||
       context.lifecycle?.alreadyReplied ||
-      context.recheck?.skipRecommended ||
       hasDraftRiskFlag(context, [
-        /already_replied/i,
-        /follow|growth|payout|risk|political|broadcast|protocol|promo|lowinfo/i,
-        /hardCap/i
+        /already_replied/i
       ])
     );
 
@@ -2008,11 +2005,7 @@
       return score >= Math.max(30, minScore - 18) ? "watch_later" : "do_not_reply";
     }
 
-    if (decision === "queue-tonight" || decision === "queue-tomorrow" || slot === "tonight" || slot === "tomorrow") {
-      return "watch_later";
-    }
-
-    if (decision && decision !== "reply-now") {
+    if (decision === "skip") {
       return "do_not_reply";
     }
 

@@ -2094,17 +2094,11 @@
     if (signals.socialGrowthFlexPenalty != null) {
       return { cap: 48, key: "hardCapPayoutFlex", label: "Payout or growth cap" };
     }
-    if (signals.politicalFigurePenalty != null) {
-      return { cap: 47, key: "hardCapPolitical", label: "Political account cap" };
-    }
     if (signals.broadcastAccountPenalty != null && !substantialAnalysis) {
       return { cap: 50, key: "hardCapBroadcast", label: "Broadcast cap" };
     }
     if (signals.protocolPromoPenalty != null && !substantialAnalysis) {
       return { cap: 52, key: "hardCapCryptoPromo", label: "Crypto promo cap" };
-    }
-    if (signals.riskyContentPenalty != null && !substantialAnalysis) {
-      return { cap: 44, key: "hardCapRisky", label: "Risky content cap" };
     }
     if (signals.thinGenericPostPenalty != null) {
       return { cap: 50, key: "hardCapLowInfo", label: "Low-info cap" };
@@ -2484,14 +2478,14 @@
       });
     }
 
-    const politicalFigurePenalty = computePoliticalFigurePenalty(tweet, 40);
-    if (politicalFigurePenalty != null) {
-      score -= politicalFigurePenalty;
+    const politicalFigureSignal = computePoliticalFigurePenalty(tweet, 40);
+    const politicalFigurePenalty = null;
+    if (politicalFigureSignal != null) {
       breakdown.push({
         key: "politicalFigure",
         label: "Political figure risk",
-        amount: -politicalFigurePenalty,
-        kind: "penalty"
+        amount: 0,
+        kind: "risk"
       });
     }
 
@@ -2521,14 +2515,14 @@
       });
     }
 
-    const riskyContentPenalty = computeRiskyContentPenalty(tweet, 42);
-    if (riskyContentPenalty != null) {
-      score -= riskyContentPenalty;
+    const riskyContentSignal = computeRiskyContentPenalty(tweet, 42);
+    const riskyContentPenalty = null;
+    if (riskyContentSignal != null) {
       breakdown.push({
         key: "riskyContent",
-        label: "Risky thread",
-        amount: -riskyContentPenalty,
-        kind: "penalty"
+        label: "Risk tag",
+        amount: 0,
+        kind: "risk"
       });
     }
 
@@ -2729,7 +2723,10 @@
     }
     const tier = getTier(clampedScore, merged, keywordMatched);
     const scoredBreakdown = breakdown
-      .filter((item) => Number.isFinite(item.amount) && Math.abs(item.amount) > 0);
+      .filter((item) => (
+        Number.isFinite(item.amount) &&
+        (Math.abs(item.amount) > 0 || String(item.kind || "") === "risk")
+      ));
     const sortedBreakdown = scoredBreakdown
       .slice()
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));

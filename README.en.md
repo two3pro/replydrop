@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.223`
+Current version: `0.2.225`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,8 +34,11 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.223` includes the current scorer and executor hardening work:
+Version `0.2.225` changes the default policy to flow-first ranking:
 
+- Political, violent, controversial, or otherwise sensitive posts are no longer hard-blocked by default. ReplyDrop keeps them as risk tags, but the ranking now prioritizes exposure window and reply opportunity.
+- `getDraftTargets()` no longer moves high-score posts out of the main draft lane just because they carry risk / political / broadcast / promo labels.
+- High-score `queue-tonight` / `queue-tomorrow` items can still appear in the external draft main lane when the current reply window is useful.
 - Added X GraphQL traffic features such as velocity, reply ratio, and traffic phase to improve reply-window scoring.
 - Added `refreshRecommendations()` and `emptyInboxRecovery`, so agents must refresh or scroll-rescan before reporting an empty round.
 - Added 90-second target guidance and a 120-second hard timeout for executor flows.
