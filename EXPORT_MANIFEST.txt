@@ -1,4 +1,4 @@
 ReplyDrop clean open-source export
-version=0.2.225
+version=0.2.227
 source_tree=x-reply-scorer-p2.55-clean
-generated_at=2026-04-26 13:02:21 CST
+generated_at=2026-04-26 14:47:01 CST

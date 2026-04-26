@@ -1748,6 +1748,141 @@
     return false;
   }
 
+  function normalizeExecutorPolicyText(value = "") {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function testExecutorPolicyText(text = "", patterns = []) {
+    const source = normalizeExecutorPolicyText(text);
+    return patterns.some((pattern) => pattern.test(source));
+  }
+
+  function getRecentRepliedAuthorHandles(runtimeState = {}, withinMs = 12 * 60 * 60 * 1000) {
+    const now = Date.now();
+    const entries = Object.values(runtimeState?.replyDetails || {});
+    return new Set(entries
+      .filter((detail) => {
+        const shippedAt = Number(detail?.timestamp || detail?.shippedAt || detail?.completedAt || detail?.createdAt || 0);
+        return !shippedAt || now - shippedAt <= withinMs;
+      })
+      .map((detail) => normalizeHandle(detail?.authorHandle || detail?.handle || ""))
+      .filter(Boolean));
+  }
+
+  function getReplyDropAutoSafety(context = {}, runtimeState = {}, selectedAuthorHandles = new Set()) {
+    const reasons = [];
+    const text = normalizeExecutorPolicyText([
+      context.post?.text,
+      context.author?.handle,
+      context.author?.name
+    ].filter(Boolean).join(" "));
+    const handle = normalizeHandle(context.author?.handle || "");
+    const mediaKind = String(context.post?.mediaKind || context.media?.kind || "").toLowerCase();
+    const hasVisualMedia = Boolean(context.media?.available || hasVisualMediaKind(mediaKind));
+    const hasMediaSummary = Boolean(context.media?.summary?.summary || context.media?.summary?.ocrText);
+    const textLength = String(context.post?.text || "").replace(/\s+/g, " ").trim().length;
+    const tokenCount = String(context.post?.text || "")
+      .split(/[\s,.;:!?/\\|()[\]{}"'`~<>，。！？、]+/)
+      .filter(Boolean).length;
+    const recentRepliedAuthors = getRecentRepliedAuthorHandles(runtimeState);
+
+    if (handle && (selectedAuthorHandles.has(handle) || recentRepliedAuthors.has(handle))) {
+      reasons.push("duplicate-author-cooldown");
+    }
+
+    if (
+      hasVisualMedia &&
+      !hasMediaSummary &&
+      (
+        context.media?.needsVision ||
+        context.contextCompleteness?.mediaContextMissing ||
+        (
+          /video|gif/.test(mediaKind) &&
+          (textLength < 90 || tokenCount <= 12 || testExecutorPolicyText(text, [
+            /\b(?:this|that|these|those|his|her|their|face|look|watch|ceo|moment|crazy|wild|what happened)\b/i,
+            /(?:これ|それ|この|その|顔|表情|動画|映像|やば|草|www|ㅋㅋ|영상|표정|장면)/
+          ]))
+        )
+      )
+    ) {
+      reasons.push("media-summary-required-for-auto");
+    }
+
+    if (testExecutorPolicyText(text, [
+      /(?:不给提|不給提|无法提现|無法提現|提现异常|提現異常|资金安全|資金安全|收\s*u|收u|出金|冻卡|凍卡|用户恐慌|用戶恐慌|平台维护|平台維護|交易平台|websea)/i,
+      /\b(?:withdrawal|cash[-\s]?out|off[-\s]?ramp|bank freeze|frozen card|payment freeze|exchange withdraw|funds? safety|platform maintenance)\b/i
+    ])) {
+      reasons.push("funds-withdrawal-risk-auto-block");
+    }
+
+    if (testExecutorPolicyText(text, [
+      /(?:btc|bitcoin|eth|ethereum|合约|合約|杠杆|槓桿|赌场|賭場|牛市|熊市|没人买|沒人買|没人敢买|沒人敢買|爆仓|爆倉|开多|開多|做空|喊单|喊單)/i,
+      /\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b.{0,80}\b(?:btc|bitcoin|eth|crypto)\b/i,
+      /\b(?:btc|bitcoin|eth|crypto)\b.{0,80}\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b/i
+    ])) {
+      reasons.push("directional-crypto-auto-block");
+    }
+
+    if (testExecutorPolicyText(text, [
+      /(?:追高|追涨|追漲|买入|買入|转多|轉多|做多|开多|開多|实时分析|實時分析|订阅|訂閱|带单|帶單|喊单|喊單|进群|進群|合约|合約)/i,
+      /\b(?:buy|buying|long|turn bullish|bullish now|chase|entry|signal|signals|subscribe|subscription|real[-\s]?time analysis|premium analysis|trading group)\b/i,
+      /(?:매수|추격매수|롱|숏|전환|상승전환|구독|실시간\s*분석|리딩방|시그널|선물|레버리지)/i
+    ])) {
+      reasons.push("investment-subscription-auto-block");
+    }
+
+    if (testExecutorPolicyText(text, [
+      /(?:评论|評論|留言|回复|回覆|转发|轉發|关注|關注|抽奖|抽獎|奖励|獎勵|奖金|獎金|选中|選中|中奖|中獎|征集|徵集).{0,60}(?:10\s*u|u\b|usdt|红包|紅包|奖励|獎勵|奖金|獎金|抽奖|抽獎|选中|選中|中奖|中獎)/i,
+      /(?:10\s*u|usdt|红包|紅包|奖励|獎勵|奖金|獎金).{0,60}(?:评论|評論|留言|回复|回覆|转发|轉發|关注|關注|名字|改名|征集|徵集)/i,
+      /\b(?:comment|reply|drop|name|rename|suggest|follow|repost|retweet)\b.{0,80}\b(?:10u|usdt|reward|prize|giveaway|winner|selected)\b/i,
+      /\b(?:10u|usdt|reward|prize|giveaway|winner|selected)\b.{0,80}\b(?:comment|reply|drop|name|rename|suggest|follow|repost|retweet)\b/i
+    ])) {
+      reasons.push("comment-reward-auto-block");
+    }
+
+    if (testExecutorPolicyText(text, [
+      /(?:杀|殺|刺杀|刺殺|枪击|槍擊|枪手|槍手|暗杀|暗殺|政治暴力|想杀|想殺).{0,40}(?:总统|總統|总统候选人|總統候選人|首相|总统先生|總統先生|president|trump|biden)/i,
+      /(?:总统|總統|总统候选人|總統候選人|首相|president|trump|biden).{0,40}(?:杀|殺|刺杀|刺殺|枪击|槍擊|暗杀|暗殺|政治暴力|想杀|想殺)/i,
+      /\b(?:kill|murder|assassinate|shoot|shot|gunman|political violence)\b.{0,60}\b(?:president|candidate|trump|biden|prime minister)\b/i,
+      /\b(?:president|candidate|trump|biden|prime minister)\b.{0,60}\b(?:kill|murder|assassinate|shoot|shot|gunman|political violence)\b/i,
+      /(?:죽이고|죽이|살해|암살|총격).{0,40}(?:대통령|후보|트럼프|바이든)/i,
+      /(?:대통령|후보|트럼프|바이든).{0,40}(?:죽이고|죽이|살해|암살|총격)/i
+    ])) {
+      reasons.push("political-violence-auto-block");
+    }
+
+    const officialOrBrand = Boolean(
+      context.author?.verified ||
+      /gold|government|business/i.test(String(context.author?.verificationType || "")) ||
+      testExecutorPolicyText(text, [/\b(?:official|corp|inc|brand|campaign|pr|sponsored)\b/i, /(?:公式|キャンペーン|コラボ|プレゼント|協賛|広告|宣伝|聯名|联名|品牌|促销|促銷)/])
+    );
+    if (
+      officialOrBrand &&
+      testExecutorPolicyText(text, [
+        /(?:beer|asahi|sapporo|kirin|whisky|whiskey|highball|wine|alcohol|酒|ビール|ハイボール|ウイスキー|ワイン|啤酒|威士忌|白酒)/i,
+        /(?:キャンペーン|コラボ|プレゼント|限定|抽選|promo|promotion|giveaway|sponsored|#pr|#ad|联名|聯名|促销|促銷)/i
+      ])
+    ) {
+      reasons.push("official-alcohol-promo-human-review");
+    }
+
+    if (!isReplyDropContextActionable(context)) {
+      reasons.push(...getReplyDropContextFilterReasons(context));
+    }
+
+    const uniqueReasons = Array.from(new Set(reasons.filter(Boolean)));
+    const blocked = uniqueReasons.some((reason) => /auto-block|duplicate-author-cooldown/i.test(reason));
+    const humanReview = !blocked && uniqueReasons.length > 0;
+    return {
+      tier: blocked ? "blocked" : (humanReview ? "human_review" : "auto_safe"),
+      reasons: uniqueReasons
+    };
+  }
+
   function getReplyDropContextFilterReasons(context = {}) {
     const reasons = [];
     if (!context || typeof context !== "object") {
@@ -1790,7 +1925,13 @@
   }
 
   function summarizeFilteredExecutorCandidate(context = {}) {
-    const reasons = getReplyDropContextFilterReasons(context);
+    const autoSafety = context.autoSafety && typeof context.autoSafety === "object"
+      ? context.autoSafety
+      : null;
+    const reasons = Array.from(new Set([
+      ...(autoSafety?.reasons || []),
+      ...getReplyDropContextFilterReasons(context)
+    ].filter(Boolean)));
     return {
       tweetId: String(context.tweetId || "").trim(),
       url: normalizeTweetUrl(context.url),
@@ -1803,6 +1944,7 @@
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
       laneKey: String(context.routing?.laneKey || "").trim(),
       laneLabel: String(context.routing?.laneLabel || "").trim(),
+      autoSafetyTier: String(autoSafety?.tier || "").trim(),
       skipRecommended: Boolean(context.recheck?.skipRecommended),
       recheckHint: String(context.aiHints?.recheckHint || "").trim(),
       reasons
@@ -1823,7 +1965,9 @@
   }
 
   function buildEmptyInboxRecovery(contexts = [], generatedAt = Date.now()) {
-    const actionableCount = contexts.filter(isReplyDropContextActionable).length;
+    const actionableCount = contexts.filter((context) => (
+      context?.autoSafety?.tier ? context.autoSafety.tier === "auto_safe" : isReplyDropContextActionable(context)
+    )).length;
     return {
       actionableCount,
       requiredWhenActionableCountIsZero: true,
@@ -1924,16 +2068,32 @@
       }));
     }
 
-    const actionableContexts = contexts.filter(isReplyDropContextActionable);
+    const selectedAuthorHandles = new Set();
+    contexts.forEach((context) => {
+      context.autoSafety = getReplyDropAutoSafety(context, runtimeState, selectedAuthorHandles);
+      if (context.autoSafety.tier === "auto_safe") {
+        const handle = normalizeHandle(context.author?.handle || "");
+        if (handle) {
+          selectedAuthorHandles.add(handle);
+        }
+      }
+    });
+    const actionableContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_safe");
     const filteredCandidates = contexts
-      .filter((context) => !isReplyDropContextActionable(context))
+      .filter((context) => context.autoSafety?.tier !== "auto_safe")
       .map((context) => summarizeFilteredExecutorCandidate(context));
+    const autoLanes = {
+      auto_safe: actionableContexts,
+      human_review: contexts.filter((context) => context.autoSafety?.tier === "human_review"),
+      blocked: contexts.filter((context) => context.autoSafety?.tier === "blocked")
+    };
 
     return {
       version: "replydrop-agent-inbox-v1",
       generatedAt,
       limit,
       candidates: actionableContexts,
+      autoLanes,
       diagnosticCandidates: contexts,
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
