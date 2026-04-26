@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.233`
+Current version: `0.2.234`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,8 +34,10 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.233` fixes preview-card inline submit:
+Version `0.2.234` fixes human draft empty-state regressions:
 
+- Human draft mode no longer returns zero primary candidates just because `ready_now` is empty.
+- When `ready_now` is empty, high-score `watch_later` items and preview-writable `needs_detail_context` items are promoted into main `candidates` as `human_fallback`.
 - Timeline preview composers opened from a target card now lock to the fresh pending target, fixing false `context-not-locked` failures on submit.
 - `runExecutorAction({ action: 'reply-from-timeline', tweetId, draft })` now opens and submits in one stable preview-card flow when a draft is provided.
 - `getExecutorInbox()` now returns `candidateDiagnostics`, `safeCandidateCount`, `blockedCandidateCount`, `topFilteredCodes`, `topBlockedCodes`, and `topHumanReviewCodes` for redacted stress testing.

@@ -1104,6 +1104,7 @@
         quickDraftAllowed: "boolean",
         mediaSummaryAvailable: "boolean",
         draftContextLabel: "quick-preview-draft | detail-ready-draft",
+        primaryCandidateSource: "ready_now | human_fallback",
         lanes: "{ ready_now, needs_media_summary, needs_detail_context, watch_later, do_not_reply }",
         visibleScoredPosts: "all currently visible scored posts for page/API alignment",
         urgency: "string",
@@ -2295,6 +2296,38 @@
     }
   }
 
+  function isHumanDraftFallbackEligible(candidate = {}) {
+    if (!candidate || typeof candidate !== "object") {
+      return false;
+    }
+    if (candidate.laneKey === "watch_later") {
+      return true;
+    }
+    if (candidate.laneKey === "needs_detail_context" && candidate.quickDraftAllowed && !candidate.mediaContextMissing) {
+      return true;
+    }
+    return false;
+  }
+
+  function buildHumanDraftPrimaryCandidates(lanes = {}, limit = 6) {
+    const readyNow = Array.isArray(lanes.ready_now) ? lanes.ready_now : [];
+    if (readyNow.length >= limit || readyNow.length > 0) {
+      return readyNow.slice(0, limit);
+    }
+
+    const fallbackPool = [
+      ...(Array.isArray(lanes.watch_later) ? lanes.watch_later : []),
+      ...(Array.isArray(lanes.needs_detail_context) ? lanes.needs_detail_context : [])
+    ].filter(isHumanDraftFallbackEligible);
+
+    return fallbackPool
+      .sort((left, right) => (
+        Number(right.score || 0) - Number(left.score || 0) ||
+        Number(left.rank || 9999) - Number(right.rank || 9999)
+      ))
+      .slice(0, limit);
+  }
+
   function buildDraftTargetDomLocationMap() {
     const byUrl = new Map();
     const byTweetId = new Map();
@@ -2441,7 +2474,7 @@
       lanes[safeLaneKey].push(decorate(context, lanes[safeLaneKey].length, safeLaneKey));
     });
 
-    const candidates = lanes.ready_now.slice(0, limit);
+    const candidates = buildHumanDraftPrimaryCandidates(lanes, limit);
     const visibleScoredPosts = Array.from(domLocations.byTweetId.entries())
       .map(([tweetId, location]) => {
         const context = contextByTweetId.get(tweetId) || contextByUrl.get(normalizeTweetUrl(readTweetUrl(getTweetNodes()[Number(location.domIndex || 1) - 1])));
@@ -2483,7 +2516,7 @@
         oneSnapshotOnly: true,
         noAutoRefresh: true,
         outputDestination: "current-chat",
-        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出。优先只写 lanes.ready_now；lanes.needs_media_summary 先 getMediaBundle + OCR/vision + setMediaSummary 再重读；lanes.needs_detail_context 只提示进详情；lanes.do_not_reply 只给跳过原因；lanes.watch_later 不占主回复槽。不要自动刷新、queue、openComposer、submitReply。"
+        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出。优先写主 candidates；若 lanes.ready_now 为空，主 candidates 会自动补入高分 watch_later 和可基于首页文字直接成稿的 needs_detail_context，避免人工模式空手而归。lanes.needs_media_summary 先 getMediaBundle + OCR/vision + setMediaSummary 再重读；lanes.do_not_reply 只给跳过原因。不要自动刷新、queue、openComposer、submitReply。"
       },
       pageOrder: {
         domArticleCount: domLocations.count,
@@ -2500,6 +2533,7 @@
         notRecommended: lanes.do_not_reply,
         watchLater: lanes.watch_later
       },
+      primaryCandidateSource: candidates.every((item) => item?.laneKey === "ready_now") ? "ready_now" : "human_fallback",
       visibleScoredPosts,
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),

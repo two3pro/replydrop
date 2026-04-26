@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.234
+
+- 修复人工模式“扫到高分帖却 0 条可复制回复”的回退：当 `ready_now` 为空时，主 `candidates` 自动补入高分 `watch_later` 与可基于首页文字直接成稿的 `needs_detail_context`
+- 新增 `primaryCandidateSource=ready_now | human_fallback`，方便一眼看出这轮主槽来自正常窗口还是人工兜底
+- 人工模式不再因为 `queue-tomorrow` / 非立即窗口就空手返回
+
 ## 0.2.233
 
 - 修复首页预览卡片回复提交阶段误报 `context-not-locked`：由目标卡片点击产生的 fresh pending target 现在可锁定弹出的回复框
