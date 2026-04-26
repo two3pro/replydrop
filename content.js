@@ -782,7 +782,7 @@
     ) {
       key = "now";
     } else if (
-      (score >= 58 && ageMinutes <= 720) ||
+      (score >= 54 && ageMinutes <= 720) ||
       opportunityBoost >= 8 ||
       relationshipStatus === "follow-up" ||
       validatedRelationshipHot ||
@@ -800,7 +800,11 @@
 
   function getDefaultQueueSlot(candidate = {}, uiLanguage = "zh-Hans") {
     const laneKey = getCandidateLaneDescriptor(candidate, uiLanguage).key;
-    return laneKey === "now" ? "next" : laneKey === "watch" ? "tonight" : "tomorrow";
+    return laneKey === "now"
+      ? "next"
+      : (laneKey === "watch" || laneKey === "crowded")
+        ? "tonight"
+        : "tomorrow";
   }
 
   function isInternalApiHighlight(text) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.235
+
+- 调整候选路由：`crowded` 不再默认映射到 `queue-tomorrow`，改为 `queue-tonight`
+- `watch` 门槛从 `58` 下调到 `54`，55-57 分这档不再被直接打进 backlog
+- 目的就是减少“明明今天能回，却被水滴拖到明天”的误判
+
 ## 0.2.234
 
 - 修复人工模式“扫到高分帖却 0 条可复制回复”的回退：当 `ready_now` 为空时，主 `candidates` 自动补入高分 `watch_later` 与可基于首页文字直接成稿的 `needs_detail_context`
