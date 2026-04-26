@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.222
+
+- 人工写稿 lanes 改为更清晰的 `ready_now` / `needs_media_summary` / `needs_detail_context` / `watch_later` / `do_not_reply`，避免“reply-now 但 filtered”的歧义；同时保留 legacy lanes 兼容旧 agent
+- `getDraftTargets()` 默认携带媒体 bundle，媒体缺语义时要求 agent 走 `getMediaBundle -> OCR/vision -> setMediaSummary -> re-read` 回填闭环
+- 图文/视频帖如果正文已经承载完整论点，不再因为未看媒体直接踢出主槽，但会标记 `media_not_inspected_text_sufficient`
+- `markShipped()` 返回增加 `ok:true`，修复 `status: shipped` 但 `ok:false` 的语义不一致
+- 新增私信截图+性别身份争议、政治枪击/刺杀叙事等敏感内容降权，继续屏蔽支付出金/互关增长等风险帖
+
 ## 0.2.221
 
 - 官方/品牌号评分改为区分内容类型：低信息品牌广播继续压低，带 API/模型/集成版本/上下文窗口/价格或文档等明确开发者讨论点的官方更新保留高分

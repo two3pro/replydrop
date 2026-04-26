@@ -1479,6 +1479,52 @@ test("scorer hard-caps payment freeze and exchange withdrawal risk threads", () 
   assert.ok(englishRisk.breakdown.some((item) => item.key === "riskyContent"));
 });
 
+test("scorer demotes private-chat identity controversy and political violence bait", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const identityChatBait = scorer.analyzeTweet({
+    text: "Korean travel safety debate: leaked DM chat screenshot about transgender access to women's spaces is going viral.",
+    authorFollowers: 84000,
+    likes: 2100,
+    replies: 180,
+    views: 160000,
+    timestamp: now - (24 * 60 * 1000),
+    trafficVelocityPerHour: 240000,
+    trafficReplyVelocityPerHour: 360,
+    trafficReplyRatio: 0.0022,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: true,
+    mediaKind: "photo",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const politicalViolence = scorer.analyzeTweet({
+    text: "Trump assassination attempt shooting video: new angle shows the gunman before political violence erupted.",
+    authorFollowers: 140000,
+    likes: 3800,
+    replies: 260,
+    views: 420000,
+    timestamp: now - (35 * 60 * 1000),
+    trafficVelocityPerHour: 520000,
+    trafficReplyVelocityPerHour: 410,
+    trafficReplyRatio: 0.00097,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: true,
+    mediaKind: "video",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(identityChatBait.score <= 44, `identity bait scored ${identityChatBait.score}`);
+  assert.ok(politicalViolence.score <= 44, `political violence scored ${politicalViolence.score}`);
+  assert.ok(identityChatBait.breakdown.some((item) => item.key === "riskyContent"));
+  assert.ok(politicalViolence.breakdown.some((item) => item.key === "riskyContent"));
+});
+
 test("scorer hard-caps directional crypto wealth narratives", () => {
   const scorer = loadScorer();
   const now = Date.now();

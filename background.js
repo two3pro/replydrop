@@ -714,6 +714,7 @@ async function markTweetAsShippedById(tweetId, replyText = "") {
   });
 
   return {
+    ok: true,
     tweetId: normalizedTweetId,
     status: "shipped",
     url,

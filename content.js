@@ -1071,17 +1071,18 @@
 
   function buildReplyDropDraftTargetSchema() {
     return {
-      version: "replydrop-draft-targets-v1",
+      version: "replydrop-draft-targets-v2",
       mode: "human-draft",
       workflow: "external-ai-chat-drafts",
       instruction: "ReplyDrop 只负责筛选和打包当前首页快照里的高分帖；外部 AI agent 按 candidates 顺序立刻在当前聊天窗口输出同语种、非模板、可直接人工复制的正式回复草稿或不建议回原因。不要自动刷新，不自动打开 composer，不自动排队，不自动发送。",
-      mediaWorkflow: "若 mediaContextMissing=true，agent 应调用 getMediaBundle(tweetId) 读取图片/视频 poster/首帧 URL，自行跑 OCR/vision，再调用 setMediaSummary({ tweetId, summary, ocrText, confidence }) 回填。",
+      mediaWorkflow: "若 laneKey=needs_media_summary 或 mediaContextMissing=true，agent 应调用 getMediaBundle(tweetId) 读取图片/视频 poster/首帧 URL，自行跑 OCR/vision，再调用 setMediaSummary({ tweetId, summary, ocrText, confidence }) 回填，然后重读 getDraftContext/getDraftTargets。",
       snapshotPolicy: {
         oneSnapshotOnly: true,
         noAutoRefresh: true,
         outputDestination: "current-chat",
         writeBackOptional: "Only call setDraftPreview or runExecutorAction when the human explicitly asks."
       },
+      laneEnum: ["ready_now", "needs_media_summary", "needs_detail_context", "watch_later", "do_not_reply"],
       output: {
         snapshotId: "string",
         capturedAt: "number",
@@ -1096,12 +1097,13 @@
         textPreview: "string",
         mediaKind: "string",
         needsDetailContext: "boolean",
-      mediaContextMissing: "boolean",
-      mediaSummaryAvailable: "boolean",
-      draftContextLabel: "quick-preview-draft | detail-ready-draft",
-      lanes: "{ replyNow, needsDetail, notRecommended, watchLater }",
-      visibleScoredPosts: "all currently visible scored posts for page/API alignment",
-      urgency: "string",
+        mediaContextMissing: "boolean",
+        mediaNotInspectedTextSufficient: "boolean",
+        mediaSummaryAvailable: "boolean",
+        draftContextLabel: "quick-preview-draft | detail-ready-draft",
+        lanes: "{ ready_now, needs_media_summary, needs_detail_context, watch_later, do_not_reply }",
+        visibleScoredPosts: "all currently visible scored posts for page/API alignment",
+        urgency: "string",
         recommendation: "reply | skip",
         replyText: "string",
         skipReason: "string",
@@ -1187,23 +1189,30 @@
     const hasQuote = articleHasQuoteCard(article);
     const hasShowMore = articleHasShowMoreCue(article);
     const text = String(candidate?.text || candidate?.draft || "").trim();
+    const semanticTokens = text
+      .split(/[\s,.;:!?/\\|()[\]{}"'`~<>，。！？、]+/)
+      .filter(Boolean)
+      .length;
     const hasSummary = Boolean(mediaSummary?.summary || mediaSummary?.ocrText);
-    const mediaContextMissing = hasVisualMedia && !includeMedia && !hasSummary;
+    const textCarriesThesis = text.length >= 110 || semanticTokens >= 18;
+    const mediaContextMissing = hasVisualMedia && !hasSummary && !textCarriesThesis;
     const needsDetailContext = Boolean(
       mediaContextMissing ||
       hasQuote ||
       hasShowMore ||
-      (hasVisualMedia && !hasSummary && text.length < 80)
+      (hasVisualMedia && !hasSummary && !textCarriesThesis)
     );
     const flags = [];
     if (mediaContextMissing) flags.push("media_context_missing");
     if (hasVisualMedia) flags.push("media_post");
+    if (hasVisualMedia && !hasSummary && textCarriesThesis) flags.push("media_not_inspected_text_sufficient");
     if (hasQuote) flags.push("quote_context_possible");
     if (hasShowMore) flags.push("show_more_possible");
     if (needsDetailContext) flags.push("needs_detail_context");
     return {
       needsDetailContext,
       mediaContextMissing,
+      mediaNotInspectedTextSufficient: Boolean(hasVisualMedia && !hasSummary && textCarriesThesis),
       mediaSummaryAvailable: hasSummary,
       draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
       flags,
@@ -1886,7 +1895,7 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    if (getReplyDropDraftLaneKey(context, minScore) !== "replyNow") {
+    if (getReplyDropDraftLaneKey(context, minScore) !== "ready_now") {
       return false;
     }
     return true;
@@ -1905,7 +1914,7 @@
 
   function getReplyDropDraftLaneKey(context = {}, minScore = 54) {
     if (!context || typeof context !== "object") {
-      return "notRecommended";
+      return "do_not_reply";
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const decision = String(context.routing?.recommendedDecision || "").trim();
@@ -1923,42 +1932,55 @@
     );
 
     if (hardRisk) {
-      return "notRecommended";
+      return "do_not_reply";
     }
 
     if (
       flags.includes("vision_required_but_missing") ||
       flags.includes("media_context_missing") ||
-      flags.includes("needs_detail_context") ||
-      Boolean(context.contextCompleteness?.needsDetailContext) ||
       Boolean(context.contextCompleteness?.mediaContextMissing)
     ) {
-      return "needsDetail";
+      return "needs_media_summary";
+    }
+
+    if (
+      flags.includes("needs_detail_context") ||
+      flags.includes("show_more_possible") ||
+      flags.includes("quote_context_possible") ||
+      Boolean(context.contextCompleteness?.needsDetailContext)
+    ) {
+      return "needs_detail_context";
     }
 
     if (score < minScore) {
-      return score >= Math.max(30, minScore - 18) ? "watchLater" : "notRecommended";
+      return score >= Math.max(30, minScore - 18) ? "watch_later" : "do_not_reply";
     }
 
     if (decision === "queue-tonight" || decision === "queue-tomorrow" || slot === "tonight" || slot === "tomorrow") {
-      return "watchLater";
+      return "watch_later";
     }
 
     if (decision && decision !== "reply-now") {
-      return "notRecommended";
+      return "do_not_reply";
     }
 
-    return "replyNow";
+    return "ready_now";
   }
 
   function getReplyDropDraftLaneLabel(key = "") {
     switch (key) {
+      case "ready_now":
       case "replyNow":
         return "可立即回";
+      case "needs_media_summary":
+        return "需媒体摘要";
+      case "needs_detail_context":
       case "needsDetail":
-        return "需进详情";
+        return "需详情上下文";
+      case "do_not_reply":
       case "notRecommended":
         return "不建议碰";
+      case "watch_later":
       case "watchLater":
         return "稍后观察";
       default:
@@ -2037,7 +2059,7 @@
       contextCompleteness: context.contextCompleteness || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / media.summary / media.summary.ocrText / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送；如果 needsDetailContext 或 mediaContextMissing 为 true，必须标注这是 quick preview draft，避免断言图片/视频/引用卡里没有提供的内容，并建议打开详情页后重写。若 mediaSummaryAvailable 为 true，可把视觉/OCR摘要作为主要上下文。高流速财富故事不要仅因财富相邻自动跳过，优先按 draftAngleHints 写成中性观察。"
+        writingInstruction: "请根据 post.text / media.summary / media.summary.ocrText / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送。laneKey=ready_now 才可直接写正式草稿；needs_media_summary 先调用 getMediaBundle 做 OCR/vision 并 setMediaSummary 后重读；needs_detail_context 先打开详情或展开上下文；do_not_reply 只给跳过原因。若 mediaNotInspectedTextSufficient=true，可以基于文字写，但必须避免断言图片/视频细节。"
       }
     };
   }
@@ -2046,7 +2068,7 @@
     const runtimeState = await getApiRuntimeStateSnapshot();
     const limit = Math.max(1, Math.min(12, Math.floor(Number(options?.limit) || 6)));
     const minScore = Math.max(0, Math.min(100, Math.floor(Number(options?.minScore) || getConfiguredExecutorSendFloor(state.settings))));
-    const includeMedia = Boolean(options?.includeMedia);
+    const includeMedia = options?.includeMedia !== false;
     const generatedAt = Date.now();
     const capturedAt = Number(runtimeState?.updatedAt || runtimeState?.lastScanAt || runtimeState?.pageCandidateSync?.updatedAt || generatedAt);
     const snapshotSeed = [
@@ -2094,22 +2116,23 @@
       });
 
     const lanes = {
-      replyNow: [],
-      needsDetail: [],
-      notRecommended: [],
-      watchLater: []
+      ready_now: [],
+      needs_media_summary: [],
+      needs_detail_context: [],
+      watch_later: [],
+      do_not_reply: []
     };
 
     contexts.forEach((context) => {
       const laneKey = getReplyDropDraftLaneKey(context, minScore);
-      const safeLaneKey = Object.prototype.hasOwnProperty.call(lanes, laneKey) ? laneKey : "notRecommended";
+      const safeLaneKey = Object.prototype.hasOwnProperty.call(lanes, laneKey) ? laneKey : "do_not_reply";
       if (lanes[safeLaneKey].length >= limit) {
         return;
       }
       lanes[safeLaneKey].push(decorate(context, lanes[safeLaneKey].length, safeLaneKey));
     });
 
-    const candidates = lanes.replyNow.slice(0, limit);
+    const candidates = lanes.ready_now.slice(0, limit);
     const visibleScoredPosts = Array.from(domLocations.byTweetId.entries())
       .map(([tweetId, location]) => {
         const context = contextByTweetId.get(tweetId) || contextByUrl.get(normalizeTweetUrl(readTweetUrl(getTweetNodes()[Number(location.domIndex || 1) - 1])));
@@ -2122,8 +2145,8 @@
           url: normalizeTweetUrl(context?.url || ""),
           handle: String(location.handle || context?.author?.handle || "").replace(/^@/, "").trim(),
           score,
-          laneKey: context ? getReplyDropDraftLaneKey(context, minScore) : "notRecommended",
-          laneLabel: getReplyDropDraftLaneLabel(context ? getReplyDropDraftLaneKey(context, minScore) : "notRecommended"),
+          laneKey: context ? getReplyDropDraftLaneKey(context, minScore) : "do_not_reply",
+          laneLabel: getReplyDropDraftLaneLabel(context ? getReplyDropDraftLaneKey(context, minScore) : "do_not_reply"),
           domIndex: Number.isFinite(Number(location.domIndex)) ? Number(location.domIndex) : null,
           viewportPosition: Number.isFinite(Number(location.viewportPosition)) ? Number(location.viewportPosition) : null,
           visibleOnPage: Boolean(location.visibleOnPage),
@@ -2141,7 +2164,7 @@
       .map((context) => summarizeFilteredExecutorCandidate(context));
 
     return {
-      version: "replydrop-draft-targets-v1",
+      version: "replydrop-draft-targets-v2",
       generatedAt,
       capturedAt,
       snapshotId,
@@ -2151,7 +2174,7 @@
         oneSnapshotOnly: true,
         noAutoRefresh: true,
         outputDestination: "current-chat",
-        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出。优先只写 lanes.replyNow；lanes.needsDetail 只标注需进详情/需视觉摘要，不写确定性草稿；lanes.notRecommended 只给跳过原因；lanes.watchLater 不占主回复槽。不要自动刷新、queue、openComposer、submitReply。"
+        instruction: "基于本 snapshot 立刻在当前聊天窗口批量输出。优先只写 lanes.ready_now；lanes.needs_media_summary 先 getMediaBundle + OCR/vision + setMediaSummary 再重读；lanes.needs_detail_context 只提示进详情；lanes.do_not_reply 只给跳过原因；lanes.watch_later 不占主回复槽。不要自动刷新、queue、openComposer、submitReply。"
       },
       pageOrder: {
         domArticleCount: domLocations.count,
@@ -2162,6 +2185,12 @@
       minScore,
       candidates,
       lanes,
+      legacyLanes: {
+        replyNow: lanes.ready_now,
+        needsDetail: [...lanes.needs_media_summary, ...lanes.needs_detail_context],
+        notRecommended: lanes.do_not_reply,
+        watchLater: lanes.watch_later
+      },
       visibleScoredPosts,
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
@@ -2336,6 +2365,7 @@
     }
 
     return {
+      ok: true,
       tweetId: normalizedTweetId,
       status: "shipped",
       url,

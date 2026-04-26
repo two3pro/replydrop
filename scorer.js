@@ -453,12 +453,19 @@
     "reward challenge", "challenge reward", "prize challenge", "winner gets", "win reward",
     "heated argument", "conference incident", "冲突", "衝突", "吵架", "互骂", "互罵",
     "辱骂", "辱罵", "骂战", "罵戰", "撕逼", "打架", "羞辱",
+    "private chat", "dm screenshot", "chat screenshot", "leaked dm", "leaked chat",
+    "gender identity", "transgender", "trans woman", "trans women", "trans man",
+    "assassination attempt", "political violence", "shooting", "shooter", "gunman",
     "payment freeze", "payment frozen", "cash-out", "cash out", "withdrawal", "withdraw",
     "off-ramp", "off ramp", "otc", "bank freeze", "bank frozen", "frozen card",
     "exchange withdrawal", "exchange withdraw", "card frozen",
     "支付宝冻结", "支付寶凍結", "银行卡冻结", "銀行卡凍結", "冻卡", "凍卡",
     "提现", "提現", "出金", "入金", "法币出金", "法幣出金", "交易所提现", "交易所提現",
-    "交易所出金", "场外", "場外", "跑分", "洗钱", "洗錢"
+    "交易所出金", "场外", "場外", "跑分", "洗钱", "洗錢",
+    "私信截图", "私訊截圖", "聊天记录", "聊天記錄", "对话截图", "對話截圖",
+    "跨性别", "跨性別", "变性人", "變性人", "性别认同", "性別認同",
+    "刺杀", "刺殺", "枪击", "槍擊", "枪手", "槍手", "政治暴力",
+    "트랜스젠더", "성 정체성", "DM 캡처", "채팅 캡처", "총격", "암살"
   ];
   const RISKY_CONTENT_PATTERNS = [
     /(?:没|沒)救.{0,6}(?:去世|死亡|死了)/u,
@@ -475,7 +482,17 @@
     /\b(?:freez(?:e|ing|en)|withdraw(?:al)?|cash[-\s]?out|off[-\s]?ramp|frozen)\b.{0,90}\b(?:payment|bank|card|account|alipay|exchange|otc)\b/i,
     /(?:支付宝|支付寶|银行卡|銀行卡|银行账户|銀行賬戶|账户|賬戶|交易所|币安|幣安|欧易|歐易|OKX|otc|OTC|场外|場外).{0,50}(?:冻结|凍結|冻卡|凍卡|提现|提現|出金|入金|转账|轉賬|跑分|洗钱|洗錢)/u,
     /(?:冻结|凍結|冻卡|凍卡|提现|提現|出金|入金|跑分|洗钱|洗錢).{0,50}(?:支付宝|支付寶|银行卡|銀行卡|银行账户|銀行賬戶|账户|賬戶|交易所|币安|幣安|欧易|歐易|OKX|otc|OTC|场外|場外)/u,
-    /(?:出金|提现|提現).{0,40}(?:被拒|失败|失敗|不到账|不到賬|冻|凍|卡|风控|風控)/u
+    /(?:出金|提现|提現).{0,40}(?:被拒|失败|失敗|不到账|不到賬|冻|凍|卡|风控|風控)/u,
+    /\b(?:private|leaked)?\s*(?:dm|chat|message)\s*screenshot\b.{0,120}\b(?:trans(?:gender)?|gender\s+identity|safety|travel|bathroom|women'?s\s+space)\b/i,
+    /\b(?:trans(?:gender)?|gender\s+identity|safety|travel|bathroom|women'?s\s+space)\b.{0,120}\b(?:private|leaked)?\s*(?:dm|chat|message)\s*screenshot\b/i,
+    /(?:私信|私訊|聊天|对话|對話|DM).{0,20}(?:截图|截圖|记录|記錄).{0,80}(?:跨性别|跨性別|变性|變性|性别认同|性別認同|女性空间|女性空間|安全|旅行)/u,
+    /(?:跨性别|跨性別|变性|變性|性别认同|性別認同|女性空间|女性空間|安全|旅行).{0,80}(?:私信|私訊|聊天|对话|對話|DM).{0,20}(?:截图|截圖|记录|記錄)/u,
+    /(?:트랜스젠더|성\s*정체성|여성\s*공간|안전|여행).{0,80}(?:DM|채팅|대화|메시지).{0,24}(?:캡처|스크린샷|유출)/u,
+    /(?:DM|채팅|대화|메시지).{0,24}(?:캡처|스크린샷|유출).{0,80}(?:트랜스젠더|성\s*정체성|여성\s*공간|안전|여행)/u,
+    /\b(?:trump|president|candidate|politician|campaign)\b.{0,120}\b(?:assassination\s+attempt|shooting|shot|shooter|gunman|political\s+violence)\b/i,
+    /\b(?:assassination\s+attempt|shooting|shot|shooter|gunman|political\s+violence)\b.{0,120}\b(?:trump|president|candidate|politician|campaign)\b/i,
+    /(?:特朗普|川普|总统|總統|候选人|候選人|政客|竞选|競選).{0,80}(?:刺杀|刺殺|枪击|槍擊|枪手|槍手|政治暴力)/u,
+    /(?:刺杀|刺殺|枪击|槍擊|枪手|槍手|政治暴力).{0,80}(?:特朗普|川普|总统|總統|候选人|候選人|政客|竞选|競選)/u
   ];
   const MIRACLE_CLAIM_PATTERNS = [
     /\b(?:god|jesus|lord|prayer|miracle|blessed)\b.{0,120}\b(?:healed|cured|cancer|surgery|hospital|medical|debt|bills?|paid\s*off|paid)\b/i,
