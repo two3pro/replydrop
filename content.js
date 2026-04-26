@@ -1967,6 +1967,51 @@
     }, {});
   }
 
+  function summarizeExecutorReasonCounts(contexts = []) {
+    return (Array.isArray(contexts) ? contexts : []).reduce((summary, context) => {
+      const autoReasons = Array.isArray(context?.autoSafety?.reasons) ? context.autoSafety.reasons : [];
+      const filterReasons = getReplyDropContextFilterReasons(context);
+      const scoringKeys = Array.isArray(context?.scoring?.breakdown)
+        ? context.scoring.breakdown.map((item) => item?.key)
+        : [];
+      [...autoReasons, ...filterReasons, ...scoringKeys].forEach((reason) => {
+        const key = String(reason || "").trim();
+        if (!key) {
+          return;
+        }
+        summary[key] = (summary[key] || 0) + 1;
+      });
+      return summary;
+    }, {});
+  }
+
+  function getTopExecutorReasonCodes(contexts = [], limit = 8) {
+    const counts = summarizeExecutorReasonCounts(contexts);
+    return Object.entries(counts)
+      .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0) || String(left[0]).localeCompare(String(right[0])))
+      .slice(0, limit)
+      .map(([code, count]) => ({ code, count }));
+  }
+
+  function summarizeExecutorCandidateDiagnostics(context = {}) {
+    return {
+      tweetId: String(context.tweetId || "").trim(),
+      score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
+      finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
+      recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
+      autoSafetyTier: String(context.autoSafety?.tier || "").trim(),
+      timelineInlineReplyEligible: Boolean(context.execution?.timelineInlineReplyEligible),
+      preferredAction: String(context.execution?.preferredAction || "").trim(),
+      reasonCodes: Array.from(new Set([
+        ...((Array.isArray(context.autoSafety?.reasons) ? context.autoSafety.reasons : []).map((reason) => String(reason || "").trim())),
+        ...getReplyDropContextFilterReasons(context).map((reason) => String(reason || "").trim())
+      ].filter(Boolean))).slice(0, 12),
+      scoringCodes: Array.isArray(context.scoring?.breakdown)
+        ? context.scoring.breakdown.map((item) => String(item?.key || "").trim()).filter(Boolean).slice(0, 10)
+        : []
+    };
+  }
+
   function buildEmptyInboxRecovery(contexts = [], generatedAt = Date.now()) {
     const actionableCount = contexts.filter((context) => (
       context?.autoSafety?.tier
@@ -2117,6 +2162,9 @@
       .slice()
       .sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
       .slice(0, 5);
+    const topFilteredCodes = getTopExecutorReasonCodes(contexts, 12);
+    const topBlockedCodes = getTopExecutorReasonCodes(autoLanes.blocked, 8);
+    const topHumanReviewCodes = getTopExecutorReasonCodes(autoLanes.human_review, 8);
 
     return {
       version: "replydrop-agent-inbox-v1",
@@ -2125,6 +2173,7 @@
       scanWindowSize,
       candidates: actionableContexts,
       autoLanes,
+      candidateDiagnostics: actionableContexts.map(summarizeExecutorCandidateDiagnostics),
       diagnosticCandidates: contexts.slice(0, Math.max(limit, 32)),
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
@@ -2135,13 +2184,18 @@
         recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
         candidateCount: actionableContexts.length,
         actionablePoolCount: actionablePool.length,
+        safeCandidateCount: actionableContexts.length,
         autoSafeCount: autoSafeContexts.length,
         fallbackCount: fallbackContexts.length,
         humanReviewCount: autoLanes.human_review.length,
         blockedCount: autoLanes.blocked.length,
+        blockedCandidateCount: autoLanes.blocked.length,
         filteredCount: filteredCandidates.length,
         noAutoSafeCandidate: autoSafeContexts.length === 0,
         recommendedResult: actionableContexts.length ? "process-candidates" : "no-auto-safe-candidate",
+        topFilteredCodes,
+        topBlockedCodes,
+        topHumanReviewCodes,
         topExcluded
       },
       pageCandidateSync: runtimeState?.pageCandidateSync || null,

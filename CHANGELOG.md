@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.232
+
+- `getExecutorInbox()` 增加脱敏压测诊断：`candidateDiagnostics`、`safeCandidateCount`、`blockedCandidateCount`、`topFilteredCodes`、`topBlockedCodes`、`topHumanReviewCodes`
+- 下一轮遇到 `S` / 未发送候选时，不用暴露正文、URL、账号，也能看到它为什么进入自动候选或被过滤
+- 保留 p2.231 首页预览原地回复策略和流量优先自动池口径
+
 ## 0.2.231
 
 - 新增首页预览原地回复执行策略：候选上下文返回 `execution.timelineInlineReplyEligible`、`preferredOpenMode`、`preferredAction`

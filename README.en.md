@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.231`
+Current version: `0.2.232`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,8 +34,10 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.231` adds preview-first execution for faster agent replies:
+Version `0.2.232` improves preview-first executor diagnostics:
 
+- `getExecutorInbox()` now returns `candidateDiagnostics`, `safeCandidateCount`, `blockedCandidateCount`, `topFilteredCodes`, `topBlockedCodes`, and `topHumanReviewCodes` for redacted stress testing.
+- Agents can report why a candidate entered or missed the automatic lane without printing post text, URLs, handles, or risk words.
 - Candidate context now exposes `execution.timelineInlineReplyEligible`, `preferredOpenMode`, and `preferredAction`.
 - Agents should use `replyFromTimeline` / `runExecutorAction({ action: 'reply-from-timeline' })` when the visible homepage card has enough text context, skipping detail-page navigation.
 - Detail-page opening is still used when media, quote cards, show-more text, or incomplete context requires recheck.
