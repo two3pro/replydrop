@@ -1883,6 +1883,48 @@
     };
   }
 
+  function isReplyDropAutoFallbackEligible(context = {}) {
+    if (!context || typeof context !== "object") {
+      return false;
+    }
+    if (context.autoSafety?.tier !== "human_review") {
+      return false;
+    }
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
+    if (score < Math.max(52, executorSendFloor - 4)) {
+      return false;
+    }
+    const reasons = Array.isArray(context.autoSafety?.reasons) ? context.autoSafety.reasons : [];
+    const hardPatterns = [
+      /auto-block/i,
+      /duplicate-author/i,
+      /media-summary-required/i,
+      /media_context_missing/i,
+      /vision_required/i,
+      /needs_detail_context/i,
+      /quote_context_possible/i,
+      /funds|withdrawal|cash|payment/i,
+      /crypto|investment|subscription|comment-reward|political-violence/i,
+      /follow|growth|payout|reward|promo|alcohol/i,
+      /skip-recommended|below-average|below-display/i
+    ];
+    if (reasons.some((reason) => hardPatterns.some((pattern) => pattern.test(String(reason || ""))))) {
+      return false;
+    }
+    const allowedPatterns = [
+      /decision-queue-tonight/i,
+      /decision-queue-tomorrow/i,
+      /quick_draft_allowed/i,
+      /media_post/i,
+      /media_not_inspected_text_sufficient/i,
+      /below-executor-send-floor/i
+    ];
+    return reasons.length > 0 && reasons.every((reason) => (
+      allowedPatterns.some((pattern) => pattern.test(String(reason || "")))
+    ));
+  }
+
   function getReplyDropContextFilterReasons(context = {}) {
     const reasons = [];
     if (!context || typeof context !== "object") {
@@ -1966,7 +2008,9 @@
 
   function buildEmptyInboxRecovery(contexts = [], generatedAt = Date.now()) {
     const actionableCount = contexts.filter((context) => (
-      context?.autoSafety?.tier ? context.autoSafety.tier === "auto_safe" : isReplyDropContextActionable(context)
+      context?.autoSafety?.tier
+        ? (context.autoSafety.tier === "auto_safe" || context.autoSafety.tier === "auto_fallback")
+        : isReplyDropContextActionable(context)
     )).length;
     return {
       actionableCount,
@@ -2078,15 +2122,37 @@
         }
       }
     });
-    const actionableContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_safe");
+    const autoSafeContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_safe");
+    const fallbackContexts = contexts
+      .filter(isReplyDropAutoFallbackEligible)
+      .slice(0, Math.max(0, Math.min(3, limit) - autoSafeContexts.length))
+      .map((context) => ({
+        ...context,
+        autoSafety: {
+          ...(context.autoSafety || {}),
+          tier: "auto_fallback",
+          fallback: true,
+          reasons: Array.from(new Set([
+            ...((context.autoSafety?.reasons || []).map((reason) => String(reason || "").trim()).filter(Boolean)),
+            "low-risk-human-review-fallback"
+          ]))
+        }
+      }));
+    const fallbackKeys = new Set(fallbackContexts.map((context) => String(context.tweetId || "").trim()).filter(Boolean));
+    const actionableContexts = [...autoSafeContexts, ...fallbackContexts];
     const filteredCandidates = contexts
-      .filter((context) => context.autoSafety?.tier !== "auto_safe")
+      .filter((context) => context.autoSafety?.tier !== "auto_safe" && !fallbackKeys.has(String(context.tweetId || "").trim()))
       .map((context) => summarizeFilteredExecutorCandidate(context));
     const autoLanes = {
-      auto_safe: actionableContexts,
+      auto_safe: autoSafeContexts,
+      auto_fallback: fallbackContexts,
       human_review: contexts.filter((context) => context.autoSafety?.tier === "human_review"),
       blocked: contexts.filter((context) => context.autoSafety?.tier === "blocked")
     };
+    const topExcluded = filteredCandidates
+      .slice()
+      .sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
+      .slice(0, 5);
 
     return {
       version: "replydrop-agent-inbox-v1",
@@ -2097,6 +2163,18 @@
       diagnosticCandidates: contexts,
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
+      pickDiagnostics: {
+        scannedCount: Number(runtimeState?.pageCandidateSync?.scannedCount || 0),
+        visibleCount: Number(runtimeState?.pageCandidateSync?.visibleCount || 0),
+        recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
+        candidateCount: actionableContexts.length,
+        autoSafeCount: autoSafeContexts.length,
+        fallbackCount: fallbackContexts.length,
+        filteredCount: filteredCandidates.length,
+        noAutoSafeCandidate: autoSafeContexts.length === 0,
+        recommendedResult: actionableContexts.length ? "process-candidates" : "no-auto-safe-candidate",
+        topExcluded
+      },
       pageCandidateSync: runtimeState?.pageCandidateSync || null,
       emptyInboxRecovery: buildEmptyInboxRecovery(contexts, generatedAt),
       executionPolicy: buildReplyDropExecutionPolicy(generatedAt),

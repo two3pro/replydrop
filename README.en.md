@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.227`
+Current version: `0.2.228`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,9 +34,11 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.227` keeps human discovery flow-first while adding stricter auto-send lanes:
+Version `0.2.228` keeps human discovery flow-first while keeping auto mode workable:
 
 - AI executor inbox is now split into `auto_safe`, `human_review`, and `blocked`; only `auto_safe` appears in `candidates`.
+- When `auto_safe` is empty, low-risk `human_review` items can enter `auto_fallback` so the executor does not stall on an otherwise usable page.
+- `pickDiagnostics` reports scanned / visible / filtered counts, no-auto-safe status, and the top excluded items for faster stress-test debugging.
 - Auto-send now blocks political violence / assassination wording, comment rewards such as 10U, and investment subscription / signal bait.
 - Auto-send now removes duplicate authors, unresolved short video / meme media, directional crypto trades, withdrawal / funds-safety incidents, and official alcohol / promo posts from the automatic lane.
 - Political, violent, controversial, or otherwise sensitive posts are no longer hard-blocked by default. ReplyDrop keeps them as risk tags, but the ranking now prioritizes exposure window and reply opportunity.

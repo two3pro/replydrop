@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.228
+
+- 自动模式增加 `auto_fallback`：当 `auto_safe` 不足时，低风险 `human_review` 可补进 executor `candidates`，避免整轮零发送
+- `getExecutorInbox()` 新增 `pickDiagnostics`，直接返回扫描数、可见数、filtered 数、`noAutoSafeCandidate` 和 top excluded，避免 agent 无限刷新等待
+- `auto_fallback` 仍排除媒体缺摘要、提现/资金安全、方向性 crypto、投资订阅、评论奖励、政治暴力、互关收益等硬风险
+- 人工模式继续保留流量优先，不受自动发送池限制
+
 ## 0.2.227
 
 - 继续收紧 AI 自动发送池：政治暴力/暗杀/杀总统语境进入 `blocked`，不再进入 `auto_safe`
