@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.233
+
+- 修复首页预览卡片回复提交阶段误报 `context-not-locked`：由目标卡片点击产生的 fresh pending target 现在可锁定弹出的回复框
+- `runExecutorAction({ action: 'reply-from-timeline', tweetId, draft })` 在传入草稿时改为“首页原地打开 + 填入 + 提交”一体化闭环，避免 runner 分两步丢上下文
+- 保留详情页 fallback 与 live recheck：低于发送线、打开后价值下降仍不发送
+
 ## 0.2.232
 
 - `getExecutorInbox()` 增加脱敏压测诊断：`candidateDiagnostics`、`safeCandidateCount`、`blockedCandidateCount`、`topFilteredCodes`、`topBlockedCodes`、`topHumanReviewCodes`

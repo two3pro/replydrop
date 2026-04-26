@@ -1262,8 +1262,9 @@
       },
       timelineReplyPolicy: {
         mode: "preview-first",
-        preferredMethod: "replyFromTimeline",
-        instruction: "候选返回 execution.timelineInlineReplyEligible=true 时，agent 必须优先在首页预览卡片原地回复，不要先打开详情页；只有 needsDetailContext/mediaContextMissing/quote/show-more 等上下文不完整时才走详情页 openComposer。"
+        preferredMethod: "runExecutorAction",
+        preferredAction: "reply-from-timeline",
+        instruction: "候选返回 execution.timelineInlineReplyEligible=true 时，agent 必须优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在首页预览卡片原地打开并提交；不要先打开详情页。只有 needsDetailContext/mediaContextMissing/quote/show-more 等上下文不完整时才走详情页 openComposer。"
       },
       externalDraftPolicy: {
         mode: "human-draft",
@@ -1607,7 +1608,7 @@
         preferredOpenMode: timelineInlineReplyEligible ? "timeline-inline" : "detail-page",
         preferredAction: timelineInlineReplyEligible ? "replyFromTimeline" : "openComposer",
         instruction: timelineInlineReplyEligible
-          ? "首页预览正文已足够定稿，优先调用 replyFromTimeline/runExecutorAction({ action:'reply-from-timeline' }) 在当前时间线原地回复，不要先进详情页。"
+          ? "首页预览正文已足够定稿，优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在当前时间线原地打开并提交，不要先进详情页。"
           : "首页预览上下文不完整，先进入详情页复核后再回复。"
       },
       aiHints: {
@@ -2866,11 +2867,30 @@
         return addReplyDropCandidateToQueue(tweetId);
       case "open-composer":
         return openReplyDropComposer(normalizedPayload);
-      case "reply-from-timeline":
-        return openReplyDropComposer({
+      case "reply-from-timeline": {
+        const openResult = await openReplyDropComposer({
           ...normalizedPayload,
           timelineFirst: true
         });
+        if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
+          return openResult;
+        }
+        const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
+          ? normalizedPayload.submitOptions
+          : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+        const submitResult = await submitReplyDropComposer(submitOptions);
+        if (submitResult?.ok) {
+          clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
+        }
+        return {
+          ok: Boolean(submitResult?.ok),
+          action: "reply-from-timeline",
+          stage: submitResult?.ok ? "done" : "submit-reply",
+          open: openResult,
+          submit: submitResult,
+          targetUrl: String(submitResult?.targetUrl || submitResult?.href || openResult?.targetUrl || openResult?.href || "").trim()
+        };
+      }
       case "submit-reply": {
         const submitOptions = normalizedPayload.options && typeof normalizedPayload.options === "object"
           ? normalizedPayload.options
@@ -6246,6 +6266,21 @@
         !targetHandle
       )
     );
+    const timelinePendingReplyEvidence = Boolean(
+      !isComposePostPath() &&
+      pendingTargetFresh &&
+      !contextStatusUrl &&
+      !articleUrl &&
+      (hasReplyContextText || hasReplyButtonText)
+    );
+    const timelinePendingTargetLocked = Boolean(
+      timelinePendingReplyEvidence &&
+      (
+        contextHandleMatchesTarget ||
+        contextHandles.length === 0 ||
+        !targetHandle
+      )
+    );
     const explicitReplyEvidence = Boolean(contextStatusUrl || articleUrl || hasReplyButtonText || hasReplyContextText);
     const pageLocked = Boolean(
       targetUrl && (
@@ -6257,6 +6292,7 @@
     const composerLocked = Boolean(
       targetUrl && (
         composePostTargetLocked ||
+        timelinePendingTargetLocked ||
         (
           Boolean(editor || sendButton || container) &&
           (
@@ -6298,6 +6334,7 @@
       pageLocked,
       composerLocked,
       composePostTargetLocked,
+      timelinePendingTargetLocked,
       explicitReplyEvidence,
       hasReplyButtonText,
       hasReplyContextText,
