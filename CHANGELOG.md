@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.229
+
+- executor 采样窗口从前 16 条扩大为最多 64 条，先过滤再截取最多 16 条自动候选，避免首页前排被低价值币圈/推广占满后整轮饿死
+- 无候选策略改为 1 轮补扫 + 60 秒诊断退出，返回 `no-auto-safe-candidate` / `pickDiagnostics`，不再让 agent 空等 3 分钟
+- AI 自动发送池新增 Web3/DeFi/空投/积分/收益/交易工具/portfolio finance/支付卡/撸毛/亏 U 等自动排除；人工模式不受影响
+- `pickDiagnostics` 增加 `scanWindowSize`、`actionablePoolCount`、`humanReviewCount`、`blockedCount`，压测能直接看出候选被谁吃掉
+
 ## 0.2.228
 
 - 自动模式增加 `auto_fallback`：当 `auto_safe` 不足时，低风险 `human_review` 可补进 executor `candidates`，避免整轮零发送

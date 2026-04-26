@@ -15,12 +15,14 @@
   const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复"];
   const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复"];
   const DEFAULT_EXECUTOR_SEND_FLOOR = 54;
-  const EXECUTOR_EMPTY_INBOX_MIN_RESCANS = 3;
+  const EXECUTOR_EMPTY_INBOX_MIN_RESCANS = 1;
   const EXECUTOR_ROUND_MAX_TARGETS = 16;
+  const EXECUTOR_SCAN_WINDOW_SIZE = 64;
   const EXECUTOR_ROUND_BUDGET_MS = 18 * 60 * 1000;
   const EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT = 3;
   const EXECUTOR_TARGET_GOAL_MS = 90 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_MS = 120 * 1000;
+  const EXECUTOR_NO_CANDIDATE_TIMEOUT_MS = 60 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_TTL_MS = 10 * 60 * 1000;
   const HANDOFF_RETRY_DELAY_MS = 420;
   const REPLY_OPEN_FAILURE_TTL_MS = 15000;
@@ -584,7 +586,7 @@
       });
     });
 
-    return sortApiAgentCandidates(Array.from(byUrl.values())).slice(0, 16);
+    return sortApiAgentCandidates(Array.from(byUrl.values())).slice(0, EXECUTOR_SCAN_WINDOW_SIZE);
   }
 
   function mergeApiCandidateRecord(previous = {}, next = {}) {
@@ -674,7 +676,7 @@
       mergedByUrl.set(url, mergeApiCandidateRecord(mergedByUrl.get(url) || {}, candidate));
     });
 
-    return sortApiAgentCandidates(Array.from(mergedByUrl.values())).slice(0, 16);
+    return sortApiAgentCandidates(Array.from(mergedByUrl.values())).slice(0, EXECUTOR_SCAN_WINDOW_SIZE);
   }
 
   function shouldRefreshApiCandidateView(runtimeCandidates = [], domCandidates = []) {
@@ -1242,7 +1244,8 @@
         emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
         timeoutReasonCode: "target-timeout",
         emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
-        instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，不能直接结束，必须调用 refreshRecommendations() 或自行刷新/滚动重扫至少3轮。"
+        noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
+        instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；60秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。"
       },
       externalDraftPolicy: {
         mode: "human-draft",
@@ -1820,6 +1823,14 @@
     }
 
     if (testExecutorPolicyText(text, [
+      /(?:web3|defi|链上|鏈上|撸毛|擼毛|毛党|毛黨|空投|积分|積分|发放|發放|收益|年化|理财|理財|支付卡|交易工具|交易机器人|交易機器人|搬砖|搬磚|套利|亏\s*u|虧\s*u|亏u|虧u|赚u|賺u|u本位|币圈|幣圈|交易所|钱包|錢包|项目方|項目方|土狗|铭文|銘文|合约地址|合約地址|打新|挖矿|挖礦)/i,
+      /\b(?:web3|defi|airdrop|points?|yield|staking|farm|farming|whitelist|mint|wallet|exchange|trading bot|trading tool|portfolio|payment card|crypto finance|on[-\s]?chain|tokenomics|contract address|launchpad|presale|perp|perps|futures|copy trading|arbitrage)\b/i,
+      /(?:에어드랍|포인트|수익|지갑|거래소|선물|코인|디파이|스테이킹|파밍|민팅|상장|거래봇|차익거래)/i
+    ])) {
+      reasons.push("web3-finance-auto-block");
+    }
+
+    if (testExecutorPolicyText(text, [
       /(?:btc|bitcoin|eth|ethereum|合约|合約|杠杆|槓桿|赌场|賭場|牛市|熊市|没人买|沒人買|没人敢买|沒人敢買|爆仓|爆倉|开多|開多|做空|喊单|喊單)/i,
       /\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b.{0,80}\b(?:btc|bitcoin|eth|crypto)\b/i,
       /\b(?:btc|bitcoin|eth|crypto)\b.{0,80}\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b/i
@@ -1905,7 +1916,7 @@
       /needs_detail_context/i,
       /quote_context_possible/i,
       /funds|withdrawal|cash|payment/i,
-      /crypto|investment|subscription|comment-reward|political-violence/i,
+      /crypto|web3|finance|investment|subscription|comment-reward|political-violence/i,
       /follow|growth|payout|reward|promo|alcohol/i,
       /skip-recommended|below-average|below-display/i
     ];
@@ -2018,9 +2029,10 @@
       minRescansBeforeGivingUp: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
       recommendedAction: actionableCount > 0 ? "process-candidates" : "refresh-recommendations",
       method: "refreshRecommendations",
+      noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
       instruction: actionableCount > 0
         ? "已有合格候选，按评分顺序处理。"
-        : "本轮没有合格推荐时不能结束；先调用 refreshRecommendations({ mode: 'scroll' }) 或刷新首页，至少重扫3轮。",
+        : "本轮没有合格推荐时先调用 refreshRecommendations({ mode: 'scroll' }) 或刷新首页重扫1轮；60秒内仍无候选就返回 no-auto-safe-candidate + pickDiagnostics，不要继续空等。",
       generatedAt
     };
   }
@@ -2096,10 +2108,11 @@
     const includeMedia = Boolean(options?.includeMedia);
     const generatedAt = Date.now();
     const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
+    const scanWindowSize = Math.max(limit * 4, Math.min(EXECUTOR_SCAN_WINDOW_SIZE, Math.max(48, limit)));
     const orderedCandidates = [
       ...sortedCandidates.filter((candidate) => !String(candidate?.blockReason || "").trim()),
       ...sortedCandidates.filter((candidate) => String(candidate?.blockReason || "").trim())
-    ].slice(0, limit);
+    ].slice(0, scanWindowSize);
     const attributionModel = buildApiAttributionModel(runtimeState);
     const contexts = [];
 
@@ -2139,7 +2152,8 @@
         }
       }));
     const fallbackKeys = new Set(fallbackContexts.map((context) => String(context.tweetId || "").trim()).filter(Boolean));
-    const actionableContexts = [...autoSafeContexts, ...fallbackContexts];
+    const actionablePool = [...autoSafeContexts, ...fallbackContexts];
+    const actionableContexts = actionablePool.slice(0, limit);
     const filteredCandidates = contexts
       .filter((context) => context.autoSafety?.tier !== "auto_safe" && !fallbackKeys.has(String(context.tweetId || "").trim()))
       .map((context) => summarizeFilteredExecutorCandidate(context));
@@ -2158,18 +2172,23 @@
       version: "replydrop-agent-inbox-v1",
       generatedAt,
       limit,
+      scanWindowSize,
       candidates: actionableContexts,
       autoLanes,
-      diagnosticCandidates: contexts,
+      diagnosticCandidates: contexts.slice(0, Math.max(limit, 32)),
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
       pickDiagnostics: {
         scannedCount: Number(runtimeState?.pageCandidateSync?.scannedCount || 0),
         visibleCount: Number(runtimeState?.pageCandidateSync?.visibleCount || 0),
+        scanWindowSize,
         recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
         candidateCount: actionableContexts.length,
+        actionablePoolCount: actionablePool.length,
         autoSafeCount: autoSafeContexts.length,
         fallbackCount: fallbackContexts.length,
+        humanReviewCount: autoLanes.human_review.length,
+        blockedCount: autoLanes.blocked.length,
         filteredCount: filteredCandidates.length,
         noAutoSafeCandidate: autoSafeContexts.length === 0,
         recommendedResult: actionableContexts.length ? "process-candidates" : "no-auto-safe-candidate",
@@ -5091,7 +5110,7 @@
 
   function setLocalStats(stats) {
     const recentCandidates = Array.isArray(stats?.recentCandidates)
-      ? stats.recentCandidates.filter((item) => normalizeTweetUrl(item?.url)).slice(0, 16)
+      ? stats.recentCandidates.filter((item) => normalizeTweetUrl(item?.url)).slice(0, EXECUTOR_SCAN_WINDOW_SIZE)
       : state.recentCandidates;
     state.stats = {
       scannedCount: Math.max(0, Math.floor(Number(stats.scannedCount) || 0)),
@@ -5245,7 +5264,7 @@
       visibleCount,
       recentCandidates: recentCandidates
         .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
-        .slice(0, 16)
+        .slice(0, EXECUTOR_SCAN_WINDOW_SIZE)
     });
 
     if (needsFollowUp && Date.now() - state.lastDomChangeAt < 8000) {
@@ -5383,7 +5402,8 @@
       emptyResultDefinition: "插件/runner没有拿到结构化执行结果的异常空返回；正常评分下降、低于发送线、已回复过、目标不匹配不算。",
       emptyResultInstruction: "同一轮连续 empty-result 达到3次时，立即停止本轮、切回首页，并提示执行链路异常，建议刷新后重试。",
       emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
-      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，必须先刷新/滚动重扫至少3轮，再报告无合格推荐。",
+      noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
+      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，先刷新/滚动重扫至少1轮；60秒内仍无候选，直接报告 no-auto-safe-candidate 和 pickDiagnostics，不要空转。",
       targetStartedAt: normalizedStartedAt,
       targetDeadlineAt: normalizedStartedAt + EXECUTOR_TARGET_TIMEOUT_MS,
       switchTargetReasonCode: "target-timeout"
