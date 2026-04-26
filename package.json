@@ -1,6 +1,6 @@
 {
   "name": "replydrop",
-  "version": "0.2.229",
+  "version": "0.2.231",
   "private": true,
   "description": "Local-first X reply workflow browser extension with store-ready assets.",
   "license": "MIT",

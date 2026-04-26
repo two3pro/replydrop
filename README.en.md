@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.229`
+Current version: `0.2.231`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -34,8 +34,15 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.229` keeps human discovery flow-first while improving auto-mode sampling speed:
+Version `0.2.231` adds preview-first execution for faster agent replies:
 
+- Candidate context now exposes `execution.timelineInlineReplyEligible`, `preferredOpenMode`, and `preferredAction`.
+- Agents should use `replyFromTimeline` / `runExecutorAction({ action: 'reply-from-timeline' })` when the visible homepage card has enough text context, skipping detail-page navigation.
+- Detail-page opening is still used when media, quote cards, show-more text, or incomplete context requires recheck.
+- Auto mode no longer keyword-blocks Web3, crypto, trading, investment, reward, political, official, or promo topics; those signals are handled by scoring and live recheck instead.
+- Same-author protection now only blocks the third consecutive reply to the same account, instead of blocking any repeat author during the day.
+- Media posts without built-in visual summaries can still enter the executor lane so external agents can use `getMediaBundle()` / OCR / vision and write a real reply.
+- The hard gate remains the live detail-page recheck: below send floor or skip-recommended still does not auto-send.
 - Executor sampling now scans a wider 64-item window before filtering, then returns the best 16 automatic candidates so low-value front-page clutter does not starve the lane.
 - No-candidate rounds now expose a 60-second timeout policy and diagnostics instead of letting agents wait for several minutes.
 - Auto-send now excludes more Web3 / DeFi / airdrop / yield / trading-tool / portfolio-finance bait from the automatic lane while keeping human discovery flow-first.

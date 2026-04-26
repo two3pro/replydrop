@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.231
+
+- 新增首页预览原地回复执行策略：候选上下文返回 `execution.timelineInlineReplyEligible`、`preferredOpenMode`、`preferredAction`
+- 当首页卡片正文已经足够定稿时，agent 应直接调用 `replyFromTimeline` / `runExecutorAction({ action: 'reply-from-timeline' })`，不再先打开详情页
+- 只有媒体语义缺失、引用卡、show more、上下文不完整时才回退详情页复核
+- 原地回复仍保留 live recheck，低于发送线或详情价值下降规则不变
+
+## 0.2.230
+
+- AI 自动发送池取消 Web3 / crypto / 投资订阅 / 评论奖励 / 政治暴力 / 官方促销等关键词硬封杀，相关内容只交给评分和详情页 live recheck 决定
+- 重复作者规则改为只拦“连续第三次回复同一个账号”，允许同一天与同一账号多次互动
+- 图文、视频、GIF 缺内置视觉摘要时不再自动踢出候选，交给外部 agent 通过 `getMediaBundle()` / OCR / vision 处理
+- 保留详情页复核硬门槛：低于自动发送线、`skipRecommended`、打开后价值下降到平均线以下仍不自动发送
+
 ## 0.2.229
 
 - executor 采样窗口从前 16 条扩大为最多 64 条，先过滤再截取最多 16 条自动候选，避免首页前排被低价值币圈/推广占满后整轮饿死

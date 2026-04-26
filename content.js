@@ -1228,6 +1228,19 @@
     };
   }
 
+  function canUseTimelineInlineReply(contextCompleteness = {}, article = null) {
+    if (!(article instanceof Element) || !hasVisibleRect(article)) {
+      return false;
+    }
+    if (contextCompleteness?.needsDetailContext || contextCompleteness?.mediaContextMissing) {
+      return false;
+    }
+    return Boolean(
+      contextCompleteness?.quickDraftAllowed ||
+      String(contextCompleteness?.draftContextLabel || "") === "detail-ready-draft"
+    );
+  }
+
   function buildReplyDropExecutorCapabilities() {
     return {
       version: "replydrop-executor-capabilities-v1",
@@ -1246,6 +1259,11 @@
         emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
         noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
         instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；60秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。"
+      },
+      timelineReplyPolicy: {
+        mode: "preview-first",
+        preferredMethod: "replyFromTimeline",
+        instruction: "候选返回 execution.timelineInlineReplyEligible=true 时，agent 必须优先在首页预览卡片原地回复，不要先打开详情页；只有 needsDetailContext/mediaContextMissing/quote/show-more 等上下文不完整时才走详情页 openComposer。"
       },
       externalDraftPolicy: {
         mode: "human-draft",
@@ -1308,6 +1326,7 @@
             targetStartedAt: "number",
             targetDeadlineAt: "number"
           },
+          useWhen: "candidate.execution.timelineInlineReplyEligible === true",
           fallback: "openComposer detail page path"
         },
         submitReply: {
@@ -1479,6 +1498,7 @@
       : findTweetArticleByTweetId(tweetId, normalizedUrl);
     const recheck = buildLiveCandidateRecheck(candidate, liveArticle);
     const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
+    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, liveArticle);
     const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
     const recommendedDecision = recheck?.skipRecommended ? "skip" : mapQueueSlotToDecision(recommendedSlot);
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
@@ -1582,6 +1602,14 @@
         alreadyReplied
       },
       contextCompleteness,
+      execution: {
+        timelineInlineReplyEligible,
+        preferredOpenMode: timelineInlineReplyEligible ? "timeline-inline" : "detail-page",
+        preferredAction: timelineInlineReplyEligible ? "replyFromTimeline" : "openComposer",
+        instruction: timelineInlineReplyEligible
+          ? "首页预览正文已足够定稿，优先调用 replyFromTimeline/runExecutorAction({ action:'reply-from-timeline' }) 在当前时间线原地回复，不要先进详情页。"
+          : "首页预览上下文不完整，先进入详情页复核后再回复。"
+      },
       aiHints: {
         draftKeys: recheck?.skipRecommended ? [] : draftPlans.map((plan) => String(plan?.key || "").trim()).filter(Boolean),
         routePlans: recheck?.skipRecommended ? [] : routePlans.map((route) => simplifyRoutePlanForApi(route)),
@@ -1764,121 +1792,48 @@
     return patterns.some((pattern) => pattern.test(source));
   }
 
-  function getRecentRepliedAuthorHandles(runtimeState = {}, withinMs = 12 * 60 * 60 * 1000) {
+  function getRecentConsecutiveRepliedAuthorCount(runtimeState = {}) {
     const now = Date.now();
-    const entries = Object.values(runtimeState?.replyDetails || {});
-    return new Set(entries
-      .filter((detail) => {
+    const entries = Object.values(runtimeState?.replyDetails || {})
+      .map((detail) => {
         const shippedAt = Number(detail?.timestamp || detail?.shippedAt || detail?.completedAt || detail?.createdAt || 0);
-        return !shippedAt || now - shippedAt <= withinMs;
+        return {
+          handle: normalizeHandle(detail?.authorHandle || detail?.handle || ""),
+          shippedAt: shippedAt || 0
+        };
       })
-      .map((detail) => normalizeHandle(detail?.authorHandle || detail?.handle || ""))
-      .filter(Boolean));
+      .filter((entry) => entry.handle && (!entry.shippedAt || now - entry.shippedAt <= 12 * 60 * 60 * 1000))
+      .sort((left, right) => Number(right.shippedAt || 0) - Number(left.shippedAt || 0));
+    const latestHandle = entries[0]?.handle || "";
+    if (!latestHandle) {
+      return { handle: "", count: 0 };
+    }
+    let count = 0;
+    for (const entry of entries) {
+      if (entry.handle !== latestHandle) {
+        break;
+      }
+      count += 1;
+    }
+    return { handle: latestHandle, count };
   }
 
-  function getReplyDropAutoSafety(context = {}, runtimeState = {}, selectedAuthorHandles = new Set()) {
+  function getReplyDropAutoSafety(context = {}, runtimeState = {}, selectedAuthorCounts = new Map()) {
     const reasons = [];
-    const text = normalizeExecutorPolicyText([
-      context.post?.text,
-      context.author?.handle,
-      context.author?.name
-    ].filter(Boolean).join(" "));
     const handle = normalizeHandle(context.author?.handle || "");
-    const mediaKind = String(context.post?.mediaKind || context.media?.kind || "").toLowerCase();
-    const hasVisualMedia = Boolean(context.media?.available || hasVisualMediaKind(mediaKind));
-    const hasMediaSummary = Boolean(context.media?.summary?.summary || context.media?.summary?.ocrText);
-    const textLength = String(context.post?.text || "").replace(/\s+/g, " ").trim().length;
-    const tokenCount = String(context.post?.text || "")
-      .split(/[\s,.;:!?/\\|()[\]{}"'`~<>，。！？、]+/)
-      .filter(Boolean).length;
-    const recentRepliedAuthors = getRecentRepliedAuthorHandles(runtimeState);
-
-    if (handle && (selectedAuthorHandles.has(handle) || recentRepliedAuthors.has(handle))) {
-      reasons.push("duplicate-author-cooldown");
-    }
+    const recentConsecutiveAuthor = getRecentConsecutiveRepliedAuthorCount(runtimeState);
+    const selectedAuthorCount = handle && typeof selectedAuthorCounts?.get === "function"
+      ? Number(selectedAuthorCounts.get(handle) || 0)
+      : 0;
 
     if (
-      hasVisualMedia &&
-      !hasMediaSummary &&
+      handle &&
       (
-        context.media?.needsVision ||
-        context.contextCompleteness?.mediaContextMissing ||
-        (
-          /video|gif/.test(mediaKind) &&
-          (textLength < 90 || tokenCount <= 12 || testExecutorPolicyText(text, [
-            /\b(?:this|that|these|those|his|her|their|face|look|watch|ceo|moment|crazy|wild|what happened)\b/i,
-            /(?:これ|それ|この|その|顔|表情|動画|映像|やば|草|www|ㅋㅋ|영상|표정|장면)/
-          ]))
-        )
+        selectedAuthorCount >= 2 ||
+        (recentConsecutiveAuthor.handle === handle && recentConsecutiveAuthor.count >= 2)
       )
     ) {
-      reasons.push("media-summary-required-for-auto");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:不给提|不給提|无法提现|無法提現|提现异常|提現異常|资金安全|資金安全|收\s*u|收u|出金|冻卡|凍卡|用户恐慌|用戶恐慌|平台维护|平台維護|交易平台|websea)/i,
-      /\b(?:withdrawal|cash[-\s]?out|off[-\s]?ramp|bank freeze|frozen card|payment freeze|exchange withdraw|funds? safety|platform maintenance)\b/i
-    ])) {
-      reasons.push("funds-withdrawal-risk-auto-block");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:web3|defi|链上|鏈上|撸毛|擼毛|毛党|毛黨|空投|积分|積分|发放|發放|收益|年化|理财|理財|支付卡|交易工具|交易机器人|交易機器人|搬砖|搬磚|套利|亏\s*u|虧\s*u|亏u|虧u|赚u|賺u|u本位|币圈|幣圈|交易所|钱包|錢包|项目方|項目方|土狗|铭文|銘文|合约地址|合約地址|打新|挖矿|挖礦)/i,
-      /\b(?:web3|defi|airdrop|points?|yield|staking|farm|farming|whitelist|mint|wallet|exchange|trading bot|trading tool|portfolio|payment card|crypto finance|on[-\s]?chain|tokenomics|contract address|launchpad|presale|perp|perps|futures|copy trading|arbitrage)\b/i,
-      /(?:에어드랍|포인트|수익|지갑|거래소|선물|코인|디파이|스테이킹|파밍|민팅|상장|거래봇|차익거래)/i
-    ])) {
-      reasons.push("web3-finance-auto-block");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:btc|bitcoin|eth|ethereum|合约|合約|杠杆|槓桿|赌场|賭場|牛市|熊市|没人买|沒人買|没人敢买|沒人敢買|爆仓|爆倉|开多|開多|做空|喊单|喊單)/i,
-      /\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b.{0,80}\b(?:btc|bitcoin|eth|crypto)\b/i,
-      /\b(?:btc|bitcoin|eth|crypto)\b.{0,80}\b(?:long|short|leverage|casino|bull market|bear market|support|resistance|breakout|entry|price target|nobody is buying|no one is buying)\b/i
-    ])) {
-      reasons.push("directional-crypto-auto-block");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:追高|追涨|追漲|买入|買入|转多|轉多|做多|开多|開多|实时分析|實時分析|订阅|訂閱|带单|帶單|喊单|喊單|进群|進群|合约|合約)/i,
-      /\b(?:buy|buying|long|turn bullish|bullish now|chase|entry|signal|signals|subscribe|subscription|real[-\s]?time analysis|premium analysis|trading group)\b/i,
-      /(?:매수|추격매수|롱|숏|전환|상승전환|구독|실시간\s*분석|리딩방|시그널|선물|레버리지)/i
-    ])) {
-      reasons.push("investment-subscription-auto-block");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:评论|評論|留言|回复|回覆|转发|轉發|关注|關注|抽奖|抽獎|奖励|獎勵|奖金|獎金|选中|選中|中奖|中獎|征集|徵集).{0,60}(?:10\s*u|u\b|usdt|红包|紅包|奖励|獎勵|奖金|獎金|抽奖|抽獎|选中|選中|中奖|中獎)/i,
-      /(?:10\s*u|usdt|红包|紅包|奖励|獎勵|奖金|獎金).{0,60}(?:评论|評論|留言|回复|回覆|转发|轉發|关注|關注|名字|改名|征集|徵集)/i,
-      /\b(?:comment|reply|drop|name|rename|suggest|follow|repost|retweet)\b.{0,80}\b(?:10u|usdt|reward|prize|giveaway|winner|selected)\b/i,
-      /\b(?:10u|usdt|reward|prize|giveaway|winner|selected)\b.{0,80}\b(?:comment|reply|drop|name|rename|suggest|follow|repost|retweet)\b/i
-    ])) {
-      reasons.push("comment-reward-auto-block");
-    }
-
-    if (testExecutorPolicyText(text, [
-      /(?:杀|殺|刺杀|刺殺|枪击|槍擊|枪手|槍手|暗杀|暗殺|政治暴力|想杀|想殺).{0,40}(?:总统|總統|总统候选人|總統候選人|首相|总统先生|總統先生|president|trump|biden)/i,
-      /(?:总统|總統|总统候选人|總統候選人|首相|president|trump|biden).{0,40}(?:杀|殺|刺杀|刺殺|枪击|槍擊|暗杀|暗殺|政治暴力|想杀|想殺)/i,
-      /\b(?:kill|murder|assassinate|shoot|shot|gunman|political violence)\b.{0,60}\b(?:president|candidate|trump|biden|prime minister)\b/i,
-      /\b(?:president|candidate|trump|biden|prime minister)\b.{0,60}\b(?:kill|murder|assassinate|shoot|shot|gunman|political violence)\b/i,
-      /(?:죽이고|죽이|살해|암살|총격).{0,40}(?:대통령|후보|트럼프|바이든)/i,
-      /(?:대통령|후보|트럼프|바이든).{0,40}(?:죽이고|죽이|살해|암살|총격)/i
-    ])) {
-      reasons.push("political-violence-auto-block");
-    }
-
-    const officialOrBrand = Boolean(
-      context.author?.verified ||
-      /gold|government|business/i.test(String(context.author?.verificationType || "")) ||
-      testExecutorPolicyText(text, [/\b(?:official|corp|inc|brand|campaign|pr|sponsored)\b/i, /(?:公式|キャンペーン|コラボ|プレゼント|協賛|広告|宣伝|聯名|联名|品牌|促销|促銷)/])
-    );
-    if (
-      officialOrBrand &&
-      testExecutorPolicyText(text, [
-        /(?:beer|asahi|sapporo|kirin|whisky|whiskey|highball|wine|alcohol|酒|ビール|ハイボール|ウイスキー|ワイン|啤酒|威士忌|白酒)/i,
-        /(?:キャンペーン|コラボ|プレゼント|限定|抽選|promo|promotion|giveaway|sponsored|#pr|#ad|联名|聯名|促销|促銷)/i
-      ])
-    ) {
-      reasons.push("official-alcohol-promo-human-review");
+      reasons.push("third-consecutive-same-author-auto-block");
     }
 
     if (!isReplyDropContextActionable(context)) {
@@ -1886,7 +1841,7 @@
     }
 
     const uniqueReasons = Array.from(new Set(reasons.filter(Boolean)));
-    const blocked = uniqueReasons.some((reason) => /auto-block|duplicate-author-cooldown/i.test(reason));
+    const blocked = uniqueReasons.some((reason) => /auto-block/i.test(reason));
     const humanReview = !blocked && uniqueReasons.length > 0;
     return {
       tier: blocked ? "blocked" : (humanReview ? "human_review" : "auto_safe"),
@@ -1909,15 +1864,7 @@
     const reasons = Array.isArray(context.autoSafety?.reasons) ? context.autoSafety.reasons : [];
     const hardPatterns = [
       /auto-block/i,
-      /duplicate-author/i,
-      /media-summary-required/i,
-      /media_context_missing/i,
-      /vision_required/i,
-      /needs_detail_context/i,
-      /quote_context_possible/i,
-      /funds|withdrawal|cash|payment/i,
-      /crypto|web3|finance|investment|subscription|comment-reward|political-violence/i,
-      /follow|growth|payout|reward|promo|alcohol/i,
+      /third-consecutive-same-author/i,
       /skip-recommended|below-average|below-display/i
     ];
     if (reasons.some((reason) => hardPatterns.some((pattern) => pattern.test(String(reason || ""))))) {
@@ -1997,6 +1944,9 @@
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
       laneKey: String(context.routing?.laneKey || "").trim(),
       laneLabel: String(context.routing?.laneLabel || "").trim(),
+      timelineInlineReplyEligible: Boolean(context.execution?.timelineInlineReplyEligible),
+      preferredOpenMode: String(context.execution?.preferredOpenMode || "").trim(),
+      preferredAction: String(context.execution?.preferredAction || "").trim(),
       autoSafetyTier: String(autoSafety?.tier || "").trim(),
       skipRecommended: Boolean(context.recheck?.skipRecommended),
       recheckHint: String(context.aiHints?.recheckHint || "").trim(),
@@ -2125,13 +2075,13 @@
       }));
     }
 
-    const selectedAuthorHandles = new Set();
+    const selectedAuthorCounts = new Map();
     contexts.forEach((context) => {
-      context.autoSafety = getReplyDropAutoSafety(context, runtimeState, selectedAuthorHandles);
+      context.autoSafety = getReplyDropAutoSafety(context, runtimeState, selectedAuthorCounts);
       if (context.autoSafety.tier === "auto_safe") {
         const handle = normalizeHandle(context.author?.handle || "");
         if (handle) {
-          selectedAuthorHandles.add(handle);
+          selectedAuthorCounts.set(handle, Number(selectedAuthorCounts.get(handle) || 0) + 1);
         }
       }
     });
@@ -6521,6 +6471,13 @@
       Object.assign(candidateRecord, getCandidateByUrlFromState(runtimeState, normalizedTarget) || getQueueItemByUrlFromState(runtimeState, normalizedTarget) || {});
     } catch {
       // Keep the visible article as the fallback context.
+    }
+
+    const tweetId = extractTweetIdFromUrl(normalizedTarget);
+    const mediaSummary = getMediaSummaryFromState(runtimeState || {}, tweetId);
+    const contextCompleteness = buildDraftContextCompleteness(candidateRecord, article, false, mediaSummary);
+    if (!payload?.forceTimeline && !canUseTimelineInlineReply(contextCompleteness, article)) {
+      return null;
     }
 
     const recheck = buildLiveCandidateRecheck(candidateRecord, article);
