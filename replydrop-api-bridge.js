@@ -378,6 +378,9 @@
     getExecutorCapabilities() {
       return call("getExecutorCapabilities");
     },
+    health() {
+      return call("health");
+    },
     getCandidates() {
       return call("getCandidates");
     },

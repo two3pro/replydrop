@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.223
+
+- 修复 p2.222 可用性回退：`show_more_possible` 不再自动把“正文已足够”的媒体帖踢出 `ready_now`
+- 新增 `quick_draft_allowed`，低风险且文字已承载论点的图文/视频帖可进入主草稿槽，并标注媒体未检查限制
+- 新增 `ReplyDropAPI.health()`，返回 API/bridge/scan/candidate/lastError 状态，避免 `invoke-null` / `ping-null` 时完全黑盒
+- `getDraftTargets()` 默认保留媒体读取能力，同时继续把真正依赖图片/视频语义的候选放入 `needs_media_summary`
+
 ## 0.2.222
 
 - 人工写稿 lanes 改为更清晰的 `ready_now` / `needs_media_summary` / `needs_detail_context` / `watch_later` / `do_not_reply`，避免“reply-now 但 filtered”的歧义；同时保留 legacy lanes 兼容旧 agent

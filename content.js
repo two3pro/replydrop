@@ -1099,6 +1099,7 @@
         needsDetailContext: "boolean",
         mediaContextMissing: "boolean",
         mediaNotInspectedTextSufficient: "boolean",
+        quickDraftAllowed: "boolean",
         mediaSummaryAvailable: "boolean",
         draftContextLabel: "quick-preview-draft | detail-ready-draft",
         lanes: "{ ready_now, needs_media_summary, needs_detail_context, watch_later, do_not_reply }",
@@ -1199,26 +1200,29 @@
     const needsDetailContext = Boolean(
       mediaContextMissing ||
       hasQuote ||
-      hasShowMore ||
+      (hasShowMore && !textCarriesThesis) ||
       (hasVisualMedia && !hasSummary && !textCarriesThesis)
     );
+    const quickDraftAllowed = Boolean(textCarriesThesis && !mediaContextMissing && !hasQuote);
     const flags = [];
     if (mediaContextMissing) flags.push("media_context_missing");
     if (hasVisualMedia) flags.push("media_post");
     if (hasVisualMedia && !hasSummary && textCarriesThesis) flags.push("media_not_inspected_text_sufficient");
     if (hasQuote) flags.push("quote_context_possible");
     if (hasShowMore) flags.push("show_more_possible");
+    if (quickDraftAllowed) flags.push("quick_draft_allowed");
     if (needsDetailContext) flags.push("needs_detail_context");
     return {
       needsDetailContext,
       mediaContextMissing,
       mediaNotInspectedTextSufficient: Boolean(hasVisualMedia && !hasSummary && textCarriesThesis),
+      quickDraftAllowed,
       mediaSummaryAvailable: hasSummary,
       draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
       flags,
       detailRewriteInstruction: needsDetailContext
         ? "这条首页预览上下文不完整；如果用户打开详情页，应基于展开正文/引用卡/图片OCR/视频首帧重新写一版。"
-        : ""
+        : (quickDraftAllowed && hasShowMore ? "首页文字已足够做快速草稿；若打开详情页可再优化，不必阻断主槽。" : "")
     };
   }
 
@@ -1263,6 +1267,7 @@
         ]
       },
       methods: {
+        health: { type: "read" },
         getCandidates: { type: "read" },
         getQueue: { type: "read" },
         getMediaBundle: { type: "read" },
@@ -1333,6 +1338,54 @@
           ]
         }
       }
+    };
+  }
+
+  async function getReplyDropApiHealth() {
+    const generatedAt = Date.now();
+    let runtimeState = null;
+    let runtimeError = "";
+    try {
+      runtimeState = await getApiRuntimeStateSnapshot();
+    } catch (error) {
+      runtimeError = String(error?.message || error || "state-unavailable");
+    }
+
+    const recentCandidates = Array.isArray(runtimeState?.recentCandidates)
+      ? runtimeState.recentCandidates
+      : (Array.isArray(state.recentCandidates) ? state.recentCandidates : []);
+    const visibleArticles = getTweetNodes();
+    const pageCandidateSync = runtimeState?.pageCandidateSync || null;
+    const scanPending = Boolean(state.scanTimer || state.lazyRescanTimer);
+    const lastScanAt = Number(runtimeState?.lastScanAt || runtimeState?.updatedAt || pageCandidateSync?.updatedAt || 0);
+    const apiReady = !runtimeError && canExposeReplyDropApi();
+
+    return {
+      ok: true,
+      version: "replydrop-health-v1",
+      extensionVersion: chrome.runtime.getManifest().version,
+      apiReady,
+      bridgeReady: Boolean(state.apiBridgeBound),
+      pageReady: document.readyState,
+      location: normalizeTweetUrl(global.location.href),
+      generatedAt,
+      scanPending,
+      lastScanAt,
+      ageMsSinceLastScan: lastScanAt ? Math.max(0, generatedAt - lastScanAt) : null,
+      counts: {
+        domArticles: visibleArticles.length,
+        recentCandidates: recentCandidates.length,
+        scannedCount: Number(runtimeState?.scannedCount ?? state.stats?.scannedCount ?? 0),
+        highScoreCount: Number(runtimeState?.highScoreCount ?? state.stats?.highScoreCount ?? 0),
+        visibleCount: Number(runtimeState?.visibleCount ?? state.stats?.visibleCount ?? 0),
+        queue: Array.isArray(runtimeState?.replyQueue) ? runtimeState.replyQueue.length : 0
+      },
+      pageCandidateSync,
+      lastError: runtimeError || "",
+      recommendedAction: runtimeError
+        ? "reload-page-or-refresh-recommendations"
+        : (scanPending ? "wait-and-retry" : (recentCandidates.length ? "read-draft-targets" : "refresh-recommendations")),
+      errorCodes: runtimeError ? [runtimeError] : []
     };
   }
 
@@ -1945,7 +1998,6 @@
 
     if (
       flags.includes("needs_detail_context") ||
-      flags.includes("show_more_possible") ||
       flags.includes("quote_context_possible") ||
       Boolean(context.contextCompleteness?.needsDetailContext)
     ) {
@@ -2025,6 +2077,7 @@
     const needsDetailContext = Boolean(context.contextCompleteness?.needsDetailContext);
     const mediaContextMissing = Boolean(context.contextCompleteness?.mediaContextMissing);
     const mediaSummaryAvailable = Boolean(context.contextCompleteness?.mediaSummaryAvailable || context.media?.summary);
+    const quickDraftAllowed = Boolean(context.contextCompleteness?.quickDraftAllowed);
     const draftContextLabel = String(context.contextCompleteness?.draftContextLabel || (needsDetailContext ? "quick-preview-draft" : "detail-ready-draft")).trim();
     return {
       version: "replydrop-draft-target-v1",
@@ -2043,6 +2096,7 @@
       mediaKind,
       needsDetailContext,
       mediaContextMissing,
+      quickDraftAllowed,
       mediaSummaryAvailable,
       draftContextLabel,
       laneKey: String(snapshot.laneKey || "").trim(),
@@ -2817,6 +2871,8 @@
       case "getCapabilities":
       case "getExecutorCapabilities":
         return buildReplyDropExecutorCapabilities();
+      case "health":
+        return getReplyDropApiHealth();
       case "getCandidates":
         return getReplyDropApiCandidates();
       case "getQueue":
