@@ -35,6 +35,7 @@ npm run export:oss
 - 运行时代码
 - 测试
 - 文档
+- 公开下载文件（`downloads/`）
 - GitHub 模板与工作流
 - 发布脚本
 
@@ -42,9 +43,12 @@ npm run export:oss
 
 - `HANDOFF-*`
 - `PRODUCT-GAP-*`
-- `replydrop-p*.zip`
+- 根目录散落的历史 `replydrop-p*.zip`
+- 没有放进 `downloads/` 的临时归档包
 - 原始截图与录屏
 - 其他本地工作痕迹
+
+如果某个包需要在公开页长期保留下载入口，就放进 `downloads/`，再通过导出清单带出去。
 
 ## 发布前建议
 
@@ -52,4 +56,5 @@ npm run export:oss
 2. 再跑 `npm run export:oss`
 3. 检查导出树里的 `README.md`、`CHANGELOG.md`、`docs/assets`
 4. 如需正式发布扩展运行时包，再额外执行 `npm run package`
-5. 如需准备 Chrome Web Store 上架页，再检查 `docs/store/CHROME-WEB-STORE-LISTING.md`
+5. 如需同步公开页下载区，把对外要保留的归档包放进 `downloads/`
+6. 如需准备 Chrome Web Store 上架页，再检查 `docs/store/CHROME-WEB-STORE-LISTING.md`

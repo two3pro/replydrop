@@ -36,11 +36,12 @@ bash scripts/package-release.sh
 ```
 
 5. 检查根目录生成的 `replydrop-p2.xx.zip`
-6. `package-release.sh` 会自动校验：
+6. 如果公开页需要下载入口，把对外要保留的包同步到 `downloads/`
+7. `package-release.sh` 会自动校验：
    - 包内 `manifest.json` 版本
    - zip 文件集合是否与 `scripts/runtime-files.txt` 完全一致
-7. 按 [SMOKE-TEST.md](./SMOKE-TEST.md) 至少走一轮快速验证
-8. 如果准备上架商店，再检查 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
+8. 按 [SMOKE-TEST.md](./SMOKE-TEST.md) 至少走一轮快速验证
+9. 如果准备上架商店，再检查 [docs/store/CHROME-WEB-STORE-LISTING.md](./docs/store/CHROME-WEB-STORE-LISTING.md)
 
 ## 版本规则
 
@@ -76,3 +77,5 @@ npm run export:oss
 ```
 
 导出说明见 [OPEN-SOURCE-RELEASE.md](./OPEN-SOURCE-RELEASE.md)。
+
+如果公开页需要长期保留下载链接，把对应归档包放进 `downloads/`，不要直接依赖根目录临时产物。

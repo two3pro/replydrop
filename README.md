@@ -6,7 +6,7 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.235`
+当前重置基线版本：`0.2.236`
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -223,6 +223,19 @@ await page.evaluate(async () => {
 3. 把目标放进 `下一轮 / 今晚 / 明早`
 4. 在 `Growth Pulse` 和 pickup 复查看发出后的真实反馈
 
+## 下载
+
+- Chrome / Brave 运行时包：[replydrop-p2.236.zip](./downloads/replydrop-p2.236.zip)
+  - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
+  - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.248.zip](./downloads/replydrop-safari-open-source-0.2.248.zip)
+  - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
+  - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
+  - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
+- 版本说明：
+  - Chrome / Brave 当前公开基线版本还是 `0.2.236`
+  - Safari 当前走单独版本线 `0.2.248`
+
 ## 本地安装
 
 1. 打开 Chrome / Brave 的扩展管理页：`chrome://extensions`
@@ -291,7 +304,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-当前会生成 `replydrop-p2.235.zip` 这样的安装包。
+当前会生成 `replydrop-p2.236.zip` 这样的安装包。
 
 ## 文档导航
 

@@ -17,6 +17,7 @@ SECURITY.md
 SMOKE-TEST.md
 SPEC.md
 SUPPORT.md
+downloads
 icons
 background.js
 content.js

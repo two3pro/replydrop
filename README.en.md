@@ -6,7 +6,7 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.235`
+Current version: `0.2.236`
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -33,6 +33,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.236` fixes human draft mismatch and visible-post packing gaps:
+
+- Human draft targets now always expose post-level anchors such as `targetTweetId`, `targetUrl`, `lead`, and `selectionHint`, so same-handle multi-post pages no longer rely on handle-only matching.
+- `getDraftTargets()` now backfills scored posts that are visibly on screen but missing from the runtime candidate pack, so they still appear in `candidates`, `filteredCandidates`, or `visibleScoredPosts`.
+- Same-handle collision risk is now explicit through `sameHandlePostCount`, helping manual workflows avoid cross-reply mistakes.
 
 Version `0.2.235` relaxes candidate timing routes:
 
@@ -118,6 +124,19 @@ await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
 ```
 
 See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP examples, empty-inbox recovery, and timeout rules.
+
+## Downloads
+
+- Chrome / Brave runtime package: [replydrop-p2.236.zip](./downloads/replydrop-p2.236.zip)
+  - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
+  - Unzip it first, then load the extracted folder through `chrome://extensions`.
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.248.zip](./downloads/replydrop-safari-open-source-0.2.248.zip)
+  - Includes the Safari extension source, Xcode project, MIT license, and install notes.
+  - This is a source-open / local self-sign package, not an official signed app download.
+  - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
+- Version note:
+  - Chrome / Brave still uses the `0.2.236` public baseline in this repo.
+  - Safari currently follows its own `0.2.248` release line.
 
 ## Local Install
 

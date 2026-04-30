@@ -1096,10 +1096,12 @@
         domIndex: "number|null",
         visibleOnPage: "boolean",
         targetTweetId: "string",
+        targetUrl: "string",
         authorHandle: "string",
         handle: "string",
         score: "number",
         ageMinutes: "number",
+        lead: "string",
         textPreview: "string",
         mediaKind: "string",
         needsDetailContext: "boolean",
@@ -1118,6 +1120,8 @@
         language: "same-as-post",
         confidence: "number",
         riskFlags: "string[]",
+        sameHandlePostCount: "number",
+        selectionHint: "string",
         draftAngleHints: "string[]",
         mediaSummary: "{ summary, ocrText, confidence, source, updatedAt }"
       }
@@ -2357,11 +2361,73 @@
     return { byUrl, byTweetId, count: getTweetNodes().length };
   }
 
+  function buildDraftLeadText(text = "", maxLength = 72) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return "";
+    }
+    const sentenceMatch = normalized.match(/^(.{1,72}?[.!?。！？…]|.{1,72})(?:\s|$)/u);
+    const sentence = String(sentenceMatch?.[1] || "").trim();
+    if (sentence) {
+      return sentence.slice(0, maxLength);
+    }
+    return normalized.slice(0, maxLength);
+  }
+
+  function collectVisibleDraftTargetFallbackCandidates(runtimeState = {}, attributionModel = null) {
+    const fallbackCandidates = [];
+    const opportunityContext = {
+      relationshipStates: {
+        ...(runtimeState?.relationshipStates || state.relationshipStates || {})
+      },
+      attributionModel: attributionModel || buildApiAttributionModel(runtimeState)
+    };
+
+    getTweetNodes().forEach((article) => {
+      const url = normalizeTweetUrl(readTweetUrl(article));
+      const tweetId = extractTweetIdFromUrl(url);
+      if (!url || !tweetId) {
+        return;
+      }
+
+      let candidate = readStoredCandidate(article);
+      const candidateScore = Number(candidate?.finalScore || candidate?.score || 0);
+      if (!(candidate && candidate.url && candidateScore > 0)) {
+        try {
+          const tweet = getTweetData(article);
+          if (tweet?.url && !tweet.promoted && !tweet.isOwnTweet) {
+            const baseAnalysis = global.XReplyScorer?.analyzeTweet?.(tweet, state.settings);
+            const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, opportunityContext);
+            const effectiveTier = String(analysis?.tier || candidate?.tier || "").trim();
+            if (analysis && effectiveTier && effectiveTier !== "hidden" && effectiveTier !== "replied") {
+              candidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+              storeCandidatePayload(article, candidate);
+            }
+          }
+        } catch (_error) {}
+      }
+
+      const normalizedCandidateUrl = normalizeTweetUrl(candidate?.url || url);
+      const finalScore = Number(candidate?.finalScore || candidate?.score || 0);
+      if (!normalizedCandidateUrl || finalScore <= 0) {
+        return;
+      }
+
+      fallbackCandidates.push({
+        ...(candidate && typeof candidate === "object" ? candidate : {}),
+        url: normalizedCandidateUrl
+      });
+    });
+
+    return sortApiAgentCandidates(fallbackCandidates);
+  }
+
   function summarizeDraftTargetContext(context = {}, snapshot = {}) {
     const normalizedUrl = normalizeTweetUrl(context.url);
     const tweetId = String(context.tweetId || "").trim();
     const location = snapshot.location || {};
     const textPreview = String(location.textPreview || context.post?.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const lead = buildDraftLeadText(context.post?.text || location.textPreview || "", 72);
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const ageMinutes = Number(context.post?.ageMinutes || 0);
     const mediaKind = String(location.mediaKind || context.post?.mediaKind || "").trim();
@@ -2382,8 +2448,11 @@
       viewportPosition: Number.isFinite(Number(location.viewportPosition)) ? Number(location.viewportPosition) : null,
       visibleOnPage: Boolean(location.visibleOnPage),
       handle,
+      targetTweetId: tweetId,
+      targetUrl: normalizedUrl,
       score,
       ageMinutes,
+      lead,
       textPreview,
       mediaKind,
       needsDetailContext,
@@ -2391,6 +2460,10 @@
       quickDraftAllowed,
       mediaSummaryAvailable,
       draftContextLabel,
+      sameHandlePostCount: Math.max(1, Math.floor(Number(snapshot.sameHandlePostCount) || 1)),
+      selectionHint: Number(snapshot.sameHandlePostCount || 0) > 1
+        ? "同账号多帖并存，人工点击前先核对 tweetId 和 lead。"
+        : "按 tweetId 或 lead 对准当前帖即可。",
       laneKey: String(snapshot.laneKey || "").trim(),
       laneLabel: getReplyDropDraftLaneLabel(String(snapshot.laneKey || "").trim()),
       tweetId,
@@ -2447,12 +2520,39 @@
       }
     }
 
+    const visibleFallbackCandidates = collectVisibleDraftTargetFallbackCandidates(runtimeState, attributionModel);
+    for (const candidate of visibleFallbackCandidates) {
+      const fallbackUrl = normalizeTweetUrl(candidate?.url);
+      const fallbackTweetId = extractTweetIdFromUrl(fallbackUrl);
+      if (!fallbackUrl || !fallbackTweetId || contextByTweetId.has(fallbackTweetId) || contextByUrl.has(fallbackUrl)) {
+        continue;
+      }
+      const context = await buildReplyDropCandidateContext(candidate, runtimeState, {
+        source: "candidate",
+        includeMedia,
+        attributionModel,
+        generatedAt
+      });
+      contexts.push(context);
+      contextByTweetId.set(String(context.tweetId), context);
+      contextByUrl.set(normalizeTweetUrl(context.url), context);
+    }
+
+    const sameHandleCounts = contexts.reduce((map, context) => {
+      const key = normalizeHandle(context?.author?.handle || "");
+      if (key) {
+        map.set(key, Number(map.get(key) || 0) + 1);
+      }
+      return map;
+    }, new Map());
+
     const decorate = (context, index, laneKey) => summarizeDraftTargetContext(context, {
         snapshotId,
         capturedAt,
         snapshotIndex: index + 1,
         rank: index + 1,
         laneKey,
+        sameHandlePostCount: sameHandleCounts.get(normalizeHandle(context?.author?.handle || "")) || 1,
         location: domLocations.byUrl.get(normalizeTweetUrl(context.url)) ||
           domLocations.byTweetId.get(String(context.tweetId || "").trim()) ||
           {

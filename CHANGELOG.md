@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.236
+
+- 修复人工模式同号多帖串帖：`getDraftTargets()` 现在固定返回 `targetTweetId`、`targetUrl`、`lead`、`selectionHint`，人工点击前能直接对准具体帖文
+- 修复“屏幕可见但完全没进包”的漏包：运行时候选缺失时，会从当前可见 DOM 补做一次打分并回填到 `candidates` / `filteredCandidates` / `visibleScoredPosts`
+- 新增 `sameHandlePostCount`，同账号多帖并存时明确提示先核对 `tweetId + lead`
+
 ## 0.2.235
 
 - 调整候选路由：`crowded` 不再默认映射到 `queue-tomorrow`，改为 `queue-tonight`
