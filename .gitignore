@@ -1,4 +1,6 @@
 replydrop-p*.zip
+!downloads/
+!downloads/replydrop-p*.zip
 HANDOFF-*
 PRODUCT-GAP-*
 ScreenShot_*
