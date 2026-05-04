@@ -7541,6 +7541,29 @@ body {
   line-height: 1.45;
 }
 
+.replyFeedbackPager {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 10px 4px 44px;
+}
+
+.replyFeedbackPagerMeta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+  flex: 1;
+}
+
+.replyFeedbackPager .deskActionButton {
+  min-width: 76px;
+}
+
 .queueCard,
 .queueEmptyState {
   display: grid;

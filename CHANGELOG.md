@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.249
+
+- Chrome / Brave 同步当前 Safari `0.2.248` 评分与共享 runtime 基线，水滴打分、候选路由、队列和执行诊断口径保持一致
+- 互关帖不再按蓝 V / 互关文案做硬封禁，中英日韩互关文本改按流量、流速和上下文综合评分，高分仍可进入回复窗口
+- Chrome 公开安装包版本提升到 `0.2.249`
+
 ## 0.2.236
 
 - 修复人工模式同号多帖串帖：`getDraftTargets()` 现在固定返回 `targetTweetId`、`targetUrl`、`lead`、`selectionHint`，人工点击前能直接对准具体帖文

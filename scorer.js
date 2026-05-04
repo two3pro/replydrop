@@ -211,10 +211,52 @@
     "イベント", "キャンペーン", "受賞", "公式発表", "お知らせ", "サービス状況",
     "공지", "이벤트", "캠페인", "수상", "공식 발표", "서비스 점검"
   ];
+  const BROADCAST_FORMAT_TERMS = [
+    "breaking", "just in", "monitor", "monitoring", "watchlist", "tracking", "alert", "daily update",
+    "weekly update", "leaderboard", "top 10", "top 20", "ranked", "ranking", "scoreboard", "stats", "statistics",
+    "numbers", "metrics", "campaign", "giveaway", "task", "tasks", "check-in", "check in", "mission",
+    "missions", "report:", "recap", "event recap", "join us", "spaces", "ama", "webinar", "schedule", "agenda",
+    "day 1", "day 2", "day 3", "gm", "gn", "tap in", "tap-in", "airdrop task", "任务", "任务进度", "打卡", "签到",
+    "簽到", "榜单", "榜單", "排行", "排名", "数据", "數據", "监控", "監控", "通报", "通報", "活动", "活動",
+    "キャンペーン", "ランキング", "タスク", "チェックイン", "モニター", "통계", "랭킹", "체크인", "임무"
+  ];
+  const BROADCAST_FORMAT_PATTERNS = [
+    /\b(?:top|rank|ranking|leaderboard)\s*\d+\b/i,
+    /\bday\s*\d+\s*\/\s*\d+\b/i,
+    /\b(?:24h|48h|7d|30d)\s+(?:update|stats?|volume|growth|traffic)\b/i,
+    /\b(?:views?|impressions?|followers?|likes?|replies?)\s*(?::|=)\s*\d/i,
+    /\b\d+(?:\.\d+)?%\s*(?:growth|up|increase|ctr|engagement)\b/i,
+    /\b(?:mission|task|check[- ]?in)\s*(?:complete|completed|done|progress)\b/i,
+    /\b(?:gm|gn)\b.{0,40}\b(?:drop|comment|reply|tag)\b/i,
+    /(?:榜单|榜單|排名|排行).{0,18}\d+/,
+    /(?:打卡|签到|簽到|任务|任務).{0,18}(?:完成|进度|進度|第\d+天)/,
+    /(?:监控|監控|预警|預警|通报|通報|快讯|快訊)/,
+    /(?:キャンペーン|ランキング|タスク|チェックイン)/,
+    /(?:랭킹|체크인|임무|캠페인)/
+  ];
   const DIALOGUE_TEXT_TERMS = [
     "what do you think", "curious", "question", "reply below", "tell me", "let me know",
     "how are you", "how do you", "thoughts", "agree or disagree", "你怎么看", "你怎麼看",
     "怎么看", "怎麼看", "欢迎讨论", "歡迎討論", "聊聊", "说说", "說說"
+  ];
+  const PERSONAL_EXPRESSION_TERMS = [
+    "i think", "i feel", "i'm feeling", "i am feeling", "i noticed", "i learned", "i realised",
+    "i realized", "i wonder", "i love", "i hate", "personally", "for me", "my take", "my opinion",
+    "today i", "tonight i", "this morning", "this afternoon", "on my way", "on the train", "at home",
+    "with my mom", "with my dad", "with my friend", "with friends", "my room", "my desk", "my life",
+    "my day", "my mood", "i can't stop", "i cant stop", "i keep thinking",
+    "我觉得", "我覺得", "我发现", "我發現", "我看到", "我看见", "我看見", "我刚", "我剛", "今天我",
+    "刚刚", "剛剛", "最近", "日常", "生活", "心情", "想法", "看法", "对我来说", "對我來說",
+    "私は", "私が", "私の", "今日", "さっき", "気分", "思った", "感じた", "日常",
+    "나는", "내가", "오늘", "방금", "기분", "느꼈", "생각", "일상"
+  ];
+  const PERSONAL_EXPRESSION_PATTERNS = [
+    /\b(?:i|we)\s+(?:just|finally|still|keep|kept|really|honestly)\b/i,
+    /\bmy\s+(?:room|desk|train|flight|mom|dad|friend|life|day|take)\b/i,
+    /\b(?:today|tonight|this morning|this afternoon)\s+i\b/i,
+    /(?:我|我们|我們).{0,8}(?:觉得|覺得|发现|發現|刚|剛|今天|最近|生活|心情|想法|看法)/,
+    /(?:私|僕).{0,10}(?:今日|さっき|感じ|思っ|日常)/,
+    /(?:나|내가|우리는).{0,10}(?:오늘|방금|느꼈|생각|일상)/
   ];
   const BIRTHDAY_TEXT_TERMS = [
     "happy birthday", "birthday wishes", "birthday love", "bday", "hbd", "it's my birthday",
@@ -993,10 +1035,13 @@
   function computeReachLikelihood({
     replyOpportunityBonus = 0,
     conversationBonus = 0,
+    midTrafficConversationBonus = 0,
+    personalExpressionBonus = 0,
     trafficMomentumBonus = 0,
     sourceSurfaceBonus = 0,
     crowdingPenalty = 0,
     trafficMismatchPenalty = 0,
+    broadcastFormatPenalty = 0,
     followTrainBaitPenalty = 0,
     socialGrowthFlexPenalty = 0,
     verifiedOrganizationPenalty = 0,
@@ -1017,10 +1062,13 @@
       0.18 +
       clamp(replyOpportunityBonus / 14, 0, 1) * 0.29 +
       clamp(conversationBonus / 10, 0, 1) * 0.15 +
+      clamp(midTrafficConversationBonus / 12, 0, 1) * 0.12 +
+      clamp(personalExpressionBonus / 12, 0, 1) * 0.08 +
       clamp(trafficMomentumBonus / 14, 0, 1) * 0.13 +
       clamp(sourceSurfaceBonus / 12, 0, 1) * 0.2 -
       clamp(crowdingPenalty / 22, 0, 1) * 0.24 -
       clamp(trafficMismatchPenalty / 18, 0, 1) * 0.18 -
+      clamp(broadcastFormatPenalty / 24, 0, 1) * 0.19 -
       clamp(followTrainBaitPenalty / 24, 0, 1) * 0.34 -
       clamp(socialGrowthFlexPenalty / 32, 0, 1) * 0.26 -
       clamp(verifiedOrganizationPenalty / 20, 0, 1) * 0.21 -
@@ -1371,6 +1419,14 @@
       penalty += clamp((12 - replies) / 12, 0, 1) * weight * 0.34;
     }
 
+    if (views >= 120000 && replyRatio < 0.0032) {
+      penalty += clamp((0.0032 - replyRatio) / 0.0032, 0, 1) * weight * 0.42;
+    }
+
+    if (views >= 300000 && replies < 42) {
+      penalty += clamp((42 - replies) / 42, 0, 1) * weight * 0.38;
+    }
+
     if (replies >= 160 && views >= 60000) {
       penalty += clamp((replies - 160) / 420, 0, 1) * weight * 0.45;
     }
@@ -1451,6 +1507,14 @@
       penalty += Math.max(shallowConversationPenalty, broadcastPenalty);
     }
 
+    if (replies >= 48) {
+      penalty += clamp((replies - 48) / 160, 0, 1) * 10;
+    }
+
+    if (views >= 120000 && conversationRatio > 0 && conversationRatio < 0.0032) {
+      penalty += clamp((0.0032 - conversationRatio) / 0.0032, 0, 1) * 12;
+    }
+
     if (replies >= 250 && views >= 180000) {
       penalty += 8;
     }
@@ -1463,6 +1527,141 @@
 
     const rounded = Math.round(clamp(penalty, 0, 64));
     return rounded >= 3 ? rounded : null;
+  }
+
+  function computeBroadcastFormatPenalty(tweet, weight = 36) {
+    const text = getSemanticText(tweet) || String(tweet?.text || "");
+    const normalized = normalizeSemanticText(text);
+    if (!normalized) {
+      return null;
+    }
+
+    const formatHits = countTermMatches(normalized, BROADCAST_FORMAT_TERMS);
+    const patternHits = countRegexMatches(normalized, BROADCAST_FORMAT_PATTERNS);
+    if (!formatHits && !patternHits) {
+      return null;
+    }
+
+    const semanticTokens = countSemanticTokens(normalized);
+    const dialogueHits = countTermMatches(normalized, DIALOGUE_TEXT_TERMS) + (/[?？]/.test(normalized) ? 1 : 0);
+    if (semanticTokens >= 30 && dialogueHits > 0 && patternHits <= 1 && formatHits <= 2) {
+      return null;
+    }
+
+    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
+    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+    const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
+    const velocityPerHour = getTrafficVelocityPerHour(tweet);
+    const conversationRatio = replies > 0 && views > 0 ? (replies / views) : 0;
+    const likeReplyRatio = replies > 0 ? (likes / Math.max(replies, 1)) : (likes > 0 ? likes : 0);
+    const formatFit = clamp((patternHits * 0.82 + formatHits * 0.22) / 1.65, 0, 1);
+    const shallowConversationFit = views >= 4000
+      ? clamp((0.0045 - conversationRatio) / 0.0045, 0, 1)
+      : clamp((0.003 - conversationRatio) / 0.003, 0, 0.45);
+    const applauseFit = clamp((likeReplyRatio - 10) / 24, 0, 1);
+    const scaleFit = clamp(
+      Math.max(
+        (Math.log10(views + 1) - 3.05) / 1.7,
+        (Math.log10(velocityPerHour + 1) - 2.65) / 1.6,
+        (Math.log10(likes + 1) - 2.0) / 1.45
+      ),
+      0.25,
+      1
+    );
+    const thinFit = clamp(Math.max((26 - semanticTokens) / 26, (140 - normalized.length) / 140), 0, 1);
+    const dialogueRelief = clamp(dialogueHits / 2.6, 0, 0.42);
+    const penalty = (
+      (formatFit * 0.52) +
+      (Math.max(shallowConversationFit, applauseFit) * 0.24) +
+      (scaleFit * 0.14) +
+      (thinFit * 0.1)
+    ) * (1 - dialogueRelief) * weight;
+
+    return penalty >= 3 ? Math.max(24, penalty) : null;
+  }
+
+  function computeMidTrafficConversationBonus(tweet, weight = 12) {
+    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
+    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+    const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
+    const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
+    if (views < 1200 || views > 85000 || replies < 4 || replies > 140) {
+      return null;
+    }
+
+    const conversationRatio = replies > 0 && views > 0 ? (replies / views) : 0;
+    if (conversationRatio < 0.003 || conversationRatio > 0.032) {
+      return null;
+    }
+
+    const replyLikeRatio = replies > 0 ? likes / Math.max(replies, 1) : 0;
+    const viewCenterFit = 1 - clamp(Math.abs(Math.log10(views + 1) - 3.75) / 1.18, 0, 1);
+    const replyCenterFit = 1 - clamp(Math.abs(Math.log10(replies + 1) - 1.2) / 0.95, 0, 1);
+    const conversationFit = 1 - clamp(Math.abs(conversationRatio - 0.011) / 0.011, 0, 1);
+    const densityFit = 1 - clamp(Math.abs(replyLikeRatio - 7.5) / 10, 0, 1);
+    const ageFit = ageMinutes == null
+      ? 0.82
+      : clamp(1 - Math.max(0, ageMinutes - 240) / 420, 0.35, 1);
+    const crowdDrag = replies >= 90 ? clamp((replies - 90) / 120, 0, 0.45) : 0;
+    const bonus = (
+      (viewCenterFit * 0.3) +
+      (replyCenterFit * 0.22) +
+      (conversationFit * 0.28) +
+      (densityFit * 0.08) +
+      (ageFit * 0.12)
+    ) * (1 - crowdDrag) * weight;
+
+    return bonus >= 2 ? bonus : null;
+  }
+
+  function computePersonalExpressionBonus(tweet, weight = 12) {
+    const text = getSemanticText(tweet) || String(tweet?.text || "");
+    const normalized = normalizeSemanticText(text);
+    if (!normalized) {
+      return null;
+    }
+
+    const expressionHits = countTermMatches(normalized, PERSONAL_EXPRESSION_TERMS);
+    const patternHits = countRegexMatches(normalized, PERSONAL_EXPRESSION_PATTERNS);
+    if (!expressionHits && !patternHits) {
+      return null;
+    }
+
+    const formatHits = countTermMatches(normalized, BROADCAST_FORMAT_TERMS) + countRegexMatches(normalized, BROADCAST_FORMAT_PATTERNS);
+    const promoHits = countTermMatches(normalized, BROADCAST_TEXT_TERMS);
+    if (formatHits >= 2 || promoHits >= 3) {
+      return null;
+    }
+
+    const semanticTokens = countSemanticTokens(normalized);
+    if (semanticTokens < 6 || semanticTokens > 84) {
+      return null;
+    }
+
+    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
+    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+    const conversationRatio = replies > 0 && views > 0 ? (replies / views) : 0;
+    const intimacyFit = clamp((expressionHits * 0.48 + patternHits * 0.95) / 1.8, 0, 1);
+    const lengthFit = clamp(Math.min((semanticTokens - 4) / 18, (188 - normalized.length) / 188 + 0.45), 0.25, 1);
+    const trafficFit = clamp(
+      Math.max(
+        (Math.log10(views + 1) - 2.7) / 1.45,
+        (Math.log10(replies + 1) - 0.65) / 1.2
+      ),
+      0.25,
+      1
+    );
+    const roomFit = conversationRatio > 0.028
+      ? clamp(1 - (conversationRatio - 0.028) / 0.04, 0.3, 1)
+      : 1;
+    const bonus = (
+      (intimacyFit * 0.52) +
+      (lengthFit * 0.18) +
+      (trafficFit * 0.18) +
+      (roomFit * 0.12)
+    ) * weight;
+
+    return bonus >= 2 ? bonus : null;
   }
 
   function computeVerifiedOrganizationPenalty(tweet, weight = 16) {
@@ -2094,6 +2293,9 @@
     if (signals.socialGrowthFlexPenalty != null) {
       return { cap: 48, key: "hardCapPayoutFlex", label: "Payout or growth cap" };
     }
+    if (signals.broadcastFormatPenalty != null && !substantialAnalysis) {
+      return { cap: 54, key: "hardCapBroadcastFormat", label: "Broadcast format cap" };
+    }
     if (signals.broadcastAccountPenalty != null && !substantialAnalysis) {
       return { cap: 50, key: "hardCapBroadcast", label: "Broadcast cap" };
     }
@@ -2310,6 +2512,7 @@
 
     const keywordMatched = Object.values(matches).some(Boolean);
     const developerUpdateSignal = getDeveloperUpdateSignal(tweet);
+    const substantialAnalysis = hasSubstantialOriginalAnalysis(tweet) || developerUpdateSignal.detected;
     let score = (parts.length && availableWeight > 0)
       ? (parts.reduce((sum, current) => sum + current, 0) / availableWeight) * 100
       : 0;
@@ -2321,6 +2524,7 @@
         isThinGenericLowInfoPost(tweet) ||
         isLowInfoPileOnQuestion(tweet) ||
         getFollowTrainBaitSignal(tweet).detected ||
+        (!substantialAnalysis && computeBroadcastFormatPenalty(tweet, 40) != null) ||
         computeSocialGrowthFlexPenalty(tweet, 44) != null ||
         (computeProtocolPromoPenalty(tweet, 46) != null && !developerUpdateSignal.detected) ||
         computeRiskyContentPenalty(tweet, 42) != null
@@ -2382,6 +2586,28 @@
       });
     }
 
+    const midTrafficConversationBonus = computeMidTrafficConversationBonus(tweet, 12);
+    if (midTrafficConversationBonus != null) {
+      score += midTrafficConversationBonus;
+      breakdown.push({
+        key: "midTrafficConversation",
+        label: "Mid-traffic conversation",
+        amount: midTrafficConversationBonus,
+        kind: "quality"
+      });
+    }
+
+    const personalExpressionBonus = computePersonalExpressionBonus(tweet, 12);
+    if (personalExpressionBonus != null) {
+      score += personalExpressionBonus;
+      breakdown.push({
+        key: "personalExpression",
+        label: "Personal expression",
+        amount: personalExpressionBonus,
+        kind: "quality"
+      });
+    }
+
     const sourceSurfaceSignal = computeSourceSurfaceSignal(tweet);
     if (sourceSurfaceSignal.amount > 0) {
       score += sourceSurfaceSignal.amount;
@@ -2422,6 +2648,27 @@
         key: "trafficMismatch",
         label: "One-way traffic",
         amount: -trafficMismatchPenalty,
+        kind: "penalty"
+      });
+    }
+
+    let broadcastFormatPenalty = applyDeveloperUpdateRelief(
+      computeBroadcastFormatPenalty(tweet, 40),
+      developerUpdateSignal,
+      0.42
+    );
+    if (broadcastFormatPenalty != null && substantialAnalysis && !developerUpdateSignal.detected) {
+      broadcastFormatPenalty = broadcastFormatPenalty * 0.55;
+      if (broadcastFormatPenalty < 2) {
+        broadcastFormatPenalty = null;
+      }
+    }
+    if (broadcastFormatPenalty != null) {
+      score -= broadcastFormatPenalty;
+      breakdown.push({
+        key: "broadcastFormat",
+        label: "Broadcast or campaign format",
+        amount: -broadcastFormatPenalty,
         kind: "penalty"
       });
     }
@@ -2649,10 +2896,13 @@
     const reachLikelihood = computeReachLikelihood({
       replyOpportunityBonus: replyOpportunityBonus || 0,
       conversationBonus: conversationBonus || 0,
+      midTrafficConversationBonus: midTrafficConversationBonus || 0,
+      personalExpressionBonus: personalExpressionBonus || 0,
       trafficMomentumBonus: trafficMomentumBonus || 0,
       sourceSurfaceBonus: sourceSurfaceSignal.amount || 0,
       crowdingPenalty: crowdingPenalty || 0,
       trafficMismatchPenalty: trafficMismatchPenalty || 0,
+      broadcastFormatPenalty: broadcastFormatPenalty || 0,
       followTrainBaitPenalty: followTrainBaitPenalty || 0,
       socialGrowthFlexPenalty: socialGrowthFlexPenalty || 0,
       verifiedOrganizationPenalty: verifiedOrganizationPenalty || 0,
@@ -2675,6 +2925,7 @@
       (unprovenWindowPenalty || 0) * 0.4 +
       (crowdingPenalty || 0) * 0.65 +
       (trafficMismatchPenalty || 0) * 0.58 +
+      (broadcastFormatPenalty || 0) * 0.84 +
       (followTrainBaitPenalty || 0) * 1.18 +
       (socialGrowthFlexPenalty || 0) * 1.08 +
       (verifiedOrganizationPenalty || 0) * 0.85 +
@@ -2701,6 +2952,7 @@
     );
     let clampedScore = Math.round(clamp((score * 0.35) + (weightedScore * 0.65), 0, 100));
     const executorHardCap = computeExecutorHardCap(tweet, {
+      broadcastFormatPenalty,
       followTrainBaitPenalty,
       socialGrowthFlexPenalty,
       verifiedOrganizationPenalty,

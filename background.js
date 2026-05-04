@@ -13,12 +13,14 @@ const AttributionCore = globalThis.ReplyDropAttributionCore || null;
 const STORAGE_KEY = "x-reply-scorer-state";
 const MAX_REPLIED_TWEETS = 500;
 const MAX_RECENT_CANDIDATES = 16;
+const FLOATING_PANEL_LIMIT = 6;
 const MAX_REPLY_DETAILS = 60;
 const MAX_DISMISSED_TWEETS = 120;
 const MAX_RELATIONSHIP_STATES = 120;
 const MAX_REPLY_QUEUE = 80;
 const MAX_PUBLISH_WATCH = 40;
 const MAX_PICKUP_WATCH = 60;
+const MAX_REPLY_ARCHIVE = 1200;
 const MAX_MEDIA_SUMMARIES = 80;
 const MIDNIGHT_ALARM_NAME = "replydrop-midnight-reset";
 const TAB_BROADCAST_TIMEOUT_MS = 400;
@@ -76,7 +78,8 @@ const DEFAULT_STATE = {
   mediaSummaries: {},
   replyQueue: [],
   publishWatch: [],
-  pickupWatch: []
+  pickupWatch: [],
+  replyArchive: []
 };
 
 TOPIC_DEFS.forEach((topic, index) => {
@@ -419,19 +422,21 @@ function getCandidateLaneDescriptor(candidate = {}, uiLanguage = DEFAULT_STATE.u
     key = "crowded";
     priority = 1;
   } else if (
-    (score >= 72 && ageMinutes <= 240) ||
-    (opportunityBoost >= 12 && ageMinutes <= 360) ||
-    ((relationshipHot || memoryHot) && ageMinutes <= 720 && score >= 48)
+    (score >= 72 && ageMinutes <= 90) ||
+    (opportunityBoost >= 12 && ageMinutes <= 90) ||
+    ((relationshipHot || memoryHot) && ageMinutes <= 90 && score >= 48)
   ) {
     key = "now";
     priority = 4;
   } else if (
-    (score >= 58 && ageMinutes <= 720) ||
-    opportunityBoost >= 8 ||
-    relationshipStatus === "follow-up" ||
-    relationshipHot ||
-    memoryHot ||
-    attributionKind === "topic-validated"
+    ageMinutes <= 180 && (
+      score >= 58 ||
+      opportunityBoost >= 8 ||
+      relationshipStatus === "follow-up" ||
+      relationshipHot ||
+      memoryHot ||
+      attributionKind === "topic-validated"
+    )
   ) {
     key = "watch";
     priority = 3;
@@ -469,6 +474,15 @@ function getScheduledTimestamp(slot) {
 }
 
 function buildReplyEntriesForAttribution() {
+  const archiveEntries = Array.isArray(state.replyArchive)
+    ? state.replyArchive.map((entry) => ({
+        url: normalizeTweetUrl(entry?.targetUrl || entry?.url),
+        ...(entry && typeof entry === "object" ? entry : {})
+      }))
+    : [];
+  if (archiveEntries.length) {
+    return archiveEntries.filter((entry) => entry.url);
+  }
   return Object.entries(state.replyDetails || {}).map(([url, detail]) => ({
     url,
     ...(detail && typeof detail === "object" ? detail : {})
@@ -565,6 +579,7 @@ function resolveTweetUrlById(tweetId) {
     ...(state.replyQueue || []).map((item) => item?.url),
     ...(state.publishWatch || []).map((item) => item?.url),
     ...(state.pickupWatch || []).map((item) => item?.url),
+    ...(Array.isArray(state.replyArchive) ? state.replyArchive.flatMap((item) => [item?.targetUrl, item?.replyUrl]) : []),
     ...Object.keys(state.replyDetails || {}),
     ...Object.keys(state.repliedTweets || {}),
     ...Object.keys(state.dismissedTweets || {})
@@ -695,21 +710,64 @@ async function markTweetAsShippedById(tweetId, replyText = "") {
 
   const queueItem = getQueueItemByTweetId(normalizedTweetId);
   const candidate = getCandidateByTweetId(normalizedTweetId);
+  const replyDetailMatch = state.replyDetails?.[url] || null;
+  const pickupWatchMatch = (state.pickupWatch || []).find((item) => item?.url === url) || null;
   const finalReplyText = String(replyText || queueItem?.draft || queueItem?.text || candidate?.text || "").trim().slice(0, 560);
 
   await markTweetAsReplied(url, {
-    score: clampNumber(queueItem?.score, clampNumber(candidate?.score, 0)),
+    score: clampNumber(
+      queueItem?.score,
+      clampNumber(candidate?.score, clampNumber(replyDetailMatch?.score, clampNumber(pickupWatchMatch?.score, 0)))
+    ),
     tier: "replied",
-    authorHandle: String(queueItem?.authorHandle || candidate?.authorHandle || "").trim(),
-    authorVerified: Boolean(candidate?.authorVerified),
-    authorVerificationType: normalizeAuthorVerificationType(candidate?.authorVerificationType),
+    authorHandle: String(
+      queueItem?.authorHandle ||
+      candidate?.authorHandle ||
+      replyDetailMatch?.authorHandle ||
+      pickupWatchMatch?.authorHandle ||
+      ""
+    ).trim(),
+    authorVerified: Boolean(candidate?.authorVerified || replyDetailMatch?.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(
+      candidate?.authorVerificationType || replyDetailMatch?.authorVerificationType
+    ),
     text: finalReplyText,
-    lane: String(queueItem?.lane || "").trim(),
-    slot: String(queueItem?.slot || resolveDefaultQueueSlot(candidate)).trim(),
+    lane: String(queueItem?.lane || replyDetailMatch?.lane || pickupWatchMatch?.lane || "").trim(),
+    slot: String(
+      queueItem?.slot ||
+      replyDetailMatch?.slot ||
+      pickupWatchMatch?.slot ||
+      resolveDefaultQueueSlot(candidate)
+    ).trim(),
     keywordMatched: Boolean(queueItem?.keywordMatched || candidate?.keywordMatched),
-    matchedTopics: Array.isArray(queueItem?.matchedTopics) && queueItem.matchedTopics.length ? queueItem.matchedTopics.slice(0, 4) : (candidate?.matchedTopics || []).slice(0, 4),
-    matchedLanguages: Array.isArray(queueItem?.matchedLanguages) && queueItem.matchedLanguages.length ? queueItem.matchedLanguages.slice(0, 4) : (candidate?.matchedLanguages || []).slice(0, 4),
-    highlights: Array.isArray(queueItem?.highlights) && queueItem.highlights.length ? queueItem.highlights.slice(0, 4) : (candidate?.highlights || []).slice(0, 4),
+    matchedTopics: Array.isArray(queueItem?.matchedTopics) && queueItem.matchedTopics.length
+      ? queueItem.matchedTopics.slice(0, 4)
+      : (Array.isArray(candidate?.matchedTopics) && candidate.matchedTopics.length
+          ? candidate.matchedTopics.slice(0, 4)
+          : (replyDetailMatch?.matchedTopics || []).slice(0, 4)),
+    matchedLanguages: Array.isArray(queueItem?.matchedLanguages) && queueItem.matchedLanguages.length
+      ? queueItem.matchedLanguages.slice(0, 4)
+      : (Array.isArray(candidate?.matchedLanguages) && candidate.matchedLanguages.length
+          ? candidate.matchedLanguages.slice(0, 4)
+          : (replyDetailMatch?.matchedLanguages || []).slice(0, 4)),
+    highlights: Array.isArray(queueItem?.highlights) && queueItem.highlights.length
+      ? queueItem.highlights.slice(0, 4)
+      : (Array.isArray(candidate?.highlights) && candidate.highlights.length
+          ? candidate.highlights.slice(0, 4)
+          : (replyDetailMatch?.highlights || []).slice(0, 4)),
+    retweets: clampNumber(candidate?.retweets, clampNumber(replyDetailMatch?.retweets, 0)),
+    bookmarks: clampNumber(candidate?.bookmarks, clampNumber(replyDetailMatch?.bookmarks, 0)),
+    trafficCapturedAt: clampNumber(candidate?.trafficCapturedAt, clampNumber(replyDetailMatch?.trafficCapturedAt, 0)),
+    trafficAgeHours: clampNumber(candidate?.trafficAgeHours, clampNumber(replyDetailMatch?.trafficAgeHours, 0)),
+    trafficVelocityPerHour: clampNumber(candidate?.trafficVelocityPerHour, clampNumber(replyDetailMatch?.trafficVelocityPerHour, 0)),
+    trafficReplyVelocityPerHour: clampNumber(candidate?.trafficReplyVelocityPerHour, clampNumber(replyDetailMatch?.trafficReplyVelocityPerHour, 0)),
+    trafficEngagementRate: clampNumber(candidate?.trafficEngagementRate, clampNumber(replyDetailMatch?.trafficEngagementRate, 0)),
+    trafficReplyRatio: clampNumber(candidate?.trafficReplyRatio, clampNumber(replyDetailMatch?.trafficReplyRatio, 0)),
+    trafficPhase: String(candidate?.trafficPhase || replyDetailMatch?.trafficPhase || "").trim(),
+    trafficSource: String(candidate?.trafficSource || replyDetailMatch?.trafficSource || "").trim(),
+    baselineReplies: clampNumber(candidate?.replies, clampNumber(replyDetailMatch?.baselineReplies, 0)),
+    baselineLikes: clampNumber(candidate?.likes, clampNumber(replyDetailMatch?.baselineLikes, 0)),
+    baselineViews: clampNumber(candidate?.views, clampNumber(replyDetailMatch?.baselineViews, 0)),
     publishMode: queueItem ? "queue" : "manual"
   });
 
@@ -923,76 +981,152 @@ function normalizeRecentCandidates(value, fallback = []) {
     .slice(0, MAX_RECENT_CANDIDATES);
 }
 
+function getCandidateDisplayScore(candidate = {}) {
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.floor(clampNumber(candidate.finalScore, clampNumber(candidate.score, 0)))
+    )
+  );
+}
+
+function countFloatingHighScoreCandidates(candidates = [], threshold = DEFAULT_STATE.threshold, limit = FLOATING_PANEL_LIMIT) {
+  const displayThreshold = Math.max(0, Math.min(100, Math.floor(clampNumber(threshold, DEFAULT_STATE.threshold))));
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => candidate?.url && candidate.tier !== "hidden" && getCandidateDisplayScore(candidate) >= displayThreshold)
+    .slice(0, Math.max(0, Math.floor(clampNumber(limit, FLOATING_PANEL_LIMIT))))
+    .length;
+}
+
 function normalizeReplyDetails(value, fallback = {}) {
   const source = value && typeof value === "object" ? value : fallback;
   const entries = Object.entries(source)
     .map(([url, detail]) => {
-      const normalizedUrl = normalizeTweetUrl(url);
-      const payload = detail && typeof detail === "object" ? detail : {};
-      const pickupCheckedAt = clampNumber(payload.pickupCheckedAt, 0);
-      const pickupChecks = Math.max(0, Math.floor(clampNumber(payload.pickupChecks, 0)));
-      const pickupStatus = normalizePickupStatus(payload.pickupStatus, pickupCheckedAt ? "quiet" : "pending");
-      const pickupReviewPlan = buildPickupReviewPlan({
-        shippedAt: clampNumber(payload.timestamp, Date.now()),
-        checkedAt: pickupCheckedAt,
-        checks: pickupChecks,
-        status: pickupStatus,
-        reviewStage: payload.pickupReviewStage,
-        nextReviewAt: payload.pickupNextReviewAt,
-        settledAt: payload.pickupSettledAt
-      });
-      return [normalizedUrl, {
-        timestamp: clampNumber(payload.timestamp, Date.now()),
-        score: Math.max(0, Math.min(100, Math.floor(clampNumber(payload.score, 0)))),
-        tier: String(payload.tier || "replied"),
-        authorHandle: String(payload.authorHandle || "").trim(),
-        authorVerified: Boolean(payload.authorVerified),
-        authorVerificationType: normalizeAuthorVerificationType(payload.authorVerificationType),
-        text: String(payload.text || "").trim().slice(0, 280),
-        lane: String(payload.lane || "").trim().slice(0, 48),
-        slot: String(payload.slot || "").trim().slice(0, 24),
-        keywordMatched: Boolean(payload.keywordMatched),
-        matchedTopics: Array.isArray(payload.matchedTopics) ? payload.matchedTopics.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
-        matchedLanguages: Array.isArray(payload.matchedLanguages) ? payload.matchedLanguages.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
-        highlights: Array.isArray(payload.highlights) ? payload.highlights.map((entry) => String(entry || "").trim()).filter(Boolean).slice(0, 4) : [],
-        publishMode: String(payload.publishMode || "").trim().slice(0, 32),
-        queuedAt: clampNumber(payload.queuedAt, 0),
-        handedOffAt: clampNumber(payload.handedOffAt, 0),
-        executionLatencyMs: clampNumber(payload.executionLatencyMs, 0),
-        retweets: clampNumber(payload.retweets, 0),
-        bookmarks: clampNumber(payload.bookmarks, 0),
-        trafficCapturedAt: clampNumber(payload.trafficCapturedAt, 0),
-        trafficAgeHours: clampNumber(payload.trafficAgeHours, 0),
-        trafficVelocityPerHour: clampNumber(payload.trafficVelocityPerHour, 0),
-        trafficReplyVelocityPerHour: clampNumber(payload.trafficReplyVelocityPerHour, 0),
-        trafficEngagementRate: clampNumber(payload.trafficEngagementRate, 0),
-        trafficReplyRatio: clampNumber(payload.trafficReplyRatio, 0),
-        trafficPhase: String(payload.trafficPhase || "").trim().slice(0, 16),
-        trafficSource: String(payload.trafficSource || "").trim().slice(0, 24),
-        baselineReplies: clampNumber(payload.baselineReplies, 0),
-        baselineLikes: clampNumber(payload.baselineLikes, 0),
-        baselineViews: clampNumber(payload.baselineViews, 0),
-        pickupStatus,
-        pickupCheckedAt,
-        pickupChecks,
-        pickupReplies: clampNumber(payload.pickupReplies, 0),
-        pickupLikes: clampNumber(payload.pickupLikes, 0),
-        pickupViews: clampNumber(payload.pickupViews, 0),
-        pickupDeltaReplies: clampNumber(payload.pickupDeltaReplies, 0),
-        pickupDeltaLikes: clampNumber(payload.pickupDeltaLikes, 0),
-        pickupDeltaViews: clampNumber(payload.pickupDeltaViews, 0),
-        pickupReviewStage: pickupReviewPlan.reviewStage,
-        pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
-        pickupSettledAt: pickupReviewPlan.settledAt,
-        pickupAuthorEngaged: Boolean(payload.pickupAuthorEngaged),
-        pickupAuthorReplyUrl: normalizeTweetUrl(payload.pickupAuthorReplyUrl)
-      }];
+      const normalized = sanitizeReplyArchiveEntry({ ...(detail && typeof detail === "object" ? detail : {}), targetUrl: url }, url);
+      return normalized ? [normalized.targetUrl, normalized] : null;
     })
-    .filter(([url]) => Boolean(url))
+    .filter(Boolean)
     .sort((a, b) => b[1].timestamp - a[1].timestamp)
     .slice(0, MAX_REPLY_DETAILS);
 
   return Object.fromEntries(entries);
+}
+
+function sanitizeReplyArchiveEntry(entry = {}, fallbackTargetUrl = "") {
+  const payload = entry && typeof entry === "object" ? entry : {};
+  const targetUrl = normalizeTweetUrl(payload.targetUrl || payload.url || fallbackTargetUrl);
+  if (!targetUrl) {
+    return null;
+  }
+
+  const timestamp = clampNumber(payload.timestamp || payload.shippedAt || payload.completedAt, Date.now());
+  const pickupCheckedAt = clampNumber(payload.pickupCheckedAt ?? payload.targetCheckedAt, 0);
+  const pickupChecks = Math.max(0, Math.floor(clampNumber(payload.pickupChecks ?? payload.targetChecks, pickupCheckedAt ? 1 : 0)));
+  const pickupStatus = normalizePickupStatus(payload.pickupStatus ?? payload.targetStatus, pickupCheckedAt ? "quiet" : "pending");
+  const pickupReviewPlan = buildPickupReviewPlan({
+    shippedAt: timestamp,
+    checkedAt: pickupCheckedAt,
+    checks: pickupChecks,
+    status: pickupStatus,
+    reviewStage: payload.pickupReviewStage,
+    nextReviewAt: payload.pickupNextReviewAt,
+    settledAt: payload.pickupSettledAt
+  });
+  const replyUrl = normalizeTweetUrl(payload.replyUrl);
+  const replyTweetId = normalizeApiTweetId(payload.replyTweetId || extractTweetIdFromUrl(replyUrl));
+  const replyCheckedAt = clampNumber(payload.replyCheckedAt ?? payload.replyTrafficCapturedAt, 0);
+  const replyChecks = Math.max(0, Math.floor(clampNumber(payload.replyChecks, replyCheckedAt ? 1 : 0)));
+  const replyObservedReplies = clampNumber(payload.replyObservedReplies ?? payload.replyReplies, 0);
+  const replyObservedLikes = clampNumber(payload.replyObservedLikes ?? payload.replyLikes, 0);
+  const replyObservedViews = clampNumber(payload.replyObservedViews ?? payload.replyViews, 0);
+
+  return {
+    targetUrl,
+    url: targetUrl,
+    timestamp,
+    completedAt: clampNumber(payload.completedAt, timestamp),
+    score: Math.max(0, Math.min(100, Math.floor(clampNumber(payload.score, 0)))),
+    tier: String(payload.tier || "replied"),
+    authorHandle: String(payload.authorHandle || "").trim(),
+    authorVerified: Boolean(payload.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(payload.authorVerificationType),
+    text: String(payload.text || "").trim().slice(0, 280),
+    replyText: String(payload.replyText || payload.text || "").trim().slice(0, 560),
+    replyUrl,
+    replyTweetId,
+    lane: String(payload.lane || "").trim().slice(0, 48),
+    slot: String(payload.slot || "").trim().slice(0, 24),
+    keywordMatched: Boolean(payload.keywordMatched),
+    matchedTopics: Array.isArray(payload.matchedTopics) ? payload.matchedTopics.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4) : [],
+    matchedLanguages: Array.isArray(payload.matchedLanguages) ? payload.matchedLanguages.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4) : [],
+    highlights: Array.isArray(payload.highlights) ? payload.highlights.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4) : [],
+    publishMode: String(payload.publishMode || "").trim().slice(0, 32),
+    queuedAt: clampNumber(payload.queuedAt, 0),
+    handedOffAt: clampNumber(payload.handedOffAt, 0),
+    executionLatencyMs: clampNumber(payload.executionLatencyMs, 0),
+    retweets: clampNumber(payload.retweets, 0),
+    bookmarks: clampNumber(payload.bookmarks, 0),
+    trafficCapturedAt: clampNumber(payload.trafficCapturedAt, 0),
+    trafficAgeHours: clampNumber(payload.trafficAgeHours, 0),
+    trafficVelocityPerHour: clampNumber(payload.trafficVelocityPerHour, 0),
+    trafficReplyVelocityPerHour: clampNumber(payload.trafficReplyVelocityPerHour, 0),
+    trafficEngagementRate: clampNumber(payload.trafficEngagementRate, 0),
+    trafficReplyRatio: clampNumber(payload.trafficReplyRatio, 0),
+    trafficPhase: String(payload.trafficPhase || "").trim().slice(0, 16),
+    trafficSource: String(payload.trafficSource || "").trim().slice(0, 24),
+    baselineReplies: clampNumber(payload.baselineReplies, 0),
+    baselineLikes: clampNumber(payload.baselineLikes, 0),
+    baselineViews: clampNumber(payload.baselineViews, 0),
+    pickupStatus,
+    pickupCheckedAt,
+    pickupChecks,
+    pickupReplies: clampNumber(payload.pickupReplies ?? payload.targetObservedReplies, 0),
+    pickupLikes: clampNumber(payload.pickupLikes ?? payload.targetObservedLikes, 0),
+    pickupViews: clampNumber(payload.pickupViews ?? payload.targetObservedViews, 0),
+    pickupDeltaReplies: clampNumber(payload.pickupDeltaReplies ?? payload.targetDeltaReplies, 0),
+    pickupDeltaLikes: clampNumber(payload.pickupDeltaLikes ?? payload.targetDeltaLikes, 0),
+    pickupDeltaViews: clampNumber(payload.pickupDeltaViews ?? payload.targetDeltaViews, 0),
+    pickupReviewStage: pickupReviewPlan.reviewStage,
+    pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
+    pickupSettledAt: pickupReviewPlan.settledAt,
+    pickupAuthorEngaged: Boolean(payload.pickupAuthorEngaged),
+    pickupAuthorReplyUrl: normalizeTweetUrl(payload.pickupAuthorReplyUrl),
+    replyCheckedAt,
+    replyChecks,
+    replyObservedReplies,
+    replyObservedLikes,
+    replyObservedViews,
+    replyDeltaReplies: clampNumber(payload.replyDeltaReplies, replyObservedReplies),
+    replyDeltaLikes: clampNumber(payload.replyDeltaLikes, replyObservedLikes),
+    replyDeltaViews: clampNumber(payload.replyDeltaViews, replyObservedViews),
+    replyTrafficCapturedAt: clampNumber(payload.replyTrafficCapturedAt, replyCheckedAt),
+    replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24)
+  };
+}
+
+function normalizeReplyArchive(value, fallback = []) {
+  const source = Array.isArray(value) ? value : fallback;
+  const entries = source
+    .map((entry) => sanitizeReplyArchiveEntry(entry))
+    .filter(Boolean)
+    .sort((left, right) => (
+      Math.max(right.replyCheckedAt || 0, right.pickupCheckedAt || 0, right.timestamp || 0) -
+      Math.max(left.replyCheckedAt || 0, left.pickupCheckedAt || 0, left.timestamp || 0)
+    ))
+    .slice(0, MAX_REPLY_ARCHIVE);
+
+  const deduped = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const key = `${entry.targetUrl}::${entry.replyUrl || ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+  return deduped;
 }
 
 function normalizeReplyQueue(value, fallback = []) {
@@ -1153,6 +1287,49 @@ function normalizePickupWatch(value, fallback = []) {
   return deduped;
 }
 
+function upsertReplyArchiveEntry(targetUrl, patch = {}) {
+  const normalizedTarget = normalizeTweetUrl(targetUrl || patch.targetUrl || patch.url);
+  if (!normalizedTarget) {
+    return normalizeReplyArchive(state.replyArchive, state.replyArchive);
+  }
+
+  const normalizedReplyUrl = normalizeTweetUrl(patch.replyUrl);
+  const existing = (Array.isArray(state.replyArchive) ? state.replyArchive : []).find((item) => (
+    item?.targetUrl === normalizedTarget ||
+    (normalizedReplyUrl && normalizeTweetUrl(item?.replyUrl) === normalizedReplyUrl)
+  )) || state.replyDetails?.[normalizedTarget] || null;
+  const nextEntry = sanitizeReplyArchiveEntry({
+    ...(existing && typeof existing === "object" ? existing : {}),
+    ...(patch && typeof patch === "object" ? patch : {}),
+    targetUrl: normalizedTarget
+  }, normalizedTarget);
+  if (!nextEntry) {
+    return normalizeReplyArchive(state.replyArchive, state.replyArchive);
+  }
+
+  const remaining = (Array.isArray(state.replyArchive) ? state.replyArchive : []).filter((item) => {
+    const itemTargetUrl = normalizeTweetUrl(item?.targetUrl || item?.url);
+    const itemReplyUrl = normalizeTweetUrl(item?.replyUrl);
+    if (itemTargetUrl === normalizedTarget) {
+      return false;
+    }
+    if (normalizedReplyUrl && itemReplyUrl && itemReplyUrl === normalizedReplyUrl) {
+      return false;
+    }
+    return true;
+  });
+
+  return normalizeReplyArchive([nextEntry, ...remaining], state.replyArchive);
+}
+
+function removeReplyArchiveEntry(targetUrl) {
+  const normalizedTarget = normalizeTweetUrl(targetUrl);
+  return normalizeReplyArchive(
+    (Array.isArray(state.replyArchive) ? state.replyArchive : []).filter((item) => normalizeTweetUrl(item?.targetUrl || item?.url) !== normalizedTarget),
+    state.replyArchive
+  );
+}
+
 function normalizeRelationshipStates(value, fallback = {}) {
   const source = value && typeof value === "object" ? value : fallback;
   const now = Date.now();
@@ -1224,6 +1401,11 @@ function normalizeState(partial = {}) {
   const repliedTweets = normalizeRepliedTweets(partial.repliedTweets, state.repliedTweets ?? DEFAULT_STATE.repliedTweets);
   const dismissedTweets = normalizeDismissedTweets(partial.dismissedTweets, state.dismissedTweets ?? DEFAULT_STATE.dismissedTweets);
   const recentCandidates = normalizeRecentCandidates(partial.recentCandidates, state.recentCandidates ?? DEFAULT_STATE.recentCandidates);
+  const replyDetails = normalizeReplyDetails(partial.replyDetails, state.replyDetails ?? DEFAULT_STATE.replyDetails);
+  const replyArchiveFallback = Object.entries(replyDetails).map(([targetUrl, detail]) => ({
+    targetUrl,
+    ...(detail && typeof detail === "object" ? detail : {})
+  }));
   const next = {
     ...DEFAULT_STATE,
     scannedCount: Math.max(0, Math.floor(clampNumber(partial.scannedCount, state.scannedCount ?? 0))),
@@ -1234,13 +1416,19 @@ function normalizeState(partial = {}) {
     threshold: Math.min(100, Math.max(0, Math.floor(clampNumber(partial.threshold, state.threshold ?? DEFAULT_STATE.threshold)))),
     repliedTweets,
     dismissedTweets,
-    replyDetails: normalizeReplyDetails(partial.replyDetails, state.replyDetails ?? DEFAULT_STATE.replyDetails),
+    replyDetails,
     recentCandidates,
     relationshipStates: normalizeRelationshipStates(partial.relationshipStates, state.relationshipStates ?? DEFAULT_STATE.relationshipStates),
     mediaSummaries: normalizeMediaSummaries(partial.mediaSummaries, state.mediaSummaries ?? DEFAULT_STATE.mediaSummaries),
     replyQueue: normalizeReplyQueue(partial.replyQueue, state.replyQueue ?? DEFAULT_STATE.replyQueue),
     publishWatch: normalizePublishWatch(partial.publishWatch, state.publishWatch ?? DEFAULT_STATE.publishWatch),
-    pickupWatch: normalizePickupWatch(partial.pickupWatch, state.pickupWatch ?? DEFAULT_STATE.pickupWatch)
+    pickupWatch: normalizePickupWatch(partial.pickupWatch, state.pickupWatch ?? DEFAULT_STATE.pickupWatch),
+    replyArchive: normalizeReplyArchive(
+      partial.replyArchive,
+      (Array.isArray(state.replyArchive) && state.replyArchive.length)
+        ? state.replyArchive
+        : replyArchiveFallback
+    )
   };
 
   BOOLEAN_KEYS.forEach((key) => {
@@ -1253,18 +1441,12 @@ function normalizeState(partial = {}) {
 
   const filteredCandidates = next.recentCandidates.filter((item) => !next.repliedTweets[item.url] && !next.dismissedTweets[item.url]);
   const removedCandidates = next.recentCandidates.length - filteredCandidates.length;
-  const removedHighScoreCandidates = next.recentCandidates.filter((item) => (
-    (next.repliedTweets[item.url] || next.dismissedTweets[item.url]) &&
-    (item.tier === "high" || item.tier === "good")
-  )).length;
 
   next.recentCandidates = filteredCandidates;
   if (removedCandidates > 0) {
     next.visibleCount = Math.max(0, next.visibleCount - removedCandidates);
   }
-  if (removedHighScoreCandidates > 0) {
-    next.highScoreCount = Math.max(0, next.highScoreCount - removedHighScoreCandidates);
-  }
+  next.highScoreCount = countFloatingHighScoreCandidates(next.recentCandidates, next.threshold);
 
   return next;
 }
@@ -1427,6 +1609,73 @@ async function markTweetAsReplied(url, meta = {}) {
     },
     ...(state.pickupWatch || []).filter((item) => item?.url !== normalized)
   ], state.pickupWatch);
+  const nextReplyDetail = {
+    timestamp: replyTimestamp,
+    completedAt: replyTimestamp,
+    score: clampNumber(meta.score, clampNumber(queueMatch?.score, clampNumber(candidateMatch?.score, 0))),
+    tier: String(meta.tier || "replied"),
+    authorHandle: String(meta.authorHandle || queueMatch?.authorHandle || candidateMatch?.authorHandle || "").trim(),
+    authorVerified: Boolean(meta.authorVerified || candidateMatch?.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(meta.authorVerificationType || candidateMatch?.authorVerificationType),
+    text: String(meta.text || queueMatch?.text || queueMatch?.draft || candidateMatch?.text || "").trim().slice(0, 280),
+    replyText: String(meta.replyText || meta.text || queueMatch?.draft || queueMatch?.text || candidateMatch?.text || "").trim().slice(0, 560),
+    replyUrl: normalizeTweetUrl(meta.replyUrl || replyDetailMatch?.replyUrl),
+    replyTweetId: normalizeApiTweetId(meta.replyTweetId || extractTweetIdFromUrl(meta.replyUrl || replyDetailMatch?.replyUrl)),
+    lane: String(meta.lane || queueMatch?.lane || "").trim().slice(0, 48),
+    slot: String(meta.slot || queueMatch?.slot || "").trim().slice(0, 24),
+    keywordMatched: Boolean(meta.keywordMatched || queueMatch?.keywordMatched || candidateMatch?.keywordMatched),
+    matchedTopics: Array.isArray(meta.matchedTopics) && meta.matchedTopics.length
+      ? meta.matchedTopics
+      : (Array.isArray(queueMatch?.matchedTopics) && queueMatch.matchedTopics.length ? queueMatch.matchedTopics : candidateMatch?.matchedTopics || []),
+    matchedLanguages: Array.isArray(meta.matchedLanguages) && meta.matchedLanguages.length
+      ? meta.matchedLanguages
+      : (Array.isArray(queueMatch?.matchedLanguages) && queueMatch.matchedLanguages.length ? queueMatch.matchedLanguages : candidateMatch?.matchedLanguages || []),
+    highlights: Array.isArray(meta.highlights) && meta.highlights.length
+      ? meta.highlights
+      : (Array.isArray(queueMatch?.highlights) && queueMatch.highlights.length ? queueMatch.highlights : candidateMatch?.highlights || []),
+    publishMode: String(meta.publishMode || publishWatchMatch?.status || (queueMatch ? "queue" : "manual")).trim().slice(0, 32),
+    queuedAt: clampNumber(meta.queuedAt, clampNumber(queueMatch?.createdAt, 0)),
+    handedOffAt: clampNumber(meta.handedOffAt, clampNumber(publishWatchMatch?.handedOffAt, 0)),
+    executionLatencyMs: clampNumber(meta.executionLatencyMs, Math.max(0, replyTimestamp - clampNumber(publishWatchMatch?.handedOffAt, replyTimestamp))),
+    retweets: clampNumber(meta.retweets, clampNumber(queueMatch?.retweets, clampNumber(candidateMatch?.retweets, 0))),
+    bookmarks: clampNumber(meta.bookmarks, clampNumber(queueMatch?.bookmarks, clampNumber(candidateMatch?.bookmarks, 0))),
+    trafficCapturedAt: clampNumber(meta.trafficCapturedAt, clampNumber(queueMatch?.trafficCapturedAt, clampNumber(candidateMatch?.trafficCapturedAt, 0))),
+    trafficAgeHours: clampNumber(meta.trafficAgeHours, clampNumber(queueMatch?.trafficAgeHours, clampNumber(candidateMatch?.trafficAgeHours, 0))),
+    trafficVelocityPerHour: clampNumber(meta.trafficVelocityPerHour, clampNumber(queueMatch?.trafficVelocityPerHour, clampNumber(candidateMatch?.trafficVelocityPerHour, 0))),
+    trafficReplyVelocityPerHour: clampNumber(meta.trafficReplyVelocityPerHour, clampNumber(queueMatch?.trafficReplyVelocityPerHour, clampNumber(candidateMatch?.trafficReplyVelocityPerHour, 0))),
+    trafficEngagementRate: clampNumber(meta.trafficEngagementRate, clampNumber(queueMatch?.trafficEngagementRate, clampNumber(candidateMatch?.trafficEngagementRate, 0))),
+    trafficReplyRatio: clampNumber(meta.trafficReplyRatio, clampNumber(queueMatch?.trafficReplyRatio, clampNumber(candidateMatch?.trafficReplyRatio, 0))),
+    trafficPhase: String(meta.trafficPhase || queueMatch?.trafficPhase || candidateMatch?.trafficPhase || "").trim().slice(0, 16),
+    trafficSource: String(meta.trafficSource || queueMatch?.trafficSource || candidateMatch?.trafficSource || "").trim().slice(0, 24),
+    baselineReplies,
+    baselineLikes,
+    baselineViews,
+    pickupStatus: freshPickupReviewState.status,
+    pickupCheckedAt: freshPickupReviewState.checkedAt,
+    pickupChecks: freshPickupReviewState.checks,
+    pickupReplies: 0,
+    pickupLikes: 0,
+    pickupViews: 0,
+    pickupDeltaReplies: 0,
+    pickupDeltaLikes: 0,
+    pickupDeltaViews: 0,
+    pickupReviewStage: freshPickupReviewState.reviewStage,
+    pickupNextReviewAt: freshPickupReviewState.nextReviewAt,
+    pickupSettledAt: freshPickupReviewState.settledAt,
+    pickupAuthorEngaged: false,
+    pickupAuthorReplyUrl: "",
+    replyCheckedAt: 0,
+    replyChecks: 0,
+    replyObservedReplies: 0,
+    replyObservedLikes: 0,
+    replyObservedViews: 0,
+    replyDeltaReplies: 0,
+    replyDeltaLikes: 0,
+    replyDeltaViews: 0,
+    replyTrafficCapturedAt: 0,
+    replyTrafficSource: ""
+  };
+  const nextReplyArchive = upsertReplyArchiveEntry(normalized, nextReplyDetail);
 
   return patchState({
     repliedTweets: {
@@ -1436,63 +1685,35 @@ async function markTweetAsReplied(url, meta = {}) {
     dismissedTweets: nextDismissedTweets,
     replyDetails: {
       ...state.replyDetails,
-      [normalized]: {
-        timestamp: replyTimestamp,
-        score: clampNumber(meta.score, clampNumber(queueMatch?.score, clampNumber(candidateMatch?.score, 0))),
-        tier: String(meta.tier || "replied"),
-        authorHandle: String(meta.authorHandle || queueMatch?.authorHandle || candidateMatch?.authorHandle || "").trim(),
-        authorVerified: Boolean(meta.authorVerified || candidateMatch?.authorVerified),
-        authorVerificationType: normalizeAuthorVerificationType(meta.authorVerificationType || candidateMatch?.authorVerificationType),
-        text: String(meta.text || queueMatch?.text || queueMatch?.draft || candidateMatch?.text || "").trim().slice(0, 280),
-        lane: String(meta.lane || queueMatch?.lane || "").trim().slice(0, 48),
-        slot: String(meta.slot || queueMatch?.slot || "").trim().slice(0, 24),
-        keywordMatched: Boolean(meta.keywordMatched || queueMatch?.keywordMatched || candidateMatch?.keywordMatched),
-        matchedTopics: Array.isArray(meta.matchedTopics) && meta.matchedTopics.length
-          ? meta.matchedTopics
-          : (Array.isArray(queueMatch?.matchedTopics) && queueMatch.matchedTopics.length ? queueMatch.matchedTopics : candidateMatch?.matchedTopics || []),
-        matchedLanguages: Array.isArray(meta.matchedLanguages) && meta.matchedLanguages.length
-          ? meta.matchedLanguages
-          : (Array.isArray(queueMatch?.matchedLanguages) && queueMatch.matchedLanguages.length ? queueMatch.matchedLanguages : candidateMatch?.matchedLanguages || []),
-        highlights: Array.isArray(meta.highlights) && meta.highlights.length
-          ? meta.highlights
-          : (Array.isArray(queueMatch?.highlights) && queueMatch.highlights.length ? queueMatch.highlights : candidateMatch?.highlights || []),
-        publishMode: String(meta.publishMode || publishWatchMatch?.status || (queueMatch ? "queue" : "manual")).trim().slice(0, 32),
-        queuedAt: clampNumber(meta.queuedAt, clampNumber(queueMatch?.createdAt, 0)),
-        handedOffAt: clampNumber(meta.handedOffAt, clampNumber(publishWatchMatch?.handedOffAt, 0)),
-        executionLatencyMs: clampNumber(meta.executionLatencyMs, Math.max(0, replyTimestamp - clampNumber(publishWatchMatch?.handedOffAt, replyTimestamp))),
-        retweets: clampNumber(meta.retweets, clampNumber(queueMatch?.retweets, clampNumber(candidateMatch?.retweets, 0))),
-        bookmarks: clampNumber(meta.bookmarks, clampNumber(queueMatch?.bookmarks, clampNumber(candidateMatch?.bookmarks, 0))),
-        trafficCapturedAt: clampNumber(meta.trafficCapturedAt, clampNumber(queueMatch?.trafficCapturedAt, clampNumber(candidateMatch?.trafficCapturedAt, 0))),
-        trafficAgeHours: clampNumber(meta.trafficAgeHours, clampNumber(queueMatch?.trafficAgeHours, clampNumber(candidateMatch?.trafficAgeHours, 0))),
-        trafficVelocityPerHour: clampNumber(meta.trafficVelocityPerHour, clampNumber(queueMatch?.trafficVelocityPerHour, clampNumber(candidateMatch?.trafficVelocityPerHour, 0))),
-        trafficReplyVelocityPerHour: clampNumber(meta.trafficReplyVelocityPerHour, clampNumber(queueMatch?.trafficReplyVelocityPerHour, clampNumber(candidateMatch?.trafficReplyVelocityPerHour, 0))),
-        trafficEngagementRate: clampNumber(meta.trafficEngagementRate, clampNumber(queueMatch?.trafficEngagementRate, clampNumber(candidateMatch?.trafficEngagementRate, 0))),
-        trafficReplyRatio: clampNumber(meta.trafficReplyRatio, clampNumber(queueMatch?.trafficReplyRatio, clampNumber(candidateMatch?.trafficReplyRatio, 0))),
-        trafficPhase: String(meta.trafficPhase || queueMatch?.trafficPhase || candidateMatch?.trafficPhase || "").trim().slice(0, 16),
-        trafficSource: String(meta.trafficSource || queueMatch?.trafficSource || candidateMatch?.trafficSource || "").trim().slice(0, 24),
-        baselineReplies,
-        baselineLikes,
-        baselineViews,
-        pickupStatus: freshPickupReviewState.status,
-        pickupCheckedAt: freshPickupReviewState.checkedAt,
-        pickupChecks: freshPickupReviewState.checks,
-        pickupReplies: 0,
-        pickupLikes: 0,
-        pickupViews: 0,
-        pickupDeltaReplies: 0,
-        pickupDeltaLikes: 0,
-        pickupDeltaViews: 0,
-        pickupReviewStage: freshPickupReviewState.reviewStage,
-        pickupNextReviewAt: freshPickupReviewState.nextReviewAt,
-        pickupSettledAt: freshPickupReviewState.settledAt,
-        pickupAuthorEngaged: false,
-        pickupAuthorReplyUrl: ""
-      }
+      [normalized]: nextReplyDetail
     },
+    replyArchive: nextReplyArchive,
     replyQueue: nextReplyQueue,
     publishWatch: nextPublishWatch,
     pickupWatch: nextPickupWatch
   }, "reply-marked");
+}
+
+async function unmarkTweetAsReplied(url) {
+  const normalized = normalizeTweetUrl(url);
+  if (!normalized) {
+    return state;
+  }
+
+  const nextRepliedTweets = { ...state.repliedTweets };
+  const nextReplyDetails = { ...state.replyDetails };
+  delete nextRepliedTweets[normalized];
+  delete nextReplyDetails[normalized];
+
+  return patchState({
+    repliedTweets: nextRepliedTweets,
+    replyDetails: nextReplyDetails,
+    replyArchive: removeReplyArchiveEntry(normalized),
+    pickupWatch: normalizePickupWatch(
+      (state.pickupWatch || []).filter((item) => item?.url !== normalized),
+      state.pickupWatch
+    )
+  }, "reply-unmarked");
 }
 
 function resolvePickupSnapshotStatus(snapshot = {}) {
@@ -1582,50 +1803,120 @@ async function recordPickupSnapshot(url, snapshot = {}) {
     },
     ...(state.pickupWatch || []).filter((item) => item?.url !== normalized)
   ], state.pickupWatch);
+  const nextReplyDetail = {
+    ...(replyDetailMatch || {}),
+    targetUrl: normalized,
+    url: normalized,
+    timestamp: clampNumber(replyDetailMatch?.timestamp, checkedAt),
+    score: clampNumber(replyDetailMatch?.score, score),
+    tier: String(replyDetailMatch?.tier || "replied"),
+    authorHandle: String(replyDetailMatch?.authorHandle || authorHandle).trim(),
+    authorVerified: Boolean(replyDetailMatch?.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(replyDetailMatch?.authorVerificationType),
+    text: String(replyDetailMatch?.text || "").trim().slice(0, 280),
+    replyText: String(replyDetailMatch?.replyText || replyDetailMatch?.text || "").trim().slice(0, 560),
+    replyUrl: normalizeTweetUrl(replyDetailMatch?.replyUrl),
+    replyTweetId: normalizeApiTweetId(replyDetailMatch?.replyTweetId || extractTweetIdFromUrl(replyDetailMatch?.replyUrl)),
+    lane: String(replyDetailMatch?.lane || lane).trim().slice(0, 48),
+    slot: String(replyDetailMatch?.slot || slot).trim().slice(0, 24),
+    keywordMatched: Boolean(replyDetailMatch?.keywordMatched),
+    matchedTopics: Array.isArray(replyDetailMatch?.matchedTopics) ? replyDetailMatch.matchedTopics : [],
+    matchedLanguages: Array.isArray(replyDetailMatch?.matchedLanguages) ? replyDetailMatch.matchedLanguages : [],
+    highlights: Array.isArray(replyDetailMatch?.highlights) ? replyDetailMatch.highlights : [],
+    publishMode: String(replyDetailMatch?.publishMode || "").trim().slice(0, 32),
+    queuedAt: clampNumber(replyDetailMatch?.queuedAt, 0),
+    handedOffAt: clampNumber(replyDetailMatch?.handedOffAt, 0),
+    executionLatencyMs: clampNumber(replyDetailMatch?.executionLatencyMs, 0),
+    baselineReplies,
+    baselineLikes,
+    baselineViews,
+    pickupStatus,
+    pickupCheckedAt: checkedAt,
+    pickupChecks,
+    pickupReplies,
+    pickupLikes,
+    pickupViews,
+    pickupDeltaReplies: deltaReplies,
+    pickupDeltaLikes: deltaLikes,
+    pickupDeltaViews: deltaViews,
+    pickupReviewStage: pickupReviewPlan.reviewStage,
+    pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
+    pickupSettledAt: pickupReviewPlan.settledAt,
+    pickupAuthorEngaged: Boolean(snapshot.authorEngaged || authorReplyUrl),
+    pickupAuthorReplyUrl: authorReplyUrl,
+    replyCheckedAt: clampNumber(replyDetailMatch?.replyCheckedAt, 0),
+    replyChecks: Math.max(0, Math.floor(clampNumber(replyDetailMatch?.replyChecks, 0))),
+    replyObservedReplies: clampNumber(replyDetailMatch?.replyObservedReplies, 0),
+    replyObservedLikes: clampNumber(replyDetailMatch?.replyObservedLikes, 0),
+    replyObservedViews: clampNumber(replyDetailMatch?.replyObservedViews, 0),
+    replyDeltaReplies: clampNumber(replyDetailMatch?.replyDeltaReplies, clampNumber(replyDetailMatch?.replyObservedReplies, 0)),
+    replyDeltaLikes: clampNumber(replyDetailMatch?.replyDeltaLikes, clampNumber(replyDetailMatch?.replyObservedLikes, 0)),
+    replyDeltaViews: clampNumber(replyDetailMatch?.replyDeltaViews, clampNumber(replyDetailMatch?.replyObservedViews, 0)),
+    replyTrafficCapturedAt: clampNumber(replyDetailMatch?.replyTrafficCapturedAt, clampNumber(replyDetailMatch?.replyCheckedAt, 0)),
+    replyTrafficSource: String(replyDetailMatch?.replyTrafficSource || "").trim().slice(0, 24)
+  };
+  const nextReplyArchive = upsertReplyArchiveEntry(normalized, nextReplyDetail);
 
   return patchState({
     replyDetails: {
       ...state.replyDetails,
-      [normalized]: {
-        ...(replyDetailMatch || {}),
-        timestamp: clampNumber(replyDetailMatch?.timestamp, checkedAt),
-        score: clampNumber(replyDetailMatch?.score, score),
-        tier: String(replyDetailMatch?.tier || "replied"),
-        authorHandle: String(replyDetailMatch?.authorHandle || authorHandle).trim(),
-        authorVerified: Boolean(replyDetailMatch?.authorVerified),
-        authorVerificationType: normalizeAuthorVerificationType(replyDetailMatch?.authorVerificationType),
-        text: String(replyDetailMatch?.text || "").trim().slice(0, 280),
-        lane: String(replyDetailMatch?.lane || lane).trim().slice(0, 48),
-        slot: String(replyDetailMatch?.slot || slot).trim().slice(0, 24),
-        keywordMatched: Boolean(replyDetailMatch?.keywordMatched),
-        matchedTopics: Array.isArray(replyDetailMatch?.matchedTopics) ? replyDetailMatch.matchedTopics : [],
-        matchedLanguages: Array.isArray(replyDetailMatch?.matchedLanguages) ? replyDetailMatch.matchedLanguages : [],
-        highlights: Array.isArray(replyDetailMatch?.highlights) ? replyDetailMatch.highlights : [],
-        publishMode: String(replyDetailMatch?.publishMode || "").trim().slice(0, 32),
-        queuedAt: clampNumber(replyDetailMatch?.queuedAt, 0),
-        handedOffAt: clampNumber(replyDetailMatch?.handedOffAt, 0),
-        executionLatencyMs: clampNumber(replyDetailMatch?.executionLatencyMs, 0),
-        baselineReplies,
-        baselineLikes,
-        baselineViews,
-        pickupStatus,
-        pickupCheckedAt: checkedAt,
-        pickupChecks,
-        pickupReplies,
-        pickupLikes,
-        pickupViews,
-        pickupDeltaReplies: deltaReplies,
-        pickupDeltaLikes: deltaLikes,
-        pickupDeltaViews: deltaViews,
-        pickupReviewStage: pickupReviewPlan.reviewStage,
-        pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
-        pickupSettledAt: pickupReviewPlan.settledAt,
-        pickupAuthorEngaged: Boolean(snapshot.authorEngaged || authorReplyUrl),
-        pickupAuthorReplyUrl: authorReplyUrl
-      }
+      [normalized]: nextReplyDetail
     },
-    pickupWatch: nextPickupWatch
+    pickupWatch: nextPickupWatch,
+    replyArchive: nextReplyArchive
   }, "pickup-recorded");
+}
+
+async function recordReplyPerformanceSnapshot(targetUrl, snapshot = {}) {
+  const normalizedTarget = normalizeTweetUrl(targetUrl);
+  if (!normalizedTarget) {
+    return state;
+  }
+
+  const replyDetailMatch = state.replyDetails?.[normalizedTarget] || null;
+  const archiveMatch = (Array.isArray(state.replyArchive) ? state.replyArchive : []).find((item) => item?.targetUrl === normalizedTarget) || null;
+  const replyCheckedAt = clampNumber(snapshot.capturedAt, Date.now());
+  const replyUrl = normalizeTweetUrl(snapshot.replyUrl || snapshot.url || replyDetailMatch?.replyUrl || archiveMatch?.replyUrl);
+  const replyTweetId = normalizeApiTweetId(snapshot.replyTweetId || snapshot.tweetId || replyDetailMatch?.replyTweetId || archiveMatch?.replyTweetId || extractTweetIdFromUrl(replyUrl));
+  const observedReplies = Math.max(
+    clampNumber(replyDetailMatch?.replyObservedReplies, 0),
+    clampNumber(snapshot.replies, clampNumber(replyDetailMatch?.replyObservedReplies, 0))
+  );
+  const observedLikes = Math.max(
+    clampNumber(replyDetailMatch?.replyObservedLikes, 0),
+    clampNumber(snapshot.likes, clampNumber(replyDetailMatch?.replyObservedLikes, 0))
+  );
+  const observedViews = Math.max(
+    clampNumber(replyDetailMatch?.replyObservedViews, 0),
+    clampNumber(snapshot.views, clampNumber(replyDetailMatch?.replyObservedViews, 0))
+  );
+  const replyChecks = Math.max(0, Math.floor(clampNumber(replyDetailMatch?.replyChecks ?? archiveMatch?.replyChecks, 0))) + 1;
+  const nextReplyDetail = {
+    ...(replyDetailMatch || {}),
+    targetUrl: normalizedTarget,
+    url: normalizedTarget,
+    replyUrl,
+    replyTweetId,
+    replyCheckedAt,
+    replyChecks,
+    replyObservedReplies: observedReplies,
+    replyObservedLikes: observedLikes,
+    replyObservedViews: observedViews,
+    replyDeltaReplies: observedReplies,
+    replyDeltaLikes: observedLikes,
+    replyDeltaViews: observedViews,
+    replyTrafficCapturedAt: replyCheckedAt,
+    replyTrafficSource: String(snapshot.replyTrafficSource || snapshot.source || replyDetailMatch?.replyTrafficSource || "reply-dom").trim().slice(0, 24)
+  };
+  const nextReplyArchive = upsertReplyArchiveEntry(normalizedTarget, nextReplyDetail);
+
+  return patchState({
+    replyDetails: {
+      ...state.replyDetails,
+      [normalizedTarget]: nextReplyDetail
+    },
+    replyArchive: nextReplyArchive
+  }, "reply-performance-recorded");
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -1672,7 +1963,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       highScoreCount: Math.max(0, Math.floor(clampNumber(message.highScoreCount, state.highScoreCount))),
       visibleCount: Math.max(0, Math.floor(clampNumber(message.visibleCount, state.visibleCount))),
       recentCandidates: normalizeRecentCandidates(message.recentCandidates, state.recentCandidates)
-    }, "stats").then(() => {
+    }, "stats", false).then(() => {
       sendResponse({ ok: true, state: getPublicState() });
     }).catch((error) => {
       sendResponse({ error: String(error?.message || error) });
@@ -1689,8 +1980,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "X_REPLY_SCORER_UNMARK_REPLIED") {
+    unmarkTweetAsReplied(message.url).then(() => {
+      sendResponse({ ok: true, state: getPublicState() });
+    }).catch((error) => {
+      sendResponse({ error: String(error?.message || error) });
+    });
+    return true;
+  }
+
   if (message.type === "X_REPLY_SCORER_RECORD_PICKUP_SNAPSHOT") {
     recordPickupSnapshot(message.url, message.snapshot || {}).then(() => {
+      sendResponse({ ok: true, state: getPublicState() });
+    }).catch((error) => {
+      sendResponse({ error: String(error?.message || error) });
+    });
+    return true;
+  }
+
+  if (message.type === "X_REPLY_SCORER_RECORD_REPLY_PERFORMANCE_SNAPSHOT") {
+    recordReplyPerformanceSnapshot(message.targetUrl || message.url, message.snapshot || {}).then(() => {
       sendResponse({ ok: true, state: getPublicState() });
     }).catch((error) => {
       sendResponse({ error: String(error?.message || error) });

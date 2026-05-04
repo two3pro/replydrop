@@ -1,5 +1,7 @@
 (function initContent(global) {
-  const SCAN_DEBOUNCE_MS = 180;
+  const SCAN_DEBOUNCE_MS = 420;
+  const SCAN_MIN_INTERVAL_MS = 900;
+  const STATS_PUBLISH_MIN_INTERVAL_MS = 1200;
   const BADGE_CLASS = "xrs-score-badge";
   const BADGE_LABEL_CLASS = "xrs-score-label";
   const BADGE_ANCHOR_CLASS = "xrs-badge-anchor";
@@ -14,16 +16,37 @@
   const ARTICLE_SELECTOR = '[data-testid="tweet"]';
   const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复"];
   const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复"];
-  const DEFAULT_EXECUTOR_SEND_FLOOR = 54;
+  const DEFAULT_EXECUTOR_SEND_FLOOR = 45;
   const EXECUTOR_EMPTY_INBOX_MIN_RESCANS = 1;
-  const EXECUTOR_ROUND_MAX_TARGETS = 16;
-  const EXECUTOR_SCAN_WINDOW_SIZE = 64;
-  const EXECUTOR_ROUND_BUDGET_MS = 18 * 60 * 1000;
+  const EXECUTOR_ROUND_MAX_TARGETS = 10;
+  const EXECUTOR_SCAN_WINDOW_SIZE = 24;
+  const FLOATING_PANEL_LIMIT = 6;
+  const MAX_RUNTIME_RECENT_CANDIDATES = 16;
+  const MAX_RUNTIME_REPLY_DETAILS = 40;
+  const MAX_RUNTIME_REPLY_ARCHIVE = 320;
+  const MAX_RUNTIME_MEDIA_SUMMARIES = 48;
+  const MAX_DRAFT_PREVIEWS = 48;
+  const EXECUTOR_ROUND_BUDGET_MS = 12 * 60 * 1000;
   const EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT = 3;
-  const EXECUTOR_TARGET_GOAL_MS = 90 * 1000;
-  const EXECUTOR_TARGET_TIMEOUT_MS = 120 * 1000;
-  const EXECUTOR_NO_CANDIDATE_TIMEOUT_MS = 60 * 1000;
+  const EXECUTOR_TARGET_GOAL_MS = 20 * 1000;
+  const EXECUTOR_TARGET_TIMEOUT_MS = 20 * 1000;
+  const EXECUTOR_NO_CANDIDATE_TIMEOUT_MS = 15 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_TTL_MS = 10 * 60 * 1000;
+  const EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES = 90;
+  const EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES = 180;
+  const EXECUTOR_MIN_TRAFFIC_VIEWS = 500;
+  const EXECUTOR_MIN_TRAFFIC_REPLIES = 10;
+  const EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR = 700;
+  const EXECUTOR_TRENDING_MIN_TRAFFIC_VIEWS = 150;
+  const EXECUTOR_RISING_MIN_TRAFFIC_VIEWS = 120;
+  const EXECUTOR_RISING_MIN_TRAFFIC_VELOCITY_PER_HOUR = 400;
+  const EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS = 1800;
+  const EXECUTOR_TIMELINE_READY_TIMEOUT_MS = 1500;
+  const EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS = 3600;
+  const EXECUTOR_DETAIL_READY_TIMEOUT_MS = 1800;
+  const EXECUTOR_SETTLE_TIMEOUT_MS = 1600;
+  const EXECUTOR_POST_SEND_VERIFY_TIMEOUT_MS = 4200;
+  const PREPARED_REPLY_COMPOSER_TTL_MS = 6000;
   const HANDOFF_RETRY_DELAY_MS = 420;
   const REPLY_OPEN_FAILURE_TTL_MS = 15000;
   const SUCCESS_TEXTS = [
@@ -61,8 +84,11 @@
     "reply-context-missing": "回复上下文缺失",
     "generic-composer-opened": "误打开普通发帖框",
     "reply-target-lost": "回复目标已丢失",
+    "draft-template-blocked": "草稿过于模板化，已拦截",
+    "draft-language-mismatch": "草稿与主帖语言不匹配，已拦截",
+    "draft-topic-mismatch": "草稿与主帖主题不匹配，已拦截",
     "send-button-disabled-but-target-locked": "回复框已锁定但发送按钮仍不可用",
-    "target-timeout": "单条回复超过120秒"
+    "target-timeout": "单条回复超过20秒"
   });
   const DROP_PATH = "M10 1.25C10 1.25 3 9.12 3 14.56C3 19.03 6.13 22.5 10 22.5C13.87 22.5 17 19.03 17 14.56C17 9.12 10 1.25 10 1.25Z";
   const DROP_SVG = `
@@ -123,15 +149,20 @@
     dismissedTweets: {},
     dismissedTweetUrls: new Set(),
     replyDetails: {},
+    replyArchive: [],
     replyQueue: [],
     relationshipStates: {},
     mediaSummaries: {},
     trafficByTweetId: {},
     trafficUpdatedAt: 0,
     recentCandidates: [],
+    executorHotQueue: [],
+    executorHotQueueUpdatedAt: 0,
+    executorNoCandidateStreak: 0,
     observer: null,
     scanTimer: null,
     lazyRescanTimer: null,
+    lastScanCompletedAt: 0,
     lastSentAt: 0,
     lastDomChangeAt: 0,
     currentUserHandle: "",
@@ -142,10 +173,13 @@
     executorReplyTargetStartedAt: 0,
     timedOutReplyTargets: {},
     lastReplyOpenFailure: null,
+    preparedReplyComposer: null,
     draftPreviewsByUrl: {},
     pendingReplyOutcomeUrl: "",
     pendingReplyOutcomeTimer: null,
     apiSubmitInFlightTargetUrl: "",
+    floatingPanelSelectedIndex: 0,
+    floatingKeyboardBound: false,
     stats: {
       scannedCount: 0,
       highScoreCount: 0,
@@ -257,6 +291,39 @@
     const normalized = normalizeTweetUrl(url);
     const match = normalized.match(/\/status\/(\d+)(?:$|[/?#])/);
     return match?.[1] || "";
+  }
+
+  function hasMatchingTweetId(collection, targetUrl = "") {
+    const targetTweetId = extractTweetIdFromUrl(targetUrl);
+    if (!targetTweetId) {
+      return false;
+    }
+    if (collection instanceof Set) {
+      for (const entry of collection) {
+        if (extractTweetIdFromUrl(entry) === targetTweetId) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (collection && typeof collection === "object") {
+      return Object.keys(collection).some((entry) => extractTweetIdFromUrl(entry) === targetTweetId);
+    }
+    return false;
+  }
+
+  function hasTrackedTweetUrl(collection, targetUrl = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+    if (collection instanceof Set) {
+      return collection.has(normalizedTarget) || hasMatchingTweetId(collection, normalizedTarget);
+    }
+    if (collection && typeof collection === "object") {
+      return Boolean(collection[normalizedTarget]) || hasMatchingTweetId(collection, normalizedTarget);
+    }
+    return false;
   }
 
   function toNonNegativeNumber(value, fallback = 0) {
@@ -535,16 +602,290 @@
       .find((item) => extractTweetIdFromUrl(item?.url) === normalizedTweetId) || null;
   }
 
+  function limitStringList(value, maxItems = 4, maxLength = 96) {
+    return Array.isArray(value)
+      ? value.map((item) => sanitizeSnippet(item, maxLength)).filter(Boolean).slice(0, maxItems)
+      : [];
+  }
+
+  function getRuntimeEntryTimestamp(payload = {}) {
+    return Math.max(
+      toNonNegativeNumber(payload.completedAt, 0),
+      toNonNegativeNumber(payload.updatedAt, 0),
+      toNonNegativeNumber(payload.pickupCheckedAt, 0),
+      toNonNegativeNumber(payload.timestamp, 0),
+      toNonNegativeNumber(payload.shippedAt, 0),
+      toNonNegativeNumber(payload.queuedAt, 0),
+      toNonNegativeNumber(payload.createdAt, 0)
+    );
+  }
+
+  function sanitizeRecentCandidate(candidate = {}) {
+    const url = normalizeTweetUrl(candidate?.url);
+    if (!url) {
+      return null;
+    }
+
+    return {
+      url,
+      tweetId: normalizeApiTweetId(candidate?.tweetId || extractTweetIdFromUrl(url)),
+      score: Number(candidate?.score || 0),
+      baseScore: Number(candidate?.baseScore || candidate?.score || 0),
+      opportunityBoost: Number(candidate?.opportunityBoost || 0),
+      tier: String(candidate?.tier || "").trim(),
+      baseTier: String(candidate?.baseTier || candidate?.tier || "").trim().slice(0, 24),
+      relationshipStatus: String(candidate?.relationshipStatus || "").trim().slice(0, 24),
+      attributionKind: String(candidate?.attributionKind || "").trim().slice(0, 32),
+      authorHandle: String(candidate?.authorHandle || "").trim().slice(0, 64),
+      authorName: sanitizeSnippet(candidate?.authorName, 80),
+      authorVerified: Boolean(candidate?.authorVerified),
+      authorVerificationType: String(candidate?.authorVerificationType || "").trim().slice(0, 16),
+      text: sanitizeSnippet(candidate?.text, 220),
+      mediaAltText: sanitizeSnippet(candidate?.mediaAltText, 220),
+      sourceSurface: String(candidate?.sourceSurface || "").trim().slice(0, 24),
+      postScore: Number(candidate?.postScore || candidate?.score || 0),
+      reachLikelihood: Number(candidate?.reachLikelihood || 0),
+      understandingConfidence: Number(candidate?.understandingConfidence || 0),
+      authorFit: Number(candidate?.authorFit || 0),
+      finalScore: Number(candidate?.finalScore || candidate?.score || 0),
+      peakFinalScore: Number(candidate?.peakFinalScore || candidate?.finalScore || candidate?.score || 0),
+      peakSourceSurface: String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim().slice(0, 24),
+      peakObservedAt: toNonNegativeNumber(candidate?.peakObservedAt || candidate?.timestamp, 0),
+      blockReason: sanitizeSnippet(candidate?.blockReason, 80),
+      lowSemanticConfidence: Boolean(candidate?.lowSemanticConfidence),
+      timestamp: toNonNegativeNumber(candidate?.timestamp, Date.now()),
+      mediaKind: String(candidate?.mediaKind || "").trim().slice(0, 24),
+      likes: toNonNegativeNumber(candidate?.likes, 0),
+      replies: toNonNegativeNumber(candidate?.replies, 0),
+      views: toNonNegativeNumber(candidate?.views, 0),
+      retweets: toNonNegativeNumber(candidate?.retweets, 0),
+      bookmarks: toNonNegativeNumber(candidate?.bookmarks, 0),
+      trafficCapturedAt: toNonNegativeNumber(candidate?.trafficCapturedAt, 0),
+      trafficAgeHours: toNonNegativeNumber(candidate?.trafficAgeHours, 0),
+      trafficVelocityPerHour: toNonNegativeNumber(candidate?.trafficVelocityPerHour, 0),
+      trafficReplyVelocityPerHour: toNonNegativeNumber(candidate?.trafficReplyVelocityPerHour, 0),
+      trafficEngagementRate: toNonNegativeNumber(candidate?.trafficEngagementRate, 0),
+      trafficReplyRatio: toNonNegativeNumber(candidate?.trafficReplyRatio, 0),
+      trafficPhase: String(candidate?.trafficPhase || "").trim().slice(0, 16),
+      trafficSource: String(candidate?.trafficSource || "").trim().slice(0, 24),
+      breakdown: Array.isArray(candidate?.breakdown)
+        ? candidate.breakdown.slice(0, 8).map((item) => ({
+            key: sanitizeSnippet(item?.key, 48),
+            label: sanitizeSnippet(item?.label, 80),
+            amount: Number(item?.amount || 0),
+            kind: sanitizeSnippet(item?.kind, 24)
+          })).filter((item) => item.key)
+        : [],
+      highlights: limitStringList(candidate?.highlights, 4, 96),
+      keywordMatched: Boolean(candidate?.keywordMatched),
+      matchedTopics: limitStringList(candidate?.matchedTopics, 4, 48),
+      matchedLanguages: limitStringList(candidate?.matchedLanguages, 4, 24),
+      needsDetailContext: Boolean(candidate?.needsDetailContext),
+      mediaContextMissing: Boolean(candidate?.mediaContextMissing),
+      quickDraftAllowed: Boolean(candidate?.quickDraftAllowed),
+      mediaSummaryAvailable: Boolean(candidate?.mediaSummaryAvailable),
+      timelineInlineReplyEligible: Boolean(candidate?.timelineInlineReplyEligible),
+      preferredOpenMode: String(candidate?.preferredOpenMode || "detail-page").trim().slice(0, 24),
+      draft: sanitizeSnippet(candidate?.draft, 560),
+      replyText: sanitizeSnippet(candidate?.replyText, 560)
+    };
+  }
+
+  function pruneRecentCandidates(candidates = [], limit = MAX_RUNTIME_RECENT_CANDIDATES) {
+    const deduped = new Map();
+    (Array.isArray(candidates) ? candidates : []).forEach((candidate) => {
+      const sanitized = sanitizeRecentCandidate(candidate);
+      if (!sanitized?.url) {
+        return;
+      }
+      deduped.set(sanitized.url, sanitized);
+    });
+    return Array.from(deduped.values())
+      .sort((left, right) => {
+        const rightScore = Number(right?.finalScore || right?.score || 0);
+        const leftScore = Number(left?.finalScore || left?.score || 0);
+        if (rightScore !== leftScore) {
+          return rightScore - leftScore;
+        }
+        return toNonNegativeNumber(right?.peakObservedAt || right?.timestamp, 0) - toNonNegativeNumber(left?.peakObservedAt || left?.timestamp, 0);
+      })
+      .slice(0, limit);
+  }
+
+  function sanitizeReplyDetailEntry(url, detail = {}) {
+    const normalizedUrl = normalizeTweetUrl(url);
+    if (!normalizedUrl) {
+      return null;
+    }
+    const payload = detail && typeof detail === "object" ? detail : {};
+    const replyText = String(payload.replyText || payload.text || "").trim().slice(0, 560);
+    return [normalizedUrl, {
+      timestamp: toNonNegativeNumber(payload.timestamp, Date.now()),
+      completedAt: toNonNegativeNumber(payload.completedAt, toNonNegativeNumber(payload.timestamp, Date.now())),
+      score: Number(payload.score || 0),
+      tier: String(payload.tier || "replied").trim().slice(0, 24),
+      authorHandle: String(payload.authorHandle || payload.handle || "").trim().slice(0, 64),
+      authorVerified: Boolean(payload.authorVerified),
+      authorVerificationType: String(payload.authorVerificationType || "").trim().slice(0, 16),
+      text: replyText.slice(0, 280),
+      replyText,
+      replyUrl: normalizeTweetUrl(payload.replyUrl),
+      replyTweetId: normalizeApiTweetId(payload.replyTweetId || extractTweetIdFromUrl(payload.replyUrl)),
+      lane: String(payload.lane || "").trim().slice(0, 48),
+      slot: String(payload.slot || "").trim().slice(0, 24),
+      keywordMatched: Boolean(payload.keywordMatched),
+      matchedTopics: limitStringList(payload.matchedTopics, 4, 48),
+      matchedLanguages: limitStringList(payload.matchedLanguages, 4, 24),
+      highlights: limitStringList(payload.highlights, 4, 96),
+      publishMode: String(payload.publishMode || "").trim().slice(0, 32),
+      queuedAt: toNonNegativeNumber(payload.queuedAt, 0),
+      handedOffAt: toNonNegativeNumber(payload.handedOffAt, 0),
+      executionLatencyMs: toNonNegativeNumber(payload.executionLatencyMs, 0),
+      retweets: toNonNegativeNumber(payload.retweets, 0),
+      bookmarks: toNonNegativeNumber(payload.bookmarks, 0),
+      trafficCapturedAt: toNonNegativeNumber(payload.trafficCapturedAt, 0),
+      trafficAgeHours: toNonNegativeNumber(payload.trafficAgeHours, 0),
+      trafficVelocityPerHour: toNonNegativeNumber(payload.trafficVelocityPerHour, 0),
+      trafficReplyVelocityPerHour: toNonNegativeNumber(payload.trafficReplyVelocityPerHour, 0),
+      trafficEngagementRate: toNonNegativeNumber(payload.trafficEngagementRate, 0),
+      trafficReplyRatio: toNonNegativeNumber(payload.trafficReplyRatio, 0),
+      trafficPhase: String(payload.trafficPhase || "").trim().slice(0, 16),
+      trafficSource: String(payload.trafficSource || "").trim().slice(0, 24),
+      baselineReplies: toNonNegativeNumber(payload.baselineReplies, 0),
+      baselineLikes: toNonNegativeNumber(payload.baselineLikes, 0),
+      baselineViews: toNonNegativeNumber(payload.baselineViews, 0),
+      pickupStatus: String(payload.pickupStatus || "").trim().slice(0, 24),
+      pickupCheckedAt: toNonNegativeNumber(payload.pickupCheckedAt, 0),
+      pickupChecks: Math.max(0, Math.floor(Number(payload.pickupChecks || 0))),
+      pickupReplies: toNonNegativeNumber(payload.pickupReplies, 0),
+      pickupLikes: toNonNegativeNumber(payload.pickupLikes, 0),
+      pickupViews: toNonNegativeNumber(payload.pickupViews, 0),
+      pickupDeltaReplies: toNonNegativeNumber(payload.pickupDeltaReplies, 0),
+      pickupDeltaLikes: toNonNegativeNumber(payload.pickupDeltaLikes, 0),
+      pickupDeltaViews: toNonNegativeNumber(payload.pickupDeltaViews, 0),
+      pickupReviewStage: String(payload.pickupReviewStage || "").trim().slice(0, 24),
+      pickupNextReviewAt: toNonNegativeNumber(payload.pickupNextReviewAt, 0),
+      pickupSettledAt: toNonNegativeNumber(payload.pickupSettledAt, 0),
+      pickupAuthorEngaged: Boolean(payload.pickupAuthorEngaged),
+      pickupAuthorReplyUrl: normalizeTweetUrl(payload.pickupAuthorReplyUrl),
+      replyCheckedAt: toNonNegativeNumber(payload.replyCheckedAt, 0),
+      replyChecks: Math.max(0, Math.floor(Number(payload.replyChecks || 0))),
+      replyObservedReplies: toNonNegativeNumber(payload.replyObservedReplies, 0),
+      replyObservedLikes: toNonNegativeNumber(payload.replyObservedLikes, 0),
+      replyObservedViews: toNonNegativeNumber(payload.replyObservedViews, 0),
+      replyDeltaReplies: toNonNegativeNumber(payload.replyDeltaReplies, 0),
+      replyDeltaLikes: toNonNegativeNumber(payload.replyDeltaLikes, 0),
+      replyDeltaViews: toNonNegativeNumber(payload.replyDeltaViews, 0),
+      replyTrafficCapturedAt: toNonNegativeNumber(payload.replyTrafficCapturedAt, 0),
+      replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24)
+    }];
+  }
+
+  function pruneReplyDetails(replyDetails = {}, limit = MAX_RUNTIME_REPLY_DETAILS) {
+    return Object.fromEntries(
+      Object.entries(replyDetails && typeof replyDetails === "object" ? replyDetails : {})
+        .map(([url, detail]) => sanitizeReplyDetailEntry(url, detail))
+        .filter(Boolean)
+        .sort((left, right) => getRuntimeEntryTimestamp(right?.[1] || {}) - getRuntimeEntryTimestamp(left?.[1] || {}))
+        .slice(0, limit)
+    );
+  }
+
+  function sanitizeReplyArchiveEntry(entry = {}) {
+    const payload = entry && typeof entry === "object" ? entry : {};
+    const targetUrl = normalizeTweetUrl(payload.targetUrl || payload.url);
+    const detailEntry = sanitizeReplyDetailEntry(targetUrl, payload);
+    if (!targetUrl || !detailEntry?.[1]) {
+      return null;
+    }
+    return {
+      targetUrl,
+      ...detailEntry[1]
+    };
+  }
+
+  function pruneReplyArchive(replyArchive = [], limit = MAX_RUNTIME_REPLY_ARCHIVE) {
+    return (Array.isArray(replyArchive) ? replyArchive : [])
+      .map((entry) => sanitizeReplyArchiveEntry(entry))
+      .filter(Boolean)
+      .sort((left, right) => (
+        Math.max(right.replyCheckedAt || 0, right.pickupCheckedAt || 0, right.timestamp || 0) -
+        Math.max(left.replyCheckedAt || 0, left.pickupCheckedAt || 0, left.timestamp || 0)
+      ))
+      .slice(0, limit);
+  }
+
+  function sanitizeMediaSummaryEntry(tweetId, detail = {}) {
+    const normalizedTweetId = normalizeApiTweetId(tweetId);
+    if (!normalizedTweetId) {
+      return null;
+    }
+    const payload = detail && typeof detail === "object" ? detail : {};
+    const summary = String(payload.summary || "").trim().slice(0, 1200);
+    const ocrText = String(payload.ocrText || payload.ocr || "").trim().slice(0, 1600);
+    if (!summary && !ocrText) {
+      return null;
+    }
+    return [normalizedTweetId, {
+      tweetId: normalizedTweetId,
+      summary,
+      ocrText,
+      confidence: Math.max(0, Math.min(1, Number(payload.confidence || 0))),
+      source: String(payload.source || "agent-vision").trim().slice(0, 48),
+      mediaKinds: limitStringList(payload.mediaKinds, 8, 24),
+      frameCount: Math.max(0, Math.floor(Number(payload.frameCount || 0))),
+      updatedAt: toNonNegativeNumber(payload.updatedAt, Date.now())
+    }];
+  }
+
+  function pruneMediaSummaries(mediaSummaries = {}, limit = MAX_RUNTIME_MEDIA_SUMMARIES) {
+    return Object.fromEntries(
+      Object.entries(mediaSummaries && typeof mediaSummaries === "object" ? mediaSummaries : {})
+        .map(([tweetId, detail]) => sanitizeMediaSummaryEntry(tweetId, detail))
+        .filter(Boolean)
+        .sort((left, right) => toNonNegativeNumber(right?.[1]?.updatedAt, 0) - toNonNegativeNumber(left?.[1]?.updatedAt, 0))
+        .slice(0, limit)
+    );
+  }
+
+  function pruneDraftPreviews(previews = {}, limit = MAX_DRAFT_PREVIEWS) {
+    return Object.fromEntries(
+      Object.entries(previews && typeof previews === "object" ? previews : {})
+        .map(([url, preview]) => {
+          const normalizedUrl = normalizeTweetUrl(url || preview?.url);
+          if (!normalizedUrl) {
+            return null;
+          }
+          return [normalizedUrl, {
+            url: normalizedUrl,
+            tweetId: normalizeApiTweetId(preview?.tweetId || extractTweetIdFromUrl(normalizedUrl)),
+            replyText: sanitizeSnippet(preview?.replyText || preview?.previewText || preview?.draft, 560),
+            confidence: Number(preview?.confidence || 0),
+            riskFlags: limitStringList(preview?.riskFlags, 6, 48),
+            updatedAt: toNonNegativeNumber(preview?.updatedAt, Date.now())
+          }];
+        })
+        .filter((entry) => entry?.[1]?.replyText)
+        .sort((left, right) => toNonNegativeNumber(right?.[1]?.updatedAt, 0) - toNonNegativeNumber(left?.[1]?.updatedAt, 0))
+        .slice(0, limit)
+    );
+  }
+
   function getLocalRuntimeStateSnapshot(reason = "local-fallback") {
+    const replyDetails = pruneReplyDetails(state.replyDetails);
+    const replyArchive = pruneReplyArchive(state.replyArchive);
+    const recentCandidates = pruneRecentCandidates(state.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE);
+    const mediaSummaries = pruneMediaSummaries(state.mediaSummaries);
     return {
       settings: { ...(state.settings || {}) },
       repliedTweets: { ...(state.repliedTweets || {}) },
       dismissedTweets: { ...(state.dismissedTweets || {}) },
-      replyDetails: { ...(state.replyDetails || {}) },
+      replyDetails,
+      replyArchive,
       replyQueue: Array.isArray(state.replyQueue) ? state.replyQueue.slice() : [],
-      recentCandidates: Array.isArray(state.recentCandidates) ? state.recentCandidates.slice() : [],
+      recentCandidates,
       relationshipStates: { ...(state.relationshipStates || {}) },
-      mediaSummaries: { ...(state.mediaSummaries || {}) },
+      mediaSummaries,
       trafficUpdatedAt: state.trafficUpdatedAt || 0,
       stats: { ...(state.stats || {}) },
       apiStateSource: reason
@@ -568,7 +909,9 @@
           if (tweet?.url && !tweet.promoted && !tweet.isOwnTweet) {
             const baseAnalysis = global.XReplyScorer.analyzeTweet(tweet, state.settings);
             const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, buildOpportunityContext());
-            candidate = buildCandidatePayload(tweet, analysis, String(analysis.tier || tier || "low-outline"));
+            const mediaSummary = getMediaSummaryFromState(state, extractTweetIdFromUrl(tweet.url));
+            const draftCandidate = buildCandidatePayload(tweet, analysis, String(analysis.tier || tier || "low-outline"));
+            candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
             storeCandidatePayload(article, candidate);
           }
         } catch (_error) {}
@@ -705,15 +1048,46 @@
       domCandidates = collectDomCandidateSnapshot();
     }
 
-    const mergedCandidates = mergeApiCandidateLists(runtimeCandidates, domCandidates);
+    const mergedCandidates = mergeApiCandidateLists(runtimeCandidates, domCandidates).filter((candidate) => {
+      const url = normalizeTweetUrl(candidate?.url);
+      if (!url) {
+        return false;
+      }
+      if (hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
+        return false;
+      }
+      if (hasTrackedTweetUrl(runtimeState?.repliedTweets, url) || hasTrackedTweetUrl(runtimeState?.dismissedTweets, url)) {
+        return false;
+      }
+      if (hasTrackedTweetUrl(state.replyDetails, url) || hasTrackedTweetUrl(runtimeState?.replyDetails, url)) {
+        return false;
+      }
+      return true;
+    });
+    const hydratedCandidates = mergedCandidates.map((candidate) => {
+      const url = normalizeTweetUrl(candidate?.url);
+      const tweetId = extractTweetIdFromUrl(url);
+      const liveArticle = tweetId ? findTweetArticleByTweetId(tweetId, url) : findReplyArticle(url);
+      const mediaSummary = tweetId ? getMediaSummaryFromState(runtimeState || {}, tweetId) : null;
+      return attachCandidateExecutionMeta(candidate, liveArticle, mediaSummary);
+    });
     return {
       ...(runtimeState && typeof runtimeState === "object" ? runtimeState : {}),
-      recentCandidates: mergedCandidates,
+      recentCandidates: hydratedCandidates,
+      lastScanAt: Number(
+        state.lastScanCompletedAt ||
+        runtimeState?.lastScanAt ||
+        runtimeState?.updatedAt ||
+        0
+      ),
       pageCandidateSync: {
         runtimeCandidateCount: runtimeCandidates.length,
         domCandidateCount: domCandidates.length,
         usedDomFallback: domCandidates.length > 0 && mergedCandidates.length >= domCandidates.length && runtimeCandidates.length < domCandidates.length,
-        scanPending: Boolean(state.scanTimer || state.lazyRescanTimer)
+        scanPending: Boolean(state.scanTimer || state.lazyRescanTimer),
+        updatedAt: Number(state.lastScanCompletedAt || runtimeState?.updatedAt || 0),
+        scannedCount: Number(state.stats?.scannedCount || runtimeState?.scannedCount || 0),
+        visibleCount: Number(state.stats?.visibleCount || runtimeState?.visibleCount || 0)
       }
     };
   }
@@ -776,18 +1150,21 @@
     if ((crowded || broadcastHeavy) && opportunityBoost < 10 && score < 84 && !validatedRelationshipHot && !memoryHot) {
       key = "crowded";
     } else if (
-      (score >= 72 && ageMinutes <= 240) ||
-      (opportunityBoost >= 12 && ageMinutes <= 360) ||
-      ((validatedRelationshipHot || memoryHot) && ageMinutes <= 720 && score >= 52)
+      (score >= 54 && ageMinutes <= 90) ||
+      (score >= 46 && ageMinutes <= 20 && replies >= 1) ||
+      (opportunityBoost >= 10 && ageMinutes <= 90) ||
+      ((validatedRelationshipHot || memoryHot) && ageMinutes <= 90 && score >= 52)
     ) {
       key = "now";
     } else if (
-      (score >= 54 && ageMinutes <= 720) ||
-      opportunityBoost >= 8 ||
-      relationshipStatus === "follow-up" ||
-      validatedRelationshipHot ||
-      memoryHot ||
-      attributionKind === "topic-validated"
+      ageMinutes <= 180 && (
+        score >= 44 ||
+        opportunityBoost >= 6 ||
+        relationshipStatus === "follow-up" ||
+        validatedRelationshipHot ||
+        memoryHot ||
+        attributionKind === "topic-validated"
+      )
     ) {
       key = "watch";
     }
@@ -898,9 +1275,7 @@
     if (Number.isFinite(configured)) {
       return Math.max(0, Math.min(100, Math.floor(configured)));
     }
-
-    const averageLineScore = getConfiguredAverageLine(settings);
-    return Math.max(DEFAULT_EXECUTOR_SEND_FLOOR, Math.min(100, averageLineScore + 8));
+    return Math.max(getConfiguredDisplayThreshold(settings), DEFAULT_EXECUTOR_SEND_FLOOR);
   }
 
   function getCandidateReferenceScore(candidate = {}) {
@@ -921,6 +1296,14 @@
       return Math.max(0, Math.min(100, Math.round(finalScore)));
     }
     return Math.max(0, Math.min(100, Math.round(Number(candidate?.score || 0))));
+  }
+
+  function getReplyDropAgeMinutes(timestamp) {
+    const normalized = Number(timestamp || 0);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      return 999;
+    }
+    return Math.max(0, Math.round((Date.now() - normalized) / 60000));
   }
 
   function buildLiveCandidateRecheck(candidate = {}, article = null) {
@@ -947,6 +1330,7 @@
     const averageLineScore = getConfiguredAverageLine(state.settings);
     const executorSendFloor = getConfiguredExecutorSendFloor(state.settings);
     const displayThreshold = getConfiguredDisplayThreshold(state.settings);
+    const liveAgeMinutes = getReplyDropAgeMinutes(tweet?.timestamp || candidate?.timestamp || 0);
     const previewSurface = String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim();
     const liveSurface = String(tweet?.sourceSurface || liveAnalysis?.sourceSurface || "").trim();
     const scoreDelta = liveScore - previewScore;
@@ -955,6 +1339,8 @@
     const belowAverageLine = liveScore < averageLineScore;
     const belowExecutorSendFloor = liveScore < executorSendFloor;
     const belowDisplayThreshold = liveScore < displayThreshold;
+    const olderThanAutoWindow = liveAgeMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES;
+    const staleReplyWindow = liveAgeMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES;
     const surfaceChanged = Boolean(previewSurface && liveSurface && previewSurface !== liveSurface);
     const flags = [];
 
@@ -973,11 +1359,14 @@
     if (belowDisplayThreshold) {
       flags.push("below-display-floor");
     }
+    if (olderThanAutoWindow) {
+      flags.push(staleReplyWindow ? "older-than-reply-window" : "older-than-auto-window");
+    }
     if (String(liveAnalysis?.blockReason || "").trim()) {
       flags.push(String(liveAnalysis.blockReason).trim());
     }
 
-    const skipRecommended = belowAverageLine || belowExecutorSendFloor;
+    const skipRecommended = belowDisplayThreshold || belowExecutorSendFloor || olderThanAutoWindow;
     if (skipRecommended) {
       flags.push("skip-recommended");
     }
@@ -998,6 +1387,7 @@
       previewScore,
       currentCandidateScore,
       liveScore,
+      liveAgeMinutes,
       scoreDelta,
       currentDelta,
       previewSurface,
@@ -1009,6 +1399,8 @@
       belowAverageLine,
       belowExecutorSendFloor,
       belowDisplayThreshold,
+      olderThanAutoWindow,
+      staleReplyWindow,
       skipRecommended,
       flags: Array.from(new Set(flags)),
       liveTier: String(liveAnalysis?.tier || "").trim(),
@@ -1021,6 +1413,9 @@
       return "";
     }
     if (recheck.skipRecommended) {
+      if (recheck.olderThanAutoWindow) {
+        return `打开后帖龄 ${recheck.liveAgeMinutes} 分钟，超过自动回复窗口 ${EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES} 分钟，建议跳过`;
+      }
       if (recheck.belowExecutorSendFloor) {
         return `打开后分数 ${recheck.liveScore}，低于自动发送线 ${recheck.executorSendFloor}，建议跳过`;
       }
@@ -1032,11 +1427,81 @@
     return "";
   }
 
+  function normalizeTrafficPhaseKey(phase = "") {
+    const normalized = String(phase || "").trim().toLowerCase();
+    if (["viral", "trending", "rising", "normal"].includes(normalized)) {
+      return normalized;
+    }
+    return normalized ? normalized : "";
+  }
+
+  function buildExecutorTrafficProfile(metrics = {}) {
+    const views = Math.max(0, Number(metrics?.views) || 0);
+    const replies = Math.max(0, Number(metrics?.replies) || 0);
+    const velocityPerHour = Math.max(0, Number(metrics?.velocityPerHour) || 0);
+    const phase = normalizeTrafficPhaseKey(metrics?.phase);
+    const trendingLike = phase === "trending" || phase === "viral";
+    const risingLike = phase === "rising";
+    const qualified = (
+      views >= EXECUTOR_MIN_TRAFFIC_VIEWS ||
+      replies >= EXECUTOR_MIN_TRAFFIC_REPLIES ||
+      velocityPerHour >= EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR ||
+      (trendingLike && views >= EXECUTOR_TRENDING_MIN_TRAFFIC_VIEWS) ||
+      (risingLike &&
+        views >= EXECUTOR_RISING_MIN_TRAFFIC_VIEWS &&
+        velocityPerHour >= EXECUTOR_RISING_MIN_TRAFFIC_VELOCITY_PER_HOUR)
+    );
+    const phaseRank = phase === "viral" ? 4 : phase === "trending" ? 3 : phase === "rising" ? 2 : phase === "normal" ? 1 : 0;
+    const priority = (
+      (qualified ? 1_000_000_000 : 0) +
+      (phaseRank * 100_000_000) +
+      (Math.min(views, 250000) * 100) +
+      (Math.min(replies, 5000) * 1000) +
+      Math.min(Math.round(velocityPerHour), 100000)
+    );
+    return {
+      views,
+      replies,
+      velocityPerHour,
+      phase,
+      qualified,
+      phaseRank,
+      priority
+    };
+  }
+
   function sortApiAgentCandidates(candidates = []) {
+    const now = Date.now();
+    const getFreshnessBucket = (candidate) => {
+      const timestamp = Number(candidate?.timestamp || 0);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return 0;
+      }
+      const ageMinutes = Math.max(0, (now - timestamp) / 60000);
+      if (ageMinutes <= EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
+        return 2;
+      }
+      if (ageMinutes <= EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES) {
+        return 1;
+      }
+      return 0;
+    };
     return (Array.isArray(candidates) ? candidates : [])
       .filter((candidate) => Boolean(normalizeTweetUrl(candidate?.url)))
-      .map((candidate, index) => ({ candidate, index }))
+      .map((candidate, index) => ({
+        candidate,
+        index,
+        trafficProfile: buildExecutorTrafficProfile({
+          views: candidate?.views,
+          replies: candidate?.replies,
+          velocityPerHour: candidate?.trafficVelocityPerHour,
+          phase: candidate?.trafficPhase
+        })
+      }))
       .sort((left, right) => (
+        Number(Boolean(right.candidate?.timelineInlineReplyEligible)) - Number(Boolean(left.candidate?.timelineInlineReplyEligible)) ||
+        getFreshnessBucket(right.candidate) - getFreshnessBucket(left.candidate) ||
+        right.trafficProfile.priority - left.trafficProfile.priority ||
         Number(right.candidate?.finalScore || right.candidate?.score || 0) - Number(left.candidate?.finalScore || left.candidate?.score || 0) ||
         Number(right.candidate?.opportunityBoost || 0) - Number(left.candidate?.opportunityBoost || 0) ||
         Number(right.candidate?.postScore || 0) - Number(left.candidate?.postScore || 0) ||
@@ -1166,10 +1631,10 @@
       return false;
     }
     return Boolean(
-      state.repliedTweetUrls.has(normalized) ||
-      state.replyDetails?.[normalized] ||
-      runtimeState?.repliedTweets?.[normalized] ||
-      runtimeState?.replyDetails?.[normalized]
+      hasTrackedTweetUrl(state.repliedTweetUrls, normalized) ||
+      hasTrackedTweetUrl(state.replyDetails, normalized) ||
+      hasTrackedTweetUrl(runtimeState?.repliedTweets, normalized) ||
+      hasTrackedTweetUrl(runtimeState?.replyDetails, normalized)
     );
   }
 
@@ -1267,7 +1732,7 @@
         timeoutReasonCode: "target-timeout",
         emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
         noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
-        instruction: "从拿到候选开始计时，90秒内完成为正常；超过120秒必须停止当前目标并切换下一条。整轮最多16条或18分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有合格推荐，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；60秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。"
+      instruction: "从拿到候选开始计时，20秒内完成为正常；超过20秒必须停止当前目标并切换下一条。整轮最多10条或12分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有 auto_safe 候选，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；15秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。"
       },
       timelineReplyPolicy: {
         mode: "preview-first",
@@ -1290,6 +1755,7 @@
         getExecutorContext: "getCandidateContext",
         getExecutorSchema: "getReplySchema",
         runExecutorAction: [
+          "reply-auto",
           "addToQueue",
           "openComposer",
           "submitReply",
@@ -1348,6 +1814,7 @@
           }
         },
         markShipped: { type: "write" },
+        unmarkReplied: { type: "write" },
         skipCandidate: { type: "write" },
         runExecutorAction: {
           type: "write",
@@ -1389,7 +1856,13 @@
     const visibleArticles = getTweetNodes();
     const pageCandidateSync = runtimeState?.pageCandidateSync || null;
     const scanPending = Boolean(state.scanTimer || state.lazyRescanTimer);
-    const lastScanAt = Number(runtimeState?.lastScanAt || runtimeState?.updatedAt || pageCandidateSync?.updatedAt || 0);
+    const lastScanAt = Number(
+      state.lastScanCompletedAt ||
+      runtimeState?.lastScanAt ||
+      runtimeState?.updatedAt ||
+      pageCandidateSync?.updatedAt ||
+      0
+    );
     const apiReady = !runtimeError && canExposeReplyDropApi();
 
     return {
@@ -1416,7 +1889,7 @@
       lastError: runtimeError || "",
       recommendedAction: runtimeError
         ? "reload-page-or-refresh-recommendations"
-        : (scanPending ? "wait-and-retry" : (recentCandidates.length ? "read-draft-targets" : "refresh-recommendations")),
+        : (scanPending && !lastScanAt ? "wait-and-retry" : (recentCandidates.length ? "read-draft-targets" : "refresh-recommendations")),
       errorCodes: runtimeError ? [runtimeError] : []
     };
   }
@@ -1499,6 +1972,12 @@
     const ageMinutes = timestamp
       ? Math.max(0, Math.round((Date.now() - timestamp) / 60000))
       : 0;
+    const trafficProfile = buildExecutorTrafficProfile({
+      views: candidate?.views,
+      replies: candidate?.replies,
+      velocityPerHour: candidate?.trafficVelocityPerHour,
+      phase: candidate?.trafficPhase
+    });
     const mediaKind = String(candidate?.mediaKind || "").trim();
     const mediaPresent = hasVisualMediaKind(mediaKind);
     const needsVision = mediaPresent && Boolean(candidate?.lowSemanticConfidence || text.length < 32);
@@ -1510,7 +1989,9 @@
     const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
     const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, liveArticle);
     const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
-    const recommendedDecision = recheck?.skipRecommended ? "skip" : mapQueueSlotToDecision(recommendedSlot);
+    const recommendedDecision = (recheck?.skipRecommended || !trafficProfile.qualified)
+      ? "skip"
+      : mapQueueSlotToDecision(recommendedSlot);
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
       ? global.ReplyDropDraftCore.buildDraftPlan(candidate, attributionSummary, { laneKey: lane.key })
       : [];
@@ -1557,7 +2038,8 @@
           engagementRate: Number(candidate?.trafficEngagementRate || 0),
           replyRatio: Number(candidate?.trafficReplyRatio || 0),
           capturedAt: Number(candidate?.trafficCapturedAt || 0),
-          source: String(candidate?.trafficSource || "").trim()
+          source: String(candidate?.trafficSource || "").trim(),
+          qualified: Boolean(trafficProfile.qualified)
         },
         matchedTopics: Array.isArray(candidate?.matchedTopics) ? candidate.matchedTopics.slice(0, 4).map((item) => String(item || "").trim()).filter(Boolean) : [],
         matchedLanguages: Array.isArray(candidate?.matchedLanguages) ? candidate.matchedLanguages.slice(0, 4).map((item) => String(item || "").trim()).filter(Boolean) : [],
@@ -1734,10 +2216,10 @@
       frameCount: Math.max(0, Math.floor(Number(normalizedPayload.frameCount || 0))),
       updatedAt: Date.now()
     };
-    const nextMediaSummaries = {
+    const nextMediaSummaries = pruneMediaSummaries({
       ...(runtimeState?.mediaSummaries || state.mediaSummaries || {}),
       [tweetId]: nextSummary
-    };
+    });
     state.mediaSummaries = nextMediaSummaries;
     try {
       await updateRuntimeState({ mediaSummaries: nextMediaSummaries });
@@ -1768,25 +2250,34 @@
     if (!context || typeof context !== "object") {
       return false;
     }
+    if (String(context.routing?.recommendedDecision || "").trim() !== "reply-now") {
+      return false;
+    }
     if (context.recheck?.skipRecommended) {
       return false;
     }
     if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
       return false;
     }
-    const decision = String(context.routing?.recommendedDecision || "").trim();
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
-    if (decision === "reply-now") {
-      return score >= executorSendFloor;
+    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
+    const trafficProfile = buildExecutorTrafficProfile({
+      views: context.post?.views,
+      replies: context.post?.replies,
+      velocityPerHour: context.post?.traffic?.velocityPerHour,
+      phase: context.post?.traffic?.phase
+    });
+    if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
+      return false;
     }
-    if (decision === "queue-tonight") {
-      return score >= executorSendFloor;
+    if (!context.execution?.timelineInlineReplyEligible) {
+      return false;
     }
-    if (decision === "queue-tomorrow") {
-      return score >= Math.max(60, executorSendFloor + 4);
+    if (!trafficProfile.qualified) {
+      return false;
     }
-    return false;
+    return score >= executorSendFloor;
   }
 
   function normalizeExecutorPolicyText(value = "") {
@@ -1852,10 +2343,15 @@
 
     const uniqueReasons = Array.from(new Set(reasons.filter(Boolean)));
     const blocked = uniqueReasons.some((reason) => /auto-block/i.test(reason));
-    const humanReview = !blocked && uniqueReasons.length > 0;
+    const fallbackEligible = !blocked && isReplyDropAutoFallbackEligible(context);
+    const fallbackReasons = uniqueReasons.filter((reason) => (
+      reason !== "not-timeline-inline-eligible" &&
+      reason !== "older-than-auto-window"
+    ));
+    const humanReview = !blocked && !fallbackEligible && uniqueReasons.length > 0;
     return {
-      tier: blocked ? "blocked" : (humanReview ? "human_review" : "auto_safe"),
-      reasons: uniqueReasons
+      tier: blocked ? "blocked" : (fallbackEligible ? "auto_fallback" : (humanReview ? "human_review" : "auto_safe")),
+      reasons: fallbackEligible ? fallbackReasons : uniqueReasons
     };
   }
 
@@ -1863,33 +2359,31 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    if (context.autoSafety?.tier !== "human_review") {
+    if (String(context.routing?.recommendedDecision || "").trim() !== "reply-now") {
+      return false;
+    }
+    if (context.recheck?.skipRecommended) {
+      return false;
+    }
+    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
+      return false;
+    }
+    if (Boolean(context.contextCompleteness?.mediaContextMissing)) {
       return false;
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
-    if (score < Math.max(52, executorSendFloor - 4)) {
+    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
+    if (score < executorSendFloor || ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES) {
       return false;
     }
-    const reasons = Array.isArray(context.autoSafety?.reasons) ? context.autoSafety.reasons : [];
-    const hardPatterns = [
-      /auto-block/i,
-      /third-consecutive-same-author/i,
-      /skip-recommended|below-average|below-display/i
-    ];
-    if (reasons.some((reason) => hardPatterns.some((pattern) => pattern.test(String(reason || ""))))) {
+    if (context.execution?.timelineInlineReplyEligible) {
       return false;
     }
-    const allowedPatterns = [
-      /decision-queue-tonight/i,
-      /decision-queue-tomorrow/i,
-      /quick_draft_allowed/i,
-      /media_post/i,
-      /media_not_inspected_text_sufficient/i,
-      /below-executor-send-floor/i
-    ];
-    return reasons.length > 0 && reasons.every((reason) => (
-      allowedPatterns.some((pattern) => pattern.test(String(reason || "")))
+    const reasons = getReplyDropContextFilterReasons(context);
+    return reasons.every((reason) => (
+      reason === "not-timeline-inline-eligible" ||
+      reason === "older-than-auto-window"
     ));
   }
 
@@ -1899,15 +2393,36 @@
       return ["invalid-context"];
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const displayThreshold = Number(context.recheck?.displayThreshold || getConfiguredDisplayThreshold(state.settings));
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
-    if (context.routing?.recommendedDecision !== "reply-now") {
-      reasons.push(`decision-${String(context.routing?.recommendedDecision || "unknown")}`);
+    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
+    const recommendedDecision = String(context.routing?.recommendedDecision || "").trim();
+    const trafficProfile = buildExecutorTrafficProfile({
+      views: context.post?.views,
+      replies: context.post?.replies,
+      velocityPerHour: context.post?.traffic?.velocityPerHour,
+      phase: context.post?.traffic?.phase
+    });
+    if (recommendedDecision && recommendedDecision !== "reply-now") {
+      reasons.push(`decision-${recommendedDecision}`);
     }
     if (context.recheck?.skipRecommended) {
       reasons.push("skip-recommended");
     }
+    if (score < displayThreshold) {
+      reasons.push("below-display-floor");
+    }
     if (score < executorSendFloor) {
       reasons.push("below-executor-send-floor");
+    }
+    if (!trafficProfile.qualified) {
+      reasons.push("below-traffic-floor");
+    }
+    if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
+      reasons.push(ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES ? "older-than-reply-window" : "older-than-auto-window");
+    }
+    if (!context.execution?.timelineInlineReplyEligible) {
+      reasons.push("not-timeline-inline-eligible");
     }
     if (String(context.scoring?.blockReason || "").trim()) {
       reasons.push(String(context.scoring.blockReason).trim());
@@ -2004,10 +2519,21 @@
   }
 
   function summarizeExecutorCandidateDiagnostics(context = {}) {
+    const trafficProfile = buildExecutorTrafficProfile({
+      views: context.post?.views,
+      replies: context.post?.replies,
+      velocityPerHour: context.post?.traffic?.velocityPerHour,
+      phase: context.post?.traffic?.phase
+    });
     return {
       tweetId: String(context.tweetId || "").trim(),
       score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
       finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
+      views: trafficProfile.views,
+      replies: trafficProfile.replies,
+      trafficVelocityPerHour: trafficProfile.velocityPerHour,
+      trafficPhase: trafficProfile.phase,
+      trafficQualified: trafficProfile.qualified,
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
       autoSafetyTier: String(context.autoSafety?.tier || "").trim(),
       timelineInlineReplyEligible: Boolean(context.execution?.timelineInlineReplyEligible),
@@ -2037,15 +2563,124 @@
       noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
       instruction: actionableCount > 0
         ? "已有合格候选，按评分顺序处理。"
-        : "本轮没有合格推荐时先调用 refreshRecommendations({ mode: 'scroll' }) 或刷新首页重扫1轮；60秒内仍无候选就返回 no-auto-safe-candidate + pickDiagnostics，不要继续空等。",
+        : "本轮没有合格推荐时先调用 refreshRecommendations({ mode: 'scroll' }) 或刷新首页重扫1轮；15秒内仍无候选就返回 no-auto-safe-candidate + pickDiagnostics，不要继续空等。",
       generatedAt
     };
   }
 
+  function isReplyDropExecutorHotQueueEntryUsable(context = {}, runtimeState = {}) {
+    if (!context || typeof context !== "object") {
+      return false;
+    }
+    const targetUrl = normalizeTweetUrl(context.url || context.targetUrl || context.post?.url || "");
+    if (!targetUrl) {
+      return false;
+    }
+    if (hasTrackedTweetUrl(state.repliedTweetUrls, targetUrl) || hasTrackedTweetUrl(state.dismissedTweetUrls, targetUrl)) {
+      return false;
+    }
+    if (hasTrackedTweetUrl(runtimeState?.repliedTweets, targetUrl) || hasTrackedTweetUrl(runtimeState?.dismissedTweets, targetUrl)) {
+      return false;
+    }
+    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
+    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
+    if (score < executorSendFloor || ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
+      return false;
+    }
+    const tier = String(context.autoSafety?.tier || "").trim();
+    if (tier && tier !== "auto_safe" && tier !== "auto_fallback") {
+      return false;
+    }
+    if (String(context.routing?.recommendedDecision || "").trim() !== "reply-now") {
+      return false;
+    }
+    if (context.recheck?.skipRecommended) {
+      return false;
+    }
+    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
+      return false;
+    }
+    return true;
+  }
+
+  function cacheReplyDropExecutorHotQueue(contexts = []) {
+    const deduped = [];
+    const seen = new Set();
+    (Array.isArray(contexts) ? contexts : []).forEach((context) => {
+      const targetUrl = normalizeTweetUrl(context?.url || context?.targetUrl || context?.post?.url || "");
+      if (!targetUrl || seen.has(targetUrl)) {
+        return;
+      }
+      seen.add(targetUrl);
+      deduped.push({
+        ...(context && typeof context === "object" ? context : {}),
+        url: targetUrl,
+        targetUrl
+      });
+    });
+    state.executorHotQueue = deduped.slice(0, 12);
+    state.executorHotQueueUpdatedAt = Date.now();
+  }
+
+  function readReplyDropExecutorHotQueue(runtimeState = {}, limit = 6) {
+    const now = Date.now();
+    const maxAgeMs = 20 * 60 * 1000;
+    if (!Array.isArray(state.executorHotQueue) || !state.executorHotQueue.length) {
+      return [];
+    }
+    if (state.executorHotQueueUpdatedAt && now - state.executorHotQueueUpdatedAt > maxAgeMs) {
+      state.executorHotQueue = [];
+      return [];
+    }
+    const filtered = [];
+    const seen = new Set();
+    state.executorHotQueue.forEach((context) => {
+      const targetUrl = normalizeTweetUrl(context?.url || context?.targetUrl || context?.post?.url || "");
+      if (!targetUrl || seen.has(targetUrl)) {
+        return;
+      }
+      if (!isReplyDropExecutorHotQueueEntryUsable(context, runtimeState)) {
+        return;
+      }
+      seen.add(targetUrl);
+      filtered.push({
+        ...(context && typeof context === "object" ? context : {}),
+        url: targetUrl,
+        targetUrl,
+        hotQueueFallback: true
+      });
+    });
+    state.executorHotQueue = filtered.slice(0, 12);
+    return filtered.slice(0, Math.max(1, Math.min(16, Math.floor(Number(limit) || 6))));
+  }
+
+  function shouldFallbackReplyDropTimelineToDetail(result = {}, targetUrl = "") {
+    if (!targetUrl) {
+      return false;
+    }
+    if (!result || result.ok) {
+      return false;
+    }
+    const reasonCode = String(result.reasonCode || result.reason || "").trim();
+    return [
+      "context-not-locked",
+      "reply-context-missing",
+      "reply-target-lost",
+      "timeline-article-missing",
+      "composer-not-ready",
+      "reply-surface-not-ready",
+      "navigating"
+    ].includes(reasonCode);
+  }
+
   async function refreshReplyDropRecommendations(options = {}) {
-    const mode = String(options?.mode || "scroll").trim().toLowerCase();
-    const pages = Math.max(1, Math.min(4, Math.floor(Number(options?.pages) || 2)));
-    const waitMs = Math.max(250, Math.min(2500, Math.floor(Number(options?.waitMs) || 900)));
+    const requestedMode = String(options?.mode || "auto").trim().toLowerCase();
+    const mode = requestedMode === "auto" || !requestedMode
+      ? (state.executorNoCandidateStreak >= 2 ? "reload" : "scroll")
+      : requestedMode;
+    const pages = Math.max(1, Math.min(4, Math.floor(Number(options?.pages) || 1)));
+    const waitMs = Math.max(250, Math.min(2500, Math.floor(Number(options?.waitMs) || 450)));
     const path = String(global.location.pathname || "").toLowerCase();
 
     if (!path.startsWith("/home")) {
@@ -2062,6 +2697,7 @@
       return {
         ok: true,
         action: "reload-home",
+        mode: requestedMode,
         instruction: "已刷新首页，页面加载后重新调用 getExecutorInbox()。"
       };
     }
@@ -2079,6 +2715,7 @@
     return {
       ok: true,
       action: "scroll-rescan",
+      mode: requestedMode,
       pages,
       stats: { ...state.stats },
       instruction: "已滚动并触发重扫，请重新调用 getExecutorInbox() 读取新候选。"
@@ -2113,7 +2750,7 @@
     const includeMedia = Boolean(options?.includeMedia);
     const generatedAt = Date.now();
     const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
-    const scanWindowSize = Math.max(limit * 4, Math.min(EXECUTOR_SCAN_WINDOW_SIZE, Math.max(48, limit)));
+    const scanWindowSize = Math.min(EXECUTOR_SCAN_WINDOW_SIZE, Math.max(limit * 3, 18));
     const orderedCandidates = [
       ...sortedCandidates.filter((candidate) => !String(candidate?.blockReason || "").trim()),
       ...sortedCandidates.filter((candidate) => String(candidate?.blockReason || "").trim())
@@ -2141,24 +2778,18 @@
       }
     });
     const autoSafeContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_safe");
-    const fallbackContexts = contexts
-      .filter(isReplyDropAutoFallbackEligible)
-      .slice(0, Math.max(0, Math.min(3, limit) - autoSafeContexts.length))
-      .map((context) => ({
-        ...context,
-        autoSafety: {
-          ...(context.autoSafety || {}),
-          tier: "auto_fallback",
-          fallback: true,
-          reasons: Array.from(new Set([
-            ...((context.autoSafety?.reasons || []).map((reason) => String(reason || "").trim()).filter(Boolean)),
-            "low-risk-human-review-fallback"
-          ]))
-        }
-      }));
+    const fallbackContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_fallback");
     const fallbackKeys = new Set(fallbackContexts.map((context) => String(context.tweetId || "").trim()).filter(Boolean));
     const actionablePool = [...autoSafeContexts, ...fallbackContexts];
-    const actionableContexts = actionablePool.slice(0, limit);
+    const liveActionableContexts = actionablePool.slice(0, limit);
+    if (actionablePool.length > 0) {
+      cacheReplyDropExecutorHotQueue(actionablePool);
+      state.executorNoCandidateStreak = 0;
+    } else {
+      state.executorNoCandidateStreak = Math.max(0, Number(state.executorNoCandidateStreak || 0)) + 1;
+    }
+    const hotQueueFallbackCandidates = actionablePool.length > 0 ? [] : readReplyDropExecutorHotQueue(runtimeState, limit);
+    const actionableContexts = liveActionableContexts.length > 0 ? liveActionableContexts : hotQueueFallbackCandidates;
     const filteredCandidates = contexts
       .filter((context) => context.autoSafety?.tier !== "auto_safe" && !fallbackKeys.has(String(context.tweetId || "").trim()))
       .map((context) => summarizeFilteredExecutorCandidate(context));
@@ -2194,6 +2825,9 @@
         recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
         candidateCount: actionableContexts.length,
         actionablePoolCount: actionablePool.length,
+        hotQueueFallbackCount: hotQueueFallbackCandidates.length,
+        hotQueueUsed: actionablePool.length === 0 && hotQueueFallbackCandidates.length > 0,
+        noCandidateStreak: Number(state.executorNoCandidateStreak || 0),
         safeCandidateCount: actionableContexts.length,
         autoSafeCount: autoSafeContexts.length,
         fallbackCount: fallbackContexts.length,
@@ -2400,7 +3034,9 @@
             const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, opportunityContext);
             const effectiveTier = String(analysis?.tier || candidate?.tier || "").trim();
             if (analysis && effectiveTier && effectiveTier !== "hidden" && effectiveTier !== "replied") {
-              candidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+              const mediaSummary = getMediaSummaryFromState(runtimeState || {}, extractTweetIdFromUrl(tweet.url));
+              const draftCandidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+              candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
               storeCandidatePayload(article, candidate);
             }
           }
@@ -2691,6 +3327,7 @@
       updatedAt: Date.now()
     };
     state.draftPreviewsByUrl[normalizedUrl] = preview;
+    state.draftPreviewsByUrl = pruneDraftPreviews(state.draftPreviewsByUrl);
     const article = findReplyArticle(normalizedUrl) || findTweetArticleByTweetId(preview.tweetId, normalizedUrl);
     const rendered = article instanceof HTMLElement ? renderDraftPreview(article, preview) : false;
     return {
@@ -2820,6 +3457,28 @@
     };
   }
 
+  async function unmarkReplyDropTweet(tweetIdOrUrl) {
+    const rawValue = String(tweetIdOrUrl || "").trim();
+    if (!rawValue) {
+      throw new Error("tweet-or-url-required");
+    }
+
+    const runtimeState = await getApiRuntimeStateSnapshot();
+    const normalizedUrl = rawValue.includes("/")
+      ? normalizeTweetUrl(rawValue)
+      : resolveUrlByTweetIdFromState(runtimeState, normalizeApiTweetId(rawValue));
+    if (!normalizedUrl) {
+      throw new Error("tweet-not-found");
+    }
+
+    await clearRecordedReply(normalizedUrl);
+    return {
+      ok: true,
+      status: "cleared",
+      url: normalizedUrl
+    };
+  }
+
   async function skipReplyDropCandidate(tweetId) {
     const normalizedTweetId = normalizeApiTweetId(tweetId);
     if (!normalizedTweetId) {
@@ -2945,6 +3604,10 @@
       case "submit-reply":
       case "post-reply":
         return "submit-reply";
+      case "reply-auto":
+      case "reply-best-path":
+      case "reply-now":
+        return "reply-auto";
       case "reply":
       case "open-and-submit":
         return "reply";
@@ -2961,7 +3624,7 @@
 
   async function runReplyDropExecutorAction(payload = {}) {
     const normalizedPayload = payload && typeof payload === "object" ? payload : {};
-    const action = normalizeReplyDropExecutorAction(normalizedPayload.action || normalizedPayload.type);
+    let action = normalizeReplyDropExecutorAction(normalizedPayload.action || normalizedPayload.type);
     const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
     let runtimeState = null;
     let resolvedTargetUrl = normalizeTweetUrl(normalizedPayload.url);
@@ -2972,6 +3635,25 @@
       } catch {
         resolvedTargetUrl = `https://x.com/i/status/${tweetId}`;
       }
+    }
+    if (action === "reply-auto") {
+      if (!runtimeState) {
+        try {
+          runtimeState = await getApiRuntimeStateSnapshot();
+        } catch {
+          runtimeState = null;
+        }
+      }
+      const candidateRecord = (
+        getCandidateByTweetIdFromState(runtimeState, tweetId) ||
+        getQueueItemByTweetIdFromState(runtimeState, tweetId) ||
+        getCandidateByUrlFromState(runtimeState, resolvedTargetUrl) ||
+        getQueueItemByUrlFromState(runtimeState, resolvedTargetUrl)
+      );
+      if (!resolvedTargetUrl) {
+        resolvedTargetUrl = normalizeTweetUrl(candidateRecord?.url || "");
+      }
+      action = candidateRecord?.timelineInlineReplyEligible ? "reply-from-timeline" : "reply";
     }
     if (["open-composer", "reply-from-timeline", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
@@ -3010,6 +3692,33 @@
           ...normalizedPayload,
           timelineFirst: true
         });
+        if (!openResult?.ok && shouldFallbackReplyDropTimelineToDetail(openResult, resolvedTargetUrl)) {
+          const detailOpenResult = await openReplyDropComposer({
+            ...normalizedPayload,
+            url: resolvedTargetUrl,
+            timelineFirst: false,
+            preferDetailPage: true
+          });
+          if (!String(normalizedPayload.draft || "").trim() || !detailOpenResult?.ok) {
+            return detailOpenResult;
+          }
+          const detailSubmitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
+            ? normalizedPayload.submitOptions
+            : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+          const detailSubmitResult = await submitReplyDropComposer(detailSubmitOptions);
+          if (detailSubmitResult?.ok) {
+            clearReplyTargetAttempt(detailSubmitResult?.targetUrl || detailOpenResult?.targetUrl || resolvedTargetUrl);
+          }
+          return {
+            ok: Boolean(detailSubmitResult?.ok),
+            action: "reply",
+            stage: detailSubmitResult?.ok ? "done" : "submit-reply",
+            open: detailOpenResult,
+            submit: detailSubmitResult,
+            targetUrl: String(detailSubmitResult?.targetUrl || detailSubmitResult?.href || detailOpenResult?.targetUrl || detailOpenResult?.href || "").trim(),
+            fallbackFrom: "reply-from-timeline"
+          };
+        }
         if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
           return openResult;
         }
@@ -3066,50 +3775,6 @@
             open: openResult,
             submit: null,
             targetUrl: String(openResult?.targetUrl || openResult?.href || "").trim()
-          };
-        }
-        const settledComposer = await waitForReplyComposer(
-          String(openResult?.targetUrl || openResult?.href || "").trim(),
-          {
-            timeoutMs: 2600,
-            replyOnly: true,
-            requireLocked: true
-          }
-        );
-        if (!settledComposer?.ok) {
-          const settledTargetUrl = String(openResult?.targetUrl || openResult?.href || "").trim();
-          const settleFailure = buildReplyActionFailure({
-            targetUrl: settledTargetUrl,
-            ...buildReplyComposerFailurePayload(settledTargetUrl, settledComposer?.context)
-          });
-          return {
-            ok: false,
-            action: "reply",
-            stage: "settle-reply-context",
-            open: openResult,
-            submit: settleFailure,
-            targetUrl: String(settleFailure?.targetUrl || settledTargetUrl).trim()
-          };
-        }
-        const settleTimeoutFailure = checkReplyTargetDeadline(openResult?.targetUrl || resolvedTargetUrl, {
-          ...normalizedPayload,
-          stage: "settle-reply-context"
-        });
-        if (settleTimeoutFailure) {
-          return {
-            ok: false,
-            action: "reply",
-            stage: "target-timeout",
-            open: openResult,
-            submit: settleTimeoutFailure,
-            targetUrl: String(settleTimeoutFailure?.targetUrl || openResult?.targetUrl || resolvedTargetUrl || "").trim(),
-            reason: "target-timeout",
-            reasonCode: "target-timeout",
-            reasonLabel: getReplyReasonLabel("target-timeout"),
-            elapsedMs: settleTimeoutFailure.elapsedMs,
-            timeoutMs: settleTimeoutFailure.timeoutMs,
-            actionGoalMs: settleTimeoutFailure.actionGoalMs,
-            shouldSkipTarget: true
           };
         }
         const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
@@ -3188,18 +3853,31 @@
       clearReplyOpenFailure(targetUrl);
     }
     if (hasRecordedReply(targetUrl)) {
-      return buildReplyActionFailure({
-        targetUrl,
-        reason: "already-replied",
-        reasonCode: "already-replied"
-      });
+      const verificationEvidence = findReplyVerificationEvidence(targetUrl);
+      if (verificationEvidence) {
+        return buildReplyActionFailure({
+          targetUrl,
+          reason: "already-replied",
+          reasonCode: "already-replied"
+        });
+      }
+      await clearRecordedReply(targetUrl);
     }
 
-    const settledComposer = await waitForReplyComposer(targetUrl, {
-      timeoutMs: 2600,
-      replyOnly: true,
-      requireLocked: true
-    });
+    const preparedComposer = getPreparedReplyComposer(targetUrl);
+    const settledComposer = preparedComposer
+      ? {
+          ok: true,
+          editor: preparedComposer.editor,
+          context: preparedComposer.context,
+          sendButton: preparedComposer.sendButton,
+          prepared: true
+        }
+      : await waitForReplyComposer(targetUrl, {
+          timeoutMs: EXECUTOR_SETTLE_TIMEOUT_MS,
+          replyOnly: true,
+          requireLocked: true
+        });
     const settledTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...options,
       stage: "wait-reply-composer"
@@ -3214,10 +3892,25 @@
       });
     }
 
-    const readySubmit = await waitForReplySubmitReady(targetUrl, readReplyComposerText(settledComposer.editor), {
-      timeoutMs: 2600,
-      rewriteDraft: false
-    });
+    const readySubmit = preparedComposer
+      ? {
+          ok: true,
+          editor: preparedComposer.editor,
+          sendButton: preparedComposer.sendButton,
+          context: preparedComposer.context,
+          editorText: readReplyComposerText(preparedComposer.editor),
+          editorFound: true,
+          sendButtonFound: true,
+          buttonDisabled: false,
+          draftReady: true,
+          composerLocked: true,
+          pageLocked: Boolean(preparedComposer.context?.pageLocked),
+          prepared: true
+        }
+      : await waitForReplySubmitReady(targetUrl, readReplyComposerText(settledComposer.editor), {
+          timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS,
+          rewriteDraft: false
+        });
     const readyTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...options,
       stage: "wait-submit-ready"
@@ -3226,6 +3919,19 @@
       return readyTimeoutFailure;
     }
     const sendButton = readySubmit?.sendButton || pickVisibleReplySubmitButton(targetUrl);
+    const currentDraftText = readReplyComposerText(readySubmit?.editor || settledComposer?.editor);
+    const draftValidation = validateReplyDraftAgainstTarget(targetUrl, currentDraftText);
+    if (!draftValidation.ok) {
+      await settleFailedTimelineUi();
+      return buildReplyActionFailure({
+        targetUrl,
+        currentUrl: normalizeTweetUrl(global.location.href),
+        articleUrl: normalizeTweetUrl(resolveReplyTargetUrl() || ""),
+        reason: draftValidation.reasonCode,
+        reasonCode: draftValidation.reasonCode,
+        draftValidation
+      });
+    }
     if (!(sendButton instanceof HTMLElement)) {
       return buildReplyActionFailure({
         targetUrl,
@@ -3265,10 +3971,11 @@
     state.pendingReplyStartedAt = 0;
     state.apiSubmitInFlightTargetUrl = normalizeTweetUrl(targetUrl);
     clearPendingReplyOutcome();
+    clearPreparedReplyComposer(targetUrl);
 
     try {
-      sendButton.click();
-      const outcome = await waitForApiReplyOutcome(targetUrl, 6800, options || {});
+      triggerReplyActionClick(sendButton);
+      const outcome = await waitForApiReplyOutcome(targetUrl, EXECUTOR_POST_SEND_VERIFY_TIMEOUT_MS, options || {});
       if (outcome?.ok) {
         clearReplyTargetAttempt(targetUrl);
       }
@@ -3321,6 +4028,8 @@
         return addReplyDropCandidateToQueue(args[0]);
       case "markShipped":
         return markReplyDropTweetShipped(args[0], args[1]);
+      case "unmarkReplied":
+        return unmarkReplyDropTweet(args[0]);
       case "skipCandidate":
         return skipReplyDropCandidate(args[0]);
       case "openComposer":
@@ -3334,6 +4043,10 @@
         return submitReplyDropComposer(args[0] || {});
       case "runExecutorAction":
         return runReplyDropExecutorAction(args[0] || {});
+      case "toggleFloatingPanel":
+        return toggleFloatingPanel(args[0]);
+      case "closeActiveReplySurface":
+        return closeActiveReplySurface(args[0] || {});
       default:
         throw new Error("unknown-api-method");
     }
@@ -3417,6 +4130,16 @@
 
   function normalizeHandle(handle) {
     return String(handle || "").replace(/^@/, "").trim().toLowerCase();
+  }
+
+  function uniqueList(value) {
+    return Array.from(
+      new Set(
+        (Array.isArray(value) ? value : [])
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      )
+    );
   }
 
   function extractHandleFromHref(href) {
@@ -3520,16 +4243,16 @@
         bottom: 6px;
       }
       .${BADGE_CLASS} {
-        --badge-shell: #b8d9ff;
-        --badge-core: #eefcff;
-        --badge-rim: rgba(226, 244, 255, 0.94);
-        --badge-aura: rgba(120, 225, 255, 0.26);
+        --badge-shell: #9dcbff;
+        --badge-core: #f7fbff;
+        --badge-rim: rgba(191, 219, 254, 0.96);
+        --badge-aura: rgba(96, 165, 250, 0.22);
         --badge-text: #0f172a;
-        --badge-core-opacity: 0.92;
-        --badge-rim-width: 1.02px;
+        --badge-core-opacity: 0.96;
+        --badge-rim-width: 1.08px;
         --badge-rim-opacity: 0.96;
         --badge-rim-dash: 0;
-        --badge-aura-opacity: 0.72;
+        --badge-aura-opacity: 0.66;
         --badge-highlight-main: rgba(255, 255, 255, 0.38);
         --badge-highlight-tip: rgba(255, 255, 255, 0.56);
         --badge-highlight-main-opacity: 1;
@@ -3541,8 +4264,8 @@
         align-items: center;
         justify-content: center;
         filter:
-          drop-shadow(0 5px 10px rgba(2, 6, 23, 0.22))
-          drop-shadow(0 0 8px rgba(103, 232, 249, 0.12));
+          drop-shadow(0 6px 12px rgba(15, 23, 42, 0.24))
+          drop-shadow(0 0 10px rgba(148, 163, 184, 0.16));
       }
       .${BADGE_CLASS}:not([data-tier="hidden"]) {
         display: inline-flex;
@@ -3594,8 +4317,13 @@
         z-index: 1;
         transform: translateY(1px);
         color: var(--badge-text);
-        font: 700 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 800 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         letter-spacing: -0.03em;
+        text-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.82),
+          0 0 4px rgba(255, 255, 255, 0.68),
+          0 1px 2px rgba(15, 23, 42, 0.18);
+        font-variant-numeric: tabular-nums;
       }
       .${BADGE_CLASS}[data-tier="high"] {
         --badge-shell: #38d39f;
@@ -3619,56 +4347,56 @@
         --badge-text: #0f172a;
       }
       .${BADGE_CLASS}[data-tier="high-outline"] {
-        --badge-shell: rgba(34, 197, 94, 0.08);
-        --badge-core: rgba(220, 252, 231, 0.06);
-        --badge-text: #86efac;
-        --badge-rim: #22c55e;
+        --badge-shell: rgba(220, 252, 231, 0.92);
+        --badge-core: rgba(255, 255, 255, 0.82);
+        --badge-text: #14532d;
+        --badge-rim: rgba(34, 197, 94, 0.72);
         --badge-rim-width: 1.35px;
         --badge-rim-dash: 2.2 1.6;
-        --badge-aura: rgba(34, 197, 94, 0.16);
-        --badge-aura-opacity: 0.48;
-        --badge-core-opacity: 0.54;
-        --badge-highlight-main-opacity: 0.18;
-        --badge-highlight-tip-opacity: 0.26;
+        --badge-aura: rgba(34, 197, 94, 0.14);
+        --badge-aura-opacity: 0.34;
+        --badge-core-opacity: 0.74;
+        --badge-highlight-main-opacity: 0.24;
+        --badge-highlight-tip-opacity: 0.32;
       }
       .${BADGE_CLASS}[data-tier="good-outline"] {
-        --badge-shell: rgba(250, 204, 21, 0.08);
-        --badge-core: rgba(255, 251, 219, 0.06);
-        --badge-text: #fde68a;
-        --badge-rim: #facc15;
+        --badge-shell: rgba(254, 243, 199, 0.94);
+        --badge-core: rgba(255, 255, 255, 0.84);
+        --badge-text: #713f12;
+        --badge-rim: rgba(234, 179, 8, 0.72);
         --badge-rim-width: 1.35px;
         --badge-rim-dash: 2.2 1.6;
-        --badge-aura: rgba(250, 204, 21, 0.16);
-        --badge-aura-opacity: 0.46;
-        --badge-core-opacity: 0.54;
-        --badge-highlight-main-opacity: 0.18;
-        --badge-highlight-tip-opacity: 0.26;
+        --badge-aura: rgba(250, 204, 21, 0.14);
+        --badge-aura-opacity: 0.34;
+        --badge-core-opacity: 0.74;
+        --badge-highlight-main-opacity: 0.24;
+        --badge-highlight-tip-opacity: 0.32;
       }
       .${BADGE_CLASS}[data-tier="medium-outline"] {
-        --badge-shell: rgba(203, 213, 225, 0.08);
-        --badge-core: rgba(248, 250, 252, 0.05);
-        --badge-text: #e2e8f0;
-        --badge-rim: #cbd5e1;
+        --badge-shell: rgba(241, 245, 249, 0.96);
+        --badge-core: rgba(255, 255, 255, 0.88);
+        --badge-text: #334155;
+        --badge-rim: rgba(148, 163, 184, 0.74);
         --badge-rim-width: 1.35px;
         --badge-rim-dash: 2.2 1.6;
         --badge-aura: rgba(148, 163, 184, 0.12);
-        --badge-aura-opacity: 0.42;
-        --badge-core-opacity: 0.5;
-        --badge-highlight-main-opacity: 0.16;
-        --badge-highlight-tip-opacity: 0.22;
+        --badge-aura-opacity: 0.28;
+        --badge-core-opacity: 0.76;
+        --badge-highlight-main-opacity: 0.22;
+        --badge-highlight-tip-opacity: 0.26;
       }
       .${BADGE_CLASS}[data-tier="low-outline"] {
-        --badge-shell: rgba(96, 165, 250, 0.07);
-        --badge-core: rgba(239, 246, 255, 0.04);
-        --badge-text: #bfdbfe;
-        --badge-rim: rgba(147, 197, 253, 0.84);
+        --badge-shell: rgba(219, 234, 254, 0.96);
+        --badge-core: rgba(255, 255, 255, 0.88);
+        --badge-text: #1d4ed8;
+        --badge-rim: rgba(96, 165, 250, 0.78);
         --badge-rim-width: 1.1px;
         --badge-rim-dash: 1.8 1.8;
         --badge-aura: rgba(96, 165, 250, 0.12);
-        --badge-aura-opacity: 0.4;
-        --badge-core-opacity: 0.46;
-        --badge-highlight-main-opacity: 0.15;
-        --badge-highlight-tip-opacity: 0.2;
+        --badge-aura-opacity: 0.3;
+        --badge-core-opacity: 0.78;
+        --badge-highlight-main-opacity: 0.2;
+        --badge-highlight-tip-opacity: 0.24;
       }
       .${BADGE_CLASS}[data-tier="replied"] {
         --badge-shell: #67e8f9;
@@ -3730,67 +4458,266 @@
         position: fixed;
         top: 78px;
         right: 80px;
-        width: min(420px, calc(100vw - 28px));
-        height: min(660px, calc(100vh - 110px));
-        display: block;
+        width: min(456px, calc(100vw - 28px));
+        height: min(700px, calc(100vh - 104px));
+        display: none;
         z-index: 2147483646;
-        border-radius: 28px;
+        border-radius: 24px;
         overflow: hidden;
-        border: 1px solid rgba(104, 84, 56, 0.18);
-        box-shadow: 0 26px 56px rgba(59, 41, 17, 0.24);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        box-shadow:
+          0 28px 72px rgba(15, 23, 42, 0.24),
+          0 10px 24px rgba(14, 116, 144, 0.12);
         background:
-          linear-gradient(180deg, rgba(255, 251, 241, 0.9), rgba(238, 225, 192, 0.94));
-        backdrop-filter: blur(12px) saturate(115%);
+          linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(236, 245, 255, 0.98));
+        backdrop-filter: blur(18px) saturate(130%);
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
-        transform-origin: calc(100% - 24px) 24px;
-        transform: translate3d(34px, -22px, 0) scale3d(0.22, 0.08, 1);
-        clip-path: inset(0 0 calc(100% - 28px) calc(100% - 28px) round 28px);
-        filter: saturate(0.82) blur(6px);
         transition:
           opacity 220ms ease,
-          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
-          clip-path 360ms cubic-bezier(0.22, 1, 0.36, 1),
-          filter 300ms ease,
+          transform 220ms ease,
           visibility 0s linear 360ms;
+        transform: translateY(-6px);
       }
       #${FLOAT_PANEL_ID}[data-open="1"] {
+        display: block;
         opacity: 1;
         visibility: visible;
         pointer-events: auto;
-        transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
-        clip-path: inset(0 0 0 0 round 28px);
-        filter: none;
+        transform: translateY(0);
         transition:
           opacity 220ms ease,
-          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
-          clip-path 360ms cubic-bezier(0.22, 1, 0.36, 1),
-          filter 300ms ease;
+          transform 220ms ease;
       }
-      #${FLOAT_PANEL_ID}::before {
-        content: "";
+      #${FLOAT_PANEL_ID} .xrs-floating-fallback {
         position: absolute;
-        top: 14px;
-        bottom: 14px;
-        right: 112px;
-        border-right: 2px dashed rgba(104, 84, 56, 0.22);
-        z-index: 1;
-      }
-      #${FLOAT_PANEL_ID} iframe {
-        position: relative;
+        inset: 0;
         z-index: 2;
-        width: 100%;
-        height: 100%;
-        border: 0;
-        display: block;
-        background: transparent;
-        transform-origin: top right;
-        transform: scale(1.04) translateY(-6px);
-        transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+        padding: 16px;
+        overflow: auto;
+        box-sizing: border-box;
+        color: #0f172a;
+        font: 500 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-      #${FLOAT_PANEL_ID}[data-open="1"] iframe {
-        transform: scale(1) translateY(0);
+      .xrs-floating-fallback-focusAnchor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        border: 0;
+        opacity: 0.001;
+        pointer-events: none;
+      }
+      .xrs-floating-fallback-card {
+        box-sizing: border-box;
+        min-height: 100%;
+        border-radius: 20px;
+        padding: 16px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 250, 255, 0.98));
+        border: 1px solid rgba(191, 219, 254, 0.74);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.8),
+          0 16px 36px rgba(148, 163, 184, 0.18);
+        color: #0f172a;
+      }
+      .xrs-floating-fallback-card,
+      .xrs-floating-fallback-card * {
+        box-sizing: border-box;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .xrs-floating-fallback-header,
+      .xrs-floating-fallback-actions,
+      .xrs-floating-fallback-item-top,
+      .xrs-floating-fallback-itemMeta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .xrs-floating-fallback-header {
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .xrs-floating-fallback-brand strong {
+        display: block;
+        font-size: 17px;
+        line-height: 1.2;
+      }
+      .xrs-floating-fallback-brand span {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        color: #475569;
+      }
+      .xrs-floating-fallback-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .xrs-floating-fallback-kbd,
+      .xrs-floating-fallback-chip,
+      .xrs-floating-fallback-header button,
+      .xrs-floating-fallback-itemMode,
+      .xrs-floating-fallback-itemAction {
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.86);
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .xrs-floating-fallback-kbd,
+      .xrs-floating-fallback-chip {
+        padding: 7px 10px;
+      }
+      .xrs-floating-fallback-header button,
+      .xrs-floating-fallback-itemAction {
+        cursor: pointer;
+      }
+      .xrs-floating-fallback-header button {
+        padding: 8px 12px;
+        background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(219, 234, 254, 0.94));
+        color: #1d4ed8;
+      }
+      .xrs-floating-fallback-kbd {
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.94));
+        border-color: rgba(51, 65, 85, 0.8);
+        color: #e2e8f0;
+        font-weight: 800;
+      }
+      .xrs-floating-fallback-statGrid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .xrs-floating-fallback-stat {
+        padding: 12px 12px 11px;
+        border-radius: 14px;
+        border: 1px solid rgba(191, 219, 254, 0.78);
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(239, 246, 255, 0.96));
+      }
+      .xrs-floating-fallback-stat span {
+        display: block;
+        font-size: 11px;
+        color: #64748b;
+      }
+      .xrs-floating-fallback-stat strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 18px;
+        line-height: 1;
+        color: #0f172a;
+      }
+      .xrs-floating-fallback-tip {
+        margin-bottom: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(239, 246, 255, 0.78);
+        color: #475569;
+        font-size: 12px;
+      }
+      .xrs-floating-fallback-list {
+        display: grid;
+        gap: 10px;
+      }
+      .xrs-floating-fallback-item {
+        border-radius: 16px;
+        border: 1px solid rgba(191, 219, 254, 0.62);
+        background: rgba(255, 255, 255, 0.84);
+        box-shadow: 0 12px 24px rgba(148, 163, 184, 0.12);
+        overflow: hidden;
+      }
+      .xrs-floating-fallback-item.is-active {
+        border-color: rgba(37, 99, 235, 0.72);
+        box-shadow:
+          0 0 0 1px rgba(37, 99, 235, 0.22),
+          0 16px 28px rgba(37, 99, 235, 0.12);
+        transform: translateY(-1px);
+      }
+      .xrs-floating-fallback-itemButton {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        padding: 13px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+      }
+      .xrs-floating-fallback-itemRank {
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(180deg, rgba(219, 234, 254, 0.96), rgba(191, 219, 254, 0.94));
+        color: #1d4ed8;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .xrs-floating-fallback-main {
+        min-width: 0;
+      }
+      .xrs-floating-fallback-item-top {
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+      .xrs-floating-fallback-item-top strong {
+        min-width: 0;
+        font-size: 13px;
+        color: #0f172a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .xrs-floating-fallback-itemMode {
+        padding: 4px 8px;
+        font-size: 11px;
+      }
+      .xrs-floating-fallback-itemMode[data-tone="inline"] {
+        background: rgba(220, 252, 231, 0.92);
+        border-color: rgba(34, 197, 94, 0.24);
+        color: #166534;
+      }
+      .xrs-floating-fallback-itemMode[data-tone="detail"] {
+        background: rgba(254, 243, 199, 0.94);
+        border-color: rgba(245, 158, 11, 0.24);
+        color: #92400e;
+      }
+      .xrs-floating-fallback-score {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(239, 246, 255, 0.98);
+        border: 1px solid rgba(191, 219, 254, 0.84);
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .xrs-floating-fallback-item p,
+      .xrs-floating-fallback-empty {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.55;
+        color: #475569;
+      }
+      .xrs-floating-fallback-itemMeta {
+        flex-wrap: wrap;
+        margin-top: 10px;
+        gap: 8px;
+      }
+      .xrs-floating-fallback-empty {
+        padding: 18px 14px;
+        border-radius: 14px;
+        background: rgba(239, 246, 255, 0.78);
+      }
+      .xrs-floating-fallback-itemAction {
+        padding: 4px 8px;
+        color: #334155;
       }
       .${FLOAT_BUTTON_CLASS} {
         position: relative;
@@ -3934,6 +4861,7 @@
       ...defaults,
       headlessMode: Boolean(base.headlessMode),
       displayThreshold: base.threshold ?? defaults.displayThreshold ?? 30,
+      executorSendFloor: base.executorSendFloor ?? base.agentSendFloor ?? defaults.executorSendFloor ?? defaults.agentSendFloor ?? DEFAULT_EXECUTOR_SEND_FLOOR,
       goodThreshold: defaults.goodThreshold ?? 60,
       highThreshold: defaults.highThreshold ?? 80
     };
@@ -3951,13 +4879,22 @@
     state.repliedTweetUrls = new Set(Object.keys(state.repliedTweets));
     state.dismissedTweets = { ...(base.dismissedTweets || {}) };
     state.dismissedTweetUrls = new Set(Object.keys(state.dismissedTweets));
-    state.replyDetails = base.replyDetails && typeof base.replyDetails === "object" ? { ...base.replyDetails } : {};
+    state.replyDetails = pruneReplyDetails(base.replyDetails);
+    state.replyArchive = pruneReplyArchive(
+      Array.isArray(base.replyArchive) && base.replyArchive.length
+        ? base.replyArchive
+        : Object.entries(base.replyDetails && typeof base.replyDetails === "object" ? base.replyDetails : {})
+            .map(([url, detail]) => ({ targetUrl: url, ...(detail && typeof detail === "object" ? detail : {}) }))
+    );
     state.replyQueue = Array.isArray(base.replyQueue) ? base.replyQueue.slice() : [];
+    state.recentCandidates = pruneRecentCandidates(base.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE);
     state.relationshipStates = base.relationshipStates && typeof base.relationshipStates === "object" ? { ...base.relationshipStates } : {};
-    state.mediaSummaries = base.mediaSummaries && typeof base.mediaSummaries === "object" ? { ...base.mediaSummaries } : {};
+    state.mediaSummaries = pruneMediaSummaries(base.mediaSummaries);
+    state.draftPreviewsByUrl = pruneDraftPreviews(state.draftPreviewsByUrl);
+    const derivedHighScoreCount = getFloatingPanelHighScoreCount(state.recentCandidates);
     state.stats = {
       scannedCount: Number(base.scannedCount) || 0,
-      highScoreCount: Number(base.highScoreCount) || 0,
+      highScoreCount: derivedHighScoreCount,
       visibleCount: Number(base.visibleCount) || 0
     };
     renderFloatingWidget();
@@ -3989,7 +4926,11 @@
 
   function scheduleScan() {
     clearTimeout(state.scanTimer);
-    state.scanTimer = global.setTimeout(scanTweets, SCAN_DEBOUNCE_MS);
+    const elapsedMs = Math.max(0, Date.now() - Number(state.lastScanCompletedAt || 0));
+    const minIntervalDelay = elapsedMs > 0 && elapsedMs < SCAN_MIN_INTERVAL_MS
+      ? SCAN_MIN_INTERVAL_MS - elapsedMs
+      : 0;
+    state.scanTimer = global.setTimeout(scanTweets, Math.max(SCAN_DEBOUNCE_MS, minIntervalDelay));
   }
 
   function invalidateCache() {
@@ -4007,7 +4948,7 @@
     clearLazyRescan();
     state.lazyRescanTimer = global.setTimeout(() => {
       state.lazyRescanTimer = null;
-      scanTweets();
+      scheduleScan();
     }, delay);
   }
 
@@ -4207,6 +5148,19 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&": return "&amp;";
+        case "<": return "&lt;";
+        case ">": return "&gt;";
+        case '"': return "&quot;";
+        case "'": return "&#39;";
+        default: return char;
+      }
+    });
+  }
+
   function isMeaningfulMediaAltText(value) {
     const normalized = normalizeSemanticText(value);
     if (!normalized) {
@@ -4248,6 +5202,207 @@
       .trim();
 
     return fallbackText;
+  }
+
+  function detectScriptFamily(text = "") {
+    const source = String(text || "");
+    if (/[\u3040-\u30ff\u31f0-\u31ff]/.test(source)) {
+      return "ja";
+    }
+    if (/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/i.test(source)) {
+      return "ko";
+    }
+    const counts = {
+      zh: (source.match(/[\u4e00-\u9fff]/g) || []).length,
+      ja: (source.match(/[\u3040-\u30ff]/g) || []).length,
+      ko: (source.match(/[\uac00-\ud7af]/g) || []).length,
+      en: (source.match(/[A-Za-z]/g) || []).length
+    };
+    const winner = Object.entries(counts).sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))[0];
+    return winner && winner[1] >= 4 ? winner[0] : "";
+  }
+
+  function hasKoreanLanguageSignal(langs = []) {
+    return (Array.isArray(langs) ? langs : []).some((lang) => {
+      const normalized = String(lang || "").trim().toLowerCase();
+      return normalized === "langko" || normalized === "ko" || normalized.startsWith("ko-");
+    });
+  }
+
+  function hasJapaneseLanguageSignal(langs = []) {
+    return (Array.isArray(langs) ? langs : []).some((lang) => {
+      const normalized = String(lang || "").trim().toLowerCase();
+      return normalized === "langja" || normalized === "ja" || normalized.startsWith("ja-");
+    });
+  }
+
+  function hasEnglishLanguageSignal(langs = []) {
+    return (Array.isArray(langs) ? langs : []).some((lang) => {
+      const normalized = String(lang || "").trim().toLowerCase();
+      return normalized === "langen" || normalized === "en" || normalized.startsWith("en-");
+    });
+  }
+
+  function extractMeaningfulTokens(text = "") {
+    const source = normalizeSemanticText(text).toLowerCase();
+    if (!source) {
+      return [];
+    }
+
+    const stopwords = new Set([
+      "this", "that", "with", "from", "have", "your", "just", "they", "them", "will", "what", "when", "where",
+      "really", "because", "people", "usually", "immediately", "simple", "usable", "practical", "works", "work",
+      "angle", "point", "posts", "post", "good", "great", "nice", "very", "more", "than", "then", "only",
+      "这个", "角度", "挺好", "不是", "只是", "观点", "大家", "最容易", "忽略", "那层", "点", "出来", "这样", "真的",
+      "오늘", "정말", "이런", "그냥", "진짜", "좋네요", "느낌", "視点", "ちゃんと", "投稿", "反応"
+    ]);
+
+    return Array.from(new Set(
+      source
+        .split(/[\s,.;:!?/\\|()[\]{}"'`~<>，。！？、：；“”‘’]+/)
+        .map((item) => item.trim())
+        .filter((item) => item.length >= 2 && !stopwords.has(item))
+    ));
+  }
+
+  function isBlockedGenericReplyTemplate(text = "") {
+    const normalized = normalizeSemanticText(text).toLowerCase();
+    if (!normalized) {
+      return {
+        blocked: false,
+        styleHits: [],
+        recentTemplateCollision: false
+      };
+    }
+    const styleHits = typeof global.ReplyDropDraftCore?.detectStylePatternHits === "function"
+      ? global.ReplyDropDraftCore.detectStylePatternHits(normalized)
+      : [];
+    const hardcodedHits = [
+      /that works because it is practical/i,
+      /that hits because it is simple and usable/i,
+      /this works because it is practical/i,
+      /这个角度挺好，不只是抛观点/i,
+      /这个角度挺好，不只是抛观點/i
+    ].some((pattern) => pattern.test(normalized));
+    return {
+      blocked: styleHits.length > 0 || hardcodedHits,
+      styleHits,
+      recentTemplateCollision: false
+    };
+  }
+
+  function hasRecentReplyTemplateCollision(text = "") {
+    const normalized = normalizeSemanticText(text).toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    const replyDetails = state.replyDetails && typeof state.replyDetails === "object"
+      ? Object.values(state.replyDetails)
+      : [];
+    const exactMatches = replyDetails.filter((detail) => normalizeSemanticText(detail?.replyText || detail?.text || "").toLowerCase() === normalized);
+    return exactMatches.length >= 1;
+  }
+
+  function inferReplyTargetLanguage(article, replyMeta = null) {
+    const signalList = [
+      ...(Array.isArray(replyMeta?.matchedLanguages) ? replyMeta.matchedLanguages : []),
+      ...(article instanceof Element ? readLanguageTags(article) : [])
+    ];
+    if (hasKoreanLanguageSignal(signalList)) {
+      return "ko";
+    }
+    if (hasJapaneseLanguageSignal(signalList)) {
+      return "ja";
+    }
+    if (hasChineseLanguageSignal(signalList)) {
+      return "zh";
+    }
+    if (hasEnglishLanguageSignal(signalList)) {
+      return "en";
+    }
+
+    const semanticText = article instanceof Element
+      ? normalizeSemanticText(readText(article))
+      : normalizeSemanticText(replyMeta?.text || "");
+    if (isKoreanText(semanticText)) {
+      return "ko";
+    }
+    if (isJapaneseText(semanticText)) {
+      return "ja";
+    }
+    if (isChineseText(semanticText)) {
+      return "zh";
+    }
+    if (/[A-Za-z]/.test(semanticText)) {
+      return "en";
+    }
+    return "";
+  }
+
+  function validateReplyDraftAgainstTarget(targetUrl = "", draftText = "") {
+    const normalizedDraft = normalizeSemanticText(draftText);
+    if (!normalizedDraft) {
+      return {
+        ok: false,
+        reasonCode: "draft-topic-mismatch",
+        draftSample: normalizedDraft.slice(0, 180)
+      };
+    }
+
+    const templateCheck = isBlockedGenericReplyTemplate(normalizedDraft);
+    const recentTemplateCollision = hasRecentReplyTemplateCollision(normalizedDraft);
+    if (templateCheck.blocked || recentTemplateCollision) {
+      return {
+        ok: false,
+        reasonCode: "draft-template-blocked",
+        styleHits: Array.isArray(templateCheck.styleHits) ? templateCheck.styleHits.slice(0, 8) : [],
+        recentTemplateCollision,
+        draftSample: normalizedDraft.slice(0, 180)
+      };
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const targetTweetId = extractTweetIdFromUrl(normalizedTarget);
+    const article = findTweetArticleByTweetId(targetTweetId, normalizedTarget);
+    const replyMeta = state.pendingReplyMeta;
+    const targetText = normalizeSemanticText(readText(article) || String(replyMeta?.text || ""));
+    if (!targetText) {
+      return { ok: true };
+    }
+
+    const draftScript = detectScriptFamily(normalizedDraft);
+    const targetLanguage = inferReplyTargetLanguage(article, replyMeta);
+    const targetScript = targetLanguage || detectScriptFamily(targetText);
+    if (draftScript && targetScript && draftScript !== targetScript) {
+      return {
+        ok: false,
+        reasonCode: "draft-language-mismatch",
+        draftScript,
+        targetScript,
+        draftSample: normalizedDraft.slice(0, 180),
+        targetSample: targetText.slice(0, 180)
+      };
+    }
+
+    if (targetScript && targetScript !== "en") {
+      return { ok: true, targetScript };
+    }
+
+    const draftTokens = extractMeaningfulTokens(normalizedDraft);
+    const targetTokens = new Set(extractMeaningfulTokens(targetText));
+    const sharedCount = draftTokens.filter((token) => targetTokens.has(token)).length;
+    if (sharedCount <= 0 && draftTokens.length >= 5) {
+      return {
+        ok: false,
+        reasonCode: "draft-topic-mismatch",
+        draftSample: normalizedDraft.slice(0, 180),
+        targetSample: targetText.slice(0, 180),
+        draftTokens: draftTokens.slice(0, 8)
+      };
+    }
+
+    return { ok: true };
   }
 
   function readLanguageTags(article) {
@@ -4529,7 +5684,7 @@
       tweet.authorVerificationType || "",
       tweet.promoted ? "p" : "",
       tweet.isOwnTweet ? "me" : "",
-      state.repliedTweetUrls.has(tweet.url) ? "replied" : ""
+      hasTrackedTweetUrl(state.repliedTweetUrls, tweet.url) ? "replied" : ""
     ].join("|");
   }
 
@@ -4742,11 +5897,42 @@
       highlights: Array.isArray(analysis.highlights) ? analysis.highlights.slice(0, 4) : [],
       keywordMatched: Boolean(analysis.keywordMatched),
       matchedTopics: Array.isArray(analysis.matchedTopics) ? analysis.matchedTopics.slice(0, 4) : [],
-      matchedLanguages: Array.isArray(analysis.matchedLanguages) ? analysis.matchedLanguages.slice(0, 4) : []
+      matchedLanguages: Array.isArray(analysis.matchedLanguages) ? analysis.matchedLanguages.slice(0, 4) : [],
+      needsDetailContext: false,
+      mediaContextMissing: false,
+      quickDraftAllowed: false,
+      mediaSummaryAvailable: false,
+      timelineInlineReplyEligible: false,
+      preferredOpenMode: "detail-page"
+    };
+  }
+
+  function attachCandidateExecutionMeta(candidate = {}, article = null, mediaSummary = null) {
+    const normalizedCandidate = candidate && typeof candidate === "object" ? { ...candidate } : {};
+    const contextCompleteness = buildDraftContextCompleteness(normalizedCandidate, article, false, mediaSummary);
+    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, article);
+    return {
+      ...normalizedCandidate,
+      needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
+      mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
+      mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
+      timelineInlineReplyEligible,
+      preferredOpenMode: timelineInlineReplyEligible ? "timeline-inline" : "detail-page"
     };
   }
 
   function buildReplyEntriesForAttribution() {
+    const archiveEntries = pruneReplyArchive(state.replyArchive);
+    if (archiveEntries.length) {
+      return archiveEntries
+        .map((entry) => ({
+          url: normalizeTweetUrl(entry?.targetUrl || entry?.url),
+          ...(entry && typeof entry === "object" ? entry : {})
+        }))
+        .filter((entry) => entry.url);
+    }
+
     return Object.entries(state.replyDetails || {})
       .map(([url, detail]) => ({
         url: normalizeTweetUrl(url),
@@ -4755,15 +5941,114 @@
       .filter((entry) => entry.url);
   }
 
+  function buildLowExposureMemory(replyEntries = []) {
+    const sortedEntries = (Array.isArray(replyEntries) ? replyEntries : [])
+      .filter((entry) => entry && typeof entry === "object")
+      .slice()
+      .sort((left, right) => (
+        Math.max(Number(right?.replyCheckedAt || 0), Number(right?.timestamp || 0)) -
+        Math.max(Number(left?.replyCheckedAt || 0), Number(left?.timestamp || 0))
+      ));
+    const authorBuckets = new Map();
+    const topicBuckets = new Map();
+
+    sortedEntries.forEach((entry) => {
+      const replyCheckedAt = Number(entry?.replyCheckedAt || entry?.replyTrafficCapturedAt || 0);
+      if (replyCheckedAt <= 0) {
+        return;
+      }
+
+      const views = Math.max(0, Number(entry?.replyObservedViews || 0));
+      const handleKey = normalizeHandle(entry?.authorHandle);
+      if (handleKey) {
+        const bucket = authorBuckets.get(handleKey) || [];
+        bucket.push(views);
+        authorBuckets.set(handleKey, bucket);
+      }
+
+      uniqueList(entry?.matchedTopics || []).forEach((topicKey) => {
+        const normalizedTopic = String(topicKey || "").trim();
+        if (!normalizedTopic) {
+          return;
+        }
+        const bucket = topicBuckets.get(normalizedTopic) || [];
+        bucket.push(views);
+        topicBuckets.set(normalizedTopic, bucket);
+      });
+    });
+
+    const countLeadingLowViewStreak = (values = []) => {
+      let streak = 0;
+      for (const value of values) {
+        if (Number(value || 0) <= 2) {
+          streak += 1;
+          continue;
+        }
+        break;
+      }
+      return streak;
+    };
+
+    const authorStreaks = new Map();
+    authorBuckets.forEach((values, key) => {
+      authorStreaks.set(key, countLeadingLowViewStreak(values));
+    });
+
+    const topicStreaks = new Map();
+    topicBuckets.forEach((values, key) => {
+      topicStreaks.set(key, countLeadingLowViewStreak(values));
+    });
+
+    return {
+      authorStreaks,
+      topicStreaks
+    };
+  }
+
+  function getLowExposurePenaltySignal(tweet, analysis, lowExposureMemory = null) {
+    if (!tweet || !analysis || !lowExposureMemory) {
+      return null;
+    }
+
+    const authorKey = normalizeHandle(tweet?.authorHandle);
+    const authorStreak = authorKey ? Number(lowExposureMemory.authorStreaks?.get(authorKey) || 0) : 0;
+    const topicStreak = uniqueList(analysis?.matchedTopics || [])
+      .reduce((max, topicKey) => Math.max(max, Number(lowExposureMemory.topicStreaks?.get(String(topicKey || "").trim()) || 0)), 0);
+    const streak = Math.max(authorStreak, topicStreak);
+    if (streak < 2) {
+      return null;
+    }
+
+    let amount = 6 + Math.min(6, (streak - 2) * 3);
+    if (authorStreak >= 2 && topicStreak >= 2) {
+      amount += 2;
+    }
+    if (Number(analysis?.reachLikelihood || 0) < 54) {
+      amount += 1;
+    }
+
+    amount = Math.max(0, Math.min(14, Math.round(amount)));
+    if (amount < 4) {
+      return null;
+    }
+
+    return {
+      amount,
+      label: authorStreak >= topicStreak ? "Low-view handle streak" : "Low-view topic streak",
+      highlight: "recent replies stalled"
+    };
+  }
+
   function buildOpportunityContext() {
     const relationshipStates = state.relationshipStates && typeof state.relationshipStates === "object"
       ? state.relationshipStates
       : {};
+    const replyEntries = buildReplyEntriesForAttribution();
 
     let attributionModel = null;
     if (typeof global.ReplyDropAttributionCore?.buildAttributionSignalModel === "function") {
       attributionModel = global.ReplyDropAttributionCore.buildAttributionSignalModel(
-        buildReplyEntriesForAttribution(),
+        replyEntries,
         Array.isArray(state.replyQueue) ? state.replyQueue : [],
         [],
         { now: Date.now() }
@@ -4772,7 +6057,8 @@
 
     return {
       relationshipStates,
-      attributionModel
+      attributionModel,
+      lowExposureMemory: buildLowExposureMemory(replyEntries)
     };
   }
 
@@ -4793,18 +6079,110 @@
     ));
   }
 
-  function getRelationshipOpportunitySignal(tweet, analysis, attributionSignal, relationshipStates = {}) {
+  function getAnalysisPenaltyAmount(analysis, penaltyKey) {
+    if (!analysis || !Array.isArray(analysis.breakdown) || !penaltyKey) {
+      return 0;
+    }
+    return analysis.breakdown.reduce((total, item) => {
+      if (!item || String(item.key || "").trim() !== penaltyKey) {
+        return total;
+      }
+      const amount = Number(item.amount || 0);
+      return amount < 0 ? total + Math.abs(amount) : total;
+    }, 0);
+  }
+
+  function sumAnalysisPenaltyAmounts(analysis, penaltyKeys = []) {
+    return (Array.isArray(penaltyKeys) ? penaltyKeys : [])
+      .filter(Boolean)
+      .reduce((total, penaltyKey) => total + getAnalysisPenaltyAmount(analysis, penaltyKey), 0);
+  }
+
+  function getRelationshipStateDetail(tweet, relationshipStates = {}) {
     const key = normalizeHandle(tweet?.authorHandle);
     const detail = key ? relationshipStates?.[key] : null;
     if (!key || !detail || typeof detail !== "object") {
       return null;
     }
-
     const status = String(detail.status || "").trim();
+    if (!status) {
+      return null;
+    }
     if (status === "snoozed" && Number(detail.snoozeUntil || 0) <= Date.now()) {
       return null;
     }
+    return detail;
+  }
 
+  function getMutualTrafficReliefSignal(tweet, analysis, relationshipStates = {}) {
+    const detail = getRelationshipStateDetail(tweet, relationshipStates);
+    if (String(detail?.status || "").trim() !== "mutual" || !analysis) {
+      return null;
+    }
+
+    const verificationType = normalizeVerificationType(
+      tweet?.authorVerificationType,
+      tweet?.authorVerified ? "verified" : ""
+    );
+    if (verificationType === "government" || verificationType === "gold") {
+      return null;
+    }
+
+    const reliefKeys = [
+      "followTrainBait",
+      "socialGrowthFlex",
+      "hardCapFollowLoop",
+      "hardCapPayoutFlex"
+    ];
+    if (verificationType === "blue" || tweet?.authorVerified) {
+      reliefKeys.push("verifiedPileOn");
+    }
+
+    const restorablePenalty = sumAnalysisPenaltyAmounts(analysis, reliefKeys);
+    if (restorablePenalty <= 0) {
+      return null;
+    }
+
+    const views = Number(tweet?.views || 0);
+    const replies = Number(tweet?.replies || 0);
+    const velocityPerHour = Number(tweet?.trafficVelocityPerHour || 0);
+    const reachLikelihood = Number(analysis?.reachLikelihood || 0);
+    const trafficFit = Math.max(
+      Math.max(0, Math.min(1, (Math.log10(views + 1) - 2.4) / 1.75)),
+      Math.max(0, Math.min(1, (Math.log10(replies + 1) - 0.45) / 1.35)),
+      Math.max(0, Math.min(1, (Math.log10(velocityPerHour + 1) - 1.9) / 1.7)),
+      Math.max(0, Math.min(1, (reachLikelihood - 42) / 28))
+    );
+    const reliefFactor = 0.22 + (trafficFit * 0.34);
+    let amount = Math.round(restorablePenalty * reliefFactor);
+    if ((verificationType === "blue" || tweet?.authorVerified) && trafficFit >= 0.45) {
+      amount += 6;
+    }
+    amount = Math.max(0, Math.min(40, amount));
+    if (amount < 4) {
+      return null;
+    }
+
+    return {
+      status: "mutual",
+      amount,
+      label: (verificationType === "blue" || tweet?.authorVerified)
+        ? "Blue mutual traffic relief"
+        : "Mutual traffic relief",
+      highlight: trafficFit >= 0.55
+        ? "mutual traffic keeps it live"
+        : "mutual stays in scoring"
+    };
+  }
+
+  function getRelationshipOpportunitySignal(tweet, analysis, attributionSignal, relationshipStates = {}) {
+    const detail = getRelationshipStateDetail(tweet, relationshipStates);
+    const key = normalizeHandle(tweet?.authorHandle);
+    if (!key || !detail || typeof detail !== "object") {
+      return null;
+    }
+
+    const status = String(detail.status || "").trim();
     const verificationType = normalizeVerificationType(
       tweet?.authorVerificationType,
       tweet?.authorVerified ? "verified" : ""
@@ -4824,7 +6202,6 @@
     const someMemory = strongMemory || attributionSignal?.kind === "topic-validated";
     const followTrainRisk = hasAnalysisPenaltyKey(analysis, "followTrainBait");
     const pileOnRisk = (
-      followTrainRisk ||
       hasAnalysisPenaltyKey(analysis, "crowding") ||
       hasAnalysisPenaltyKey(analysis, "verifiedOrganization") ||
       hasAnalysisPenaltyKey(analysis, "verifiedPileOn") ||
@@ -4834,27 +6211,25 @@
 
     switch (status) {
       case "mutual": {
-        if (followTrainRisk && !strongMemory) {
-          return null;
-        }
-        let amount = strongMemory ? 14 : 10;
+        let amount = strongMemory ? 18 : 12;
         if (!strongMemory) {
           if (verificationType === "government" || verificationType === "gold") {
-            amount -= 8;
-          } else if (verificationType === "blue" || tweet?.authorVerified) {
-            amount -= 4;
+            amount -= 6;
           }
           if (crowded || broadcastHeavy) {
-            amount -= 4;
-          }
-          if (reachLikelihood > 0 && reachLikelihood < 60) {
             amount -= 3;
           }
+          if (reachLikelihood > 0 && reachLikelihood < 52) {
+            amount -= 2;
+          }
           if (pileOnRisk) {
-            amount -= 4;
+            amount -= 2;
+          }
+          if (!crowded && !broadcastHeavy && conversationRatio >= 0.0035 && conversationRatio <= 0.026) {
+            amount += 2;
           }
         }
-        amount = Math.max(0, Math.min(16, Math.round(amount)));
+        amount = Math.max(0, Math.min(22, Math.round(amount)));
         if (amount < 2) {
           return null;
         }
@@ -5014,6 +6389,24 @@
       }
     }
 
+    const mutualTrafficReliefSignal = getMutualTrafficReliefSignal(
+      tweet,
+      analysis,
+      opportunityContext.relationshipStates
+    );
+    if (mutualTrafficReliefSignal?.amount) {
+      score += mutualTrafficReliefSignal.amount;
+      breakdown.push({
+        key: "mutualTrafficRelief",
+        label: mutualTrafficReliefSignal.label,
+        amount: mutualTrafficReliefSignal.amount,
+        kind: "quality"
+      });
+      if (mutualTrafficReliefSignal.highlight) {
+        extraHighlights.push(mutualTrafficReliefSignal.highlight);
+      }
+    }
+
     const relationshipSignal = getRelationshipOpportunitySignal(tweet, analysis, attributionSignal, opportunityContext.relationshipStates);
     if (relationshipSignal?.amount) {
       score += relationshipSignal.amount;
@@ -5025,6 +6418,20 @@
       });
       if (relationshipSignal.highlight) {
         extraHighlights.push(relationshipSignal.highlight);
+      }
+    }
+
+    const lowExposurePenaltySignal = getLowExposurePenaltySignal(tweet, analysis, opportunityContext.lowExposureMemory);
+    if (lowExposurePenaltySignal?.amount) {
+      score -= lowExposurePenaltySignal.amount;
+      breakdown.push({
+        key: "lowExposureMemory",
+        label: lowExposurePenaltySignal.label,
+        amount: -lowExposurePenaltySignal.amount,
+        kind: "penalty"
+      });
+      if (lowExposurePenaltySignal.highlight) {
+        extraHighlights.push(lowExposurePenaltySignal.highlight);
       }
     }
 
@@ -5141,6 +6548,275 @@
     return Boolean(state.settings.headlessMode);
   }
 
+  function getFloatingPanelRecommendedCandidates(candidates = state.recentCandidates) {
+    const displayThreshold = getConfiguredDisplayThreshold(state.settings);
+    return sortApiAgentCandidates(Array.isArray(candidates) ? candidates : [])
+      .filter((candidate) => {
+        const url = normalizeTweetUrl(candidate?.url);
+        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
+          return false;
+        }
+        const recommendedDecision = String(candidate?.recommendedDecision || candidate?.routing?.recommendedDecision || "").trim();
+        const trafficProfile = buildExecutorTrafficProfile({
+          views: candidate?.views,
+          replies: candidate?.replies,
+          velocityPerHour: candidate?.trafficVelocityPerHour,
+          phase: candidate?.trafficPhase
+        });
+        return (
+          recommendedDecision === "reply-now" &&
+          getCandidateCurrentScore(candidate) >= displayThreshold &&
+          trafficProfile.qualified
+        );
+      });
+  }
+
+  function getFloatingPanelCandidates(limit = FLOATING_PANEL_LIMIT, candidates = state.recentCandidates) {
+    return getFloatingPanelRecommendedCandidates(candidates).slice(0, Math.max(0, Math.floor(Number(limit) || 0)));
+  }
+
+  function getFloatingPanelHighScoreCount(candidates = state.recentCandidates, limit = FLOATING_PANEL_LIMIT) {
+    return getFloatingPanelCandidates(limit, candidates).length;
+  }
+
+  function inferFloatingDraftLanguage(candidate = {}) {
+    const languageSignals = Array.isArray(candidate?.matchedLanguages)
+      ? candidate.matchedLanguages.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    const joinedSignals = languageSignals.join(" ");
+    const text = String(candidate?.text || "").trim();
+    if (/ko/.test(joinedSignals) || /[\uac00-\ud7af]/.test(text)) {
+      return "ko";
+    }
+    if (/ja/.test(joinedSignals) || /[\u3040-\u30ff]/.test(text)) {
+      return "ja";
+    }
+    if (/zh/.test(joinedSignals) || /[\u4e00-\u9fff]/.test(text)) {
+      return "zh";
+    }
+    return "en";
+  }
+
+  function buildFloatingQuickDraft(candidate = {}) {
+    const language = inferFloatingDraftLanguage(candidate);
+    if (language === "ja") {
+      return "写真ごとに空気感が違って、その日の流れが自然に伝わってきます。";
+    }
+    if (language === "ko") {
+      return "사진마다 분위기가 달라서 하루의 흐름이 자연스럽게 전해지네요.";
+    }
+    if (language === "zh") {
+      return "这条把信息和情绪都带出来了，读完很容易停下来。";
+    }
+    return "Love how this captures the mood so clearly in just a few lines.";
+  }
+
+  function resolveFloatingCandidateDraft(candidate = {}) {
+    const url = normalizeTweetUrl(candidate?.url || "");
+    const preview = url ? state.draftPreviewsByUrl[url] : null;
+    const previewDraft = String(preview?.replyText || preview?.previewText || preview?.draft || "").trim().slice(0, 560);
+    if (previewDraft) {
+      return previewDraft;
+    }
+    const directDraft = String(candidate?.replyText || candidate?.draft || "").trim().slice(0, 560);
+    if (directDraft) {
+      return directDraft;
+    }
+    return "";
+  }
+
+  async function openFloatingCandidate(candidate = {}) {
+    const url = normalizeTweetUrl(candidate?.url || "");
+    if (!url) {
+      return buildReplyActionFailure({ reason: "missing-url" });
+    }
+    setFloatingPanelOpen(false);
+    const draft = resolveFloatingCandidateDraft(candidate);
+    const action = draft
+      ? (candidate?.timelineInlineReplyEligible ? "reply-from-timeline" : "reply")
+      : "open-composer";
+    return runReplyDropExecutorAction({
+      action,
+      url,
+      tweetId: extractTweetIdFromUrl(url),
+      draft,
+      timelineFirst: Boolean(candidate?.timelineInlineReplyEligible),
+      preferDetailPage: !candidate?.timelineInlineReplyEligible
+    });
+  }
+
+  function clampFloatingPanelSelection(candidateCount = 0) {
+    const maxIndex = Math.max(0, Number(candidateCount || 0) - 1);
+    const nextIndex = Math.max(0, Math.min(maxIndex, Number(state.floatingPanelSelectedIndex || 0)));
+    state.floatingPanelSelectedIndex = nextIndex;
+    return nextIndex;
+  }
+
+  function isEditableKeyboardTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tagName = String(target.tagName || "").toLowerCase();
+    if (["input", "textarea", "select"].includes(tagName)) {
+      return true;
+    }
+    return Boolean(target.isContentEditable || target.closest('[contenteditable="true"]'));
+  }
+
+  function getFloatingCandidateModeLabel(candidate = {}) {
+    return candidate?.timelineInlineReplyEligible ? "卡片快回" : "详情复核";
+  }
+
+  function getFloatingCandidateModeTone(candidate = {}) {
+    return candidate?.timelineInlineReplyEligible ? "inline" : "detail";
+  }
+
+  function openFloatingCandidateByIndex(index = 0) {
+    const candidates = getFloatingPanelCandidates(FLOATING_PANEL_LIMIT);
+    const candidate = candidates[Math.max(0, Math.min(candidates.length - 1, Number(index) || 0))];
+    if (!candidate) {
+      return false;
+    }
+    void openFloatingCandidate(candidate).catch((error) => {
+      console.warn("[ReplyDrop] failed to open floating candidate", error, candidate);
+    });
+    return true;
+  }
+
+  function toggleFloatingPanel(nextOpen = null) {
+    renderFloatingWidget();
+    const panel = ensureFloatingPanel();
+    const open = panel instanceof HTMLElement && panel.dataset.open === "1";
+    const desired = typeof nextOpen === "boolean" ? nextOpen : !open;
+    setFloatingPanelOpen(desired);
+    return {
+      ok: true,
+      panelOpen: desired
+    };
+  }
+
+  async function closeActiveReplySurface(options = {}) {
+    const targetUrl = normalizeTweetUrl(options?.targetUrl || resolveReplyTargetUrl() || "");
+    const dismissed = await dismissGenericComposerDialog();
+    if (dismissed) {
+      await waitFor(180);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.history.back();
+      } catch {}
+      await waitFor(220);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.location.assign("https://x.com/home");
+      } catch {}
+      await waitFor(220);
+    }
+
+    return {
+      ok: true,
+      dismissed,
+      targetUrl,
+      currentUrl: normalizeTweetUrl(global.location.href),
+      onComposePath: isComposePostPath()
+    };
+  }
+
+  function moveFloatingPanelSelection(delta = 0) {
+    const candidates = getFloatingPanelCandidates(FLOATING_PANEL_LIMIT);
+    if (!candidates.length) {
+      state.floatingPanelSelectedIndex = 0;
+      return 0;
+    }
+    const currentIndex = clampFloatingPanelSelection(candidates.length);
+    const nextIndex = (currentIndex + Number(delta || 0) + candidates.length) % candidates.length;
+    state.floatingPanelSelectedIndex = nextIndex;
+    const panel = document.getElementById(FLOAT_PANEL_ID);
+    if (panel instanceof HTMLElement) {
+      renderFloatingPanelFallback(panel, true);
+      const selected = panel.querySelector('.xrs-floating-fallback-item.is-active');
+      selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    return nextIndex;
+  }
+
+  function bindFloatingKeyboardShortcuts() {
+    if (state.floatingKeyboardBound) {
+      return;
+    }
+    state.floatingKeyboardBound = true;
+    document.addEventListener("keydown", (event) => {
+      if (isFloatingUiDisabled()) {
+        return;
+      }
+      if (!(event.target instanceof HTMLElement)) {
+        return;
+      }
+
+      const widget = document.getElementById(FLOAT_WIDGET_ID);
+      const panel = document.getElementById(FLOAT_PANEL_ID);
+      const panelOpen = panel instanceof HTMLElement && panel.dataset.open === "1";
+      const rawKey = String(event.key || "");
+      const lowerKey = rawKey.toLowerCase();
+      const hotToggle = (event.altKey && event.shiftKey && lowerKey === "d") || rawKey === "F2";
+      const hotClose = (event.altKey && event.shiftKey && lowerKey === "x") || rawKey === "F3";
+      if (hotToggle) {
+        event.preventDefault();
+        toggleFloatingPanel(!panelOpen);
+        return;
+      }
+      if (hotClose) {
+        event.preventDefault();
+        void closeActiveReplySurface();
+        return;
+      }
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+      if (!panelOpen) {
+        return;
+      }
+
+      const key = rawKey;
+      if (key === "Escape") {
+        event.preventDefault();
+        setFloatingPanelOpen(false);
+        return;
+      }
+      if (key === "ArrowDown" || key.toLowerCase() === "j") {
+        event.preventDefault();
+        moveFloatingPanelSelection(1);
+        return;
+      }
+      if (key === "ArrowUp" || key.toLowerCase() === "k") {
+        event.preventDefault();
+        moveFloatingPanelSelection(-1);
+        return;
+      }
+      if (key === "Enter") {
+        event.preventDefault();
+        openFloatingCandidateByIndex(state.floatingPanelSelectedIndex || 0);
+        return;
+      }
+      if (key.toLowerCase() === "r") {
+        event.preventDefault();
+        scheduleScan();
+        if (panel instanceof HTMLElement) {
+          renderFloatingPanelFallback(panel, true);
+        }
+        return;
+      }
+      if (/^[1-6]$/.test(key)) {
+        event.preventDefault();
+        state.floatingPanelSelectedIndex = Math.max(0, Number(key) - 1);
+        openFloatingCandidateByIndex(state.floatingPanelSelectedIndex);
+      }
+    }, true);
+  }
+
   function teardownFloatingUi() {
     document.getElementById(FLOAT_PANEL_ID)?.remove();
     document.getElementById(FLOAT_WIDGET_ID)?.remove();
@@ -5187,6 +6863,10 @@
     }
     const next = open ? "1" : "0";
     panel.dataset.open = next;
+    if (open) {
+      renderFloatingPanelFallback(panel, true);
+      focusFloatingPanelAnchor(panel);
+    }
     const button = document.querySelector(`#${FLOAT_WIDGET_ID} .${FLOAT_BUTTON_CLASS}`);
     if (button instanceof HTMLElement) {
       button.dataset.open = next;
@@ -5208,11 +6888,52 @@
     panel.id = FLOAT_PANEL_ID;
     panel.dataset.open = "0";
 
-    const frame = document.createElement("iframe");
-    frame.src = chrome.runtime.getURL("popup.html?embedded=1");
-    frame.title = "ReplyDrop panel";
-    panel.appendChild(frame);
+    const keyboardAnchor = document.createElement("button");
+    keyboardAnchor.type = "button";
+    keyboardAnchor.className = "xrs-floating-fallback-focusAnchor";
+    keyboardAnchor.setAttribute("aria-hidden", "true");
+    keyboardAnchor.tabIndex = 0;
+    panel.appendChild(keyboardAnchor);
+
+    const fallback = document.createElement("div");
+    fallback.className = "xrs-floating-fallback";
+    panel.appendChild(fallback);
     document.body.appendChild(panel);
+
+    panel.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      focusFloatingPanelAnchor(panel);
+    }, true);
+    panel.addEventListener("click", (event) => {
+      const target = event.target instanceof HTMLElement ? event.target.closest("[data-xrs-panel-action]") : null;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const action = String(target.dataset.xrsPanelAction || "").trim();
+      const url = normalizeTweetUrl(target.dataset.url || "");
+      if (action === "close") {
+        setFloatingPanelOpen(false);
+        return;
+      }
+      if (action === "refresh") {
+        scheduleScan();
+        renderFloatingPanelFallback(panel, true);
+        return;
+      }
+      if (action === "open-post") {
+        const index = Math.max(0, Number(target.dataset.index) || 0);
+        state.floatingPanelSelectedIndex = index;
+        if (!openFloatingCandidateByIndex(index)) {
+          console.warn("[ReplyDrop] floating candidate open rejected", {
+            index,
+            url,
+            reason: "fastpath-open-rejected"
+          });
+        }
+      }
+    });
 
     document.addEventListener("click", (event) => {
       if (!(event.target instanceof Node)) {
@@ -5227,7 +6948,73 @@
       }
     }, true);
 
+    renderFloatingPanelFallback(panel);
+
     return panel;
+  }
+
+  function focusFloatingPanelAnchor(panel) {
+    const anchor = panel instanceof HTMLElement ? panel.querySelector(".xrs-floating-fallback-focusAnchor") : null;
+    if (!(anchor instanceof HTMLElement)) {
+      return;
+    }
+    global.requestAnimationFrame?.(() => {
+      try {
+        anchor.focus({ preventScroll: true });
+      } catch {
+        anchor.focus();
+      }
+    });
+  }
+
+  function renderFloatingPanelFallback(panel) {
+    if (!(panel instanceof HTMLElement)) {
+      return;
+    }
+    const fallback = panel.querySelector(".xrs-floating-fallback");
+    if (!(fallback instanceof HTMLElement)) {
+      return;
+    }
+
+    const candidates = getFloatingPanelCandidates(FLOATING_PANEL_LIMIT);
+    const items = candidates.map((candidate) => {
+      const handle = escapeHtml(candidate?.authorHandle ? `@${candidate.authorHandle}` : "unknown");
+      const score = Number(candidate?.score || 0);
+      const text = escapeHtml(String(candidate?.text || "").trim().slice(0, 92) || "这条还没抓到正文，先点打开回复。");
+      const url = escapeHtml(candidate?.url || "");
+      return `
+        <article class="xrs-floating-fallback-item">
+          <div class="xrs-floating-fallback-item-head">
+            <strong>${handle}</strong>
+            <span class="xrs-floating-fallback-score">${score}</span>
+          </div>
+          <p>${text}</p>
+          <button type="button" data-xrs-panel-action="open-post" data-url="${url}">打开回复</button>
+        </article>
+      `;
+    }).join("");
+
+    fallback.dataset.visible = "1";
+    fallback.innerHTML = `
+      <div class="xrs-floating-fallback-card">
+        <div class="xrs-floating-fallback-top">
+          <div>
+            <strong>ReplyDrop</strong>
+            <span>Safari 原生面板</span>
+          </div>
+          <button type="button" data-xrs-panel-action="close">关闭</button>
+        </div>
+        <div class="xrs-floating-fallback-stats">
+          <span>扫描 ${Number(state.stats?.scannedCount || 0)}</span>
+          <span>可见 ${Number(state.stats?.visibleCount || 0)}</span>
+          <span>高分 ${Number(state.stats?.highScoreCount || 0)}</span>
+          <button type="button" data-xrs-panel-action="refresh">刷新</button>
+        </div>
+        <div class="xrs-floating-fallback-list">
+          ${items || '<div class="xrs-floating-fallback-empty">还没抓到候选，先滚动时间线再点刷新。</div>'}
+        </div>
+      </div>
+    `;
   }
 
   function renderFloatingWidget() {
@@ -5246,6 +7033,8 @@
     const panel = document.getElementById(FLOAT_PANEL_ID);
     if (visible !== "1" && panel instanceof HTMLElement) {
       setFloatingPanelOpen(false);
+    } else if (panel instanceof HTMLElement && panel.dataset.open === "1") {
+      renderFloatingPanelFallback(panel, true);
     }
 
     const todayReplyCount = getTodayReplyCount(state.repliedTweets);
@@ -5254,6 +7043,96 @@
     if (count) {
       count.textContent = String(todayReplyCount);
     }
+  }
+
+  function renderFloatingPanelFallback(panel, forceVisible = false) {
+    if (!(panel instanceof HTMLElement)) {
+      return;
+    }
+    const fallback = panel.querySelector(".xrs-floating-fallback");
+    if (!(fallback instanceof HTMLElement)) {
+      return;
+    }
+
+    const shouldShow = forceVisible || panel.dataset.embeddedReady !== "1";
+    fallback.dataset.visible = shouldShow ? "1" : "0";
+    if (!shouldShow) {
+      fallback.innerHTML = "";
+      return;
+    }
+
+    const candidates = getFloatingPanelCandidates(FLOATING_PANEL_LIMIT);
+    const selectedIndex = clampFloatingPanelSelection(candidates.length);
+    const items = candidates.map((candidate, index) => {
+      const handle = escapeHtml(candidate?.authorHandle ? `@${candidate.authorHandle}` : "unknown");
+      const score = Number(candidate?.score || 0);
+      const text = escapeHtml(String(candidate?.text || "").trim().slice(0, 108) || "这条还没抓到正文，先点打开回复。");
+      const url = escapeHtml(candidate?.url || "");
+      const modeLabel = escapeHtml(getFloatingCandidateModeLabel(candidate));
+      const modeTone = escapeHtml(getFloatingCandidateModeTone(candidate));
+      const metaChips = [
+        `<span class="xrs-floating-fallback-score">Score ${score}</span>`,
+        `<span class="xrs-floating-fallback-chip">${modeLabel}</span>`
+      ];
+      if (candidate?.quickDraftAllowed) {
+        metaChips.push('<span class="xrs-floating-fallback-chip">正文够用</span>');
+      }
+      if (candidate?.mediaKind) {
+        metaChips.push(`<span class="xrs-floating-fallback-chip">${escapeHtml(String(candidate.mediaKind).trim())}</span>`);
+      }
+      return `
+        <article class="xrs-floating-fallback-item ${index === selectedIndex ? "is-active" : ""}">
+          <button class="xrs-floating-fallback-itemButton" type="button" data-xrs-panel-action="open-post" data-index="${index}" data-url="${url}">
+            <span class="xrs-floating-fallback-itemRank">${index + 1}</span>
+            <span class="xrs-floating-fallback-main">
+              <span class="xrs-floating-fallback-item-top">
+                <strong>${handle}</strong>
+                <span class="xrs-floating-fallback-itemMode" data-tone="${modeTone}">${modeLabel}</span>
+              </span>
+              <p>${text}</p>
+              <span class="xrs-floating-fallback-itemMeta">
+                ${metaChips.join("")}
+                <span class="xrs-floating-fallback-itemAction">Enter 执行</span>
+              </span>
+            </span>
+          </button>
+        </article>
+      `;
+    }).join("");
+
+    fallback.innerHTML = `
+      <div class="xrs-floating-fallback-card">
+        <div class="xrs-floating-fallback-header">
+          <div class="xrs-floating-fallback-brand">
+            <strong>ReplyDrop</strong>
+            <span>Safari 快速压测台</span>
+          </div>
+          <div class="xrs-floating-fallback-actions">
+            <span class="xrs-floating-fallback-kbd">F2</span>
+            <button type="button" data-xrs-panel-action="refresh">刷新</button>
+            <button type="button" data-xrs-panel-action="close">关闭</button>
+          </div>
+        </div>
+        <div class="xrs-floating-fallback-statGrid">
+          <div class="xrs-floating-fallback-stat">
+            <span>扫描</span>
+            <strong>${Number(state.stats?.scannedCount || 0)}</strong>
+          </div>
+          <div class="xrs-floating-fallback-stat">
+            <span>可见</span>
+            <strong>${Number(state.stats?.visibleCount || 0)}</strong>
+          </div>
+          <div class="xrs-floating-fallback-stat">
+            <span>高分</span>
+            <strong>${Number(state.stats?.highScoreCount || 0)}</strong>
+          </div>
+        </div>
+        <div class="xrs-floating-fallback-tip">J/K 切换，Enter 执行，1-6 直达，R 刷新，F3 退出</div>
+        <div class="xrs-floating-fallback-list">
+          ${items || '<div class="xrs-floating-fallback-empty">还没抓到候选，先滚动时间线再点刷新。</div>'}
+        </div>
+      </div>
+    `;
   }
 
   function getPopupBridgeStatus() {
@@ -5272,14 +7151,19 @@
 
   function setLocalStats(stats) {
     const recentCandidates = Array.isArray(stats?.recentCandidates)
-      ? stats.recentCandidates.filter((item) => normalizeTweetUrl(item?.url)).slice(0, EXECUTOR_SCAN_WINDOW_SIZE)
-      : state.recentCandidates;
+      ? pruneRecentCandidates(stats.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE)
+      : pruneRecentCandidates(state.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE);
+    const derivedHighScoreCount = getFloatingPanelHighScoreCount(recentCandidates);
+    state.recentCandidates = recentCandidates;
     state.stats = {
       scannedCount: Math.max(0, Math.floor(Number(stats.scannedCount) || 0)),
-      highScoreCount: Math.max(0, Math.floor(Number(stats.highScoreCount) || 0)),
+      highScoreCount: derivedHighScoreCount,
       visibleCount: Math.max(0, Math.floor(Number(stats.visibleCount) || 0))
     };
-    state.recentCandidates = recentCandidates;
+    const updatedAt = Number(stats?.updatedAt || stats?.lastScanAt || 0);
+    if (updatedAt > 0) {
+      state.lastScanCompletedAt = updatedAt;
+    }
     renderFloatingWidget();
   }
 
@@ -5287,17 +7171,19 @@
     setLocalStats(stats);
 
     const now = Date.now();
-    if (now - state.lastSentAt < 800) {
+    if (now - state.lastSentAt < STATS_PUBLISH_MIN_INTERVAL_MS) {
       return;
     }
 
     state.lastSentAt = now;
     await sendRuntimeMessage({
       type: "X_REPLY_SCORER_STATS_UPDATE",
-      scannedCount: stats.scannedCount,
-      highScoreCount: stats.highScoreCount,
-      visibleCount: stats.visibleCount,
-      recentCandidates: stats.recentCandidates || []
+      scannedCount: state.stats.scannedCount,
+      highScoreCount: state.stats.highScoreCount,
+      visibleCount: state.stats.visibleCount,
+      recentCandidates: pruneRecentCandidates(state.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE),
+      updatedAt: state.lastScanCompletedAt || now,
+      lastScanAt: state.lastScanCompletedAt || now
     });
   }
 
@@ -5309,6 +7195,21 @@
 
     state.repliedTweets[normalized] = Date.now();
     state.repliedTweetUrls.add(normalized);
+    state.recentCandidates = (Array.isArray(state.recentCandidates) ? state.recentCandidates : [])
+      .filter((candidate) => !hasTrackedTweetUrl(new Set([normalized]), candidate?.url || ""));
+    if (meta && typeof meta === "object") {
+      state.replyDetails[normalized] = {
+        ...(state.replyDetails?.[normalized] && typeof state.replyDetails[normalized] === "object"
+          ? state.replyDetails[normalized]
+          : {}),
+        ...meta,
+        url: normalized,
+        tier: String(meta.tier || "replied").trim() || "replied",
+        completedAt: Date.now(),
+        status: "replied"
+      };
+      state.replyDetails = pruneReplyDetails(state.replyDetails);
+    }
     renderFloatingWidget();
     invalidateCache();
     scheduleScan();
@@ -5320,16 +7221,19 @@
   }
 
   function scanTweets() {
+    state.scanTimer = null;
     if (!global.XReplyScorer) {
       return;
     }
 
     readCurrentUserHandle();
+    syncManualReplyStateFromStatusPage();
+    syncManualReplyStateFromRepliesTimeline();
 
     if (!state.settings.enabled) {
       hideAllBadges();
-      setLocalStats({ scannedCount: 0, highScoreCount: 0, visibleCount: 0 });
-      publishStats({ scannedCount: 0, highScoreCount: 0, visibleCount: 0 });
+      setLocalStats({ scannedCount: 0, highScoreCount: 0, visibleCount: 0, recentCandidates: [] });
+      publishStats({ scannedCount: 0, highScoreCount: 0, visibleCount: 0, recentCandidates: [] });
       return;
     }
 
@@ -5378,13 +7282,13 @@
           continue;
         }
 
-        if (tweet.url && state.repliedTweetUrls.has(tweet.url)) {
+        if (tweet.url && hasTrackedTweetUrl(state.repliedTweetUrls, tweet.url)) {
           delete article.dataset.xrsCandidate;
           renderBadge(article, "✓", "replied", "Already replied");
           continue;
         }
 
-        if (tweet.url && state.dismissedTweetUrls.has(tweet.url)) {
+        if (tweet.url && hasTrackedTweetUrl(state.dismissedTweetUrls, tweet.url)) {
           delete article.dataset.xrsCandidate;
           renderBadge(article, "", "hidden");
           continue;
@@ -5403,7 +7307,9 @@
 
         if (effectiveTier !== "hidden") {
           visibleCount += 1;
-          const candidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+          const mediaSummary = getMediaSummaryFromState(state, extractTweetIdFromUrl(tweet.url));
+          const draftCandidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+          const candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
           storeCandidatePayload(article, candidate);
           recentCandidates.push(candidate);
           renderStoredDraftPreview(article);
@@ -5420,17 +7326,24 @@
       }
     }
 
+    const sortedRecentCandidates = recentCandidates
+      .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
+      .slice(0, EXECUTOR_SCAN_WINDOW_SIZE);
+    highScoreCount = getFloatingPanelHighScoreCount(sortedRecentCandidates);
+    const completedAt = Date.now();
+    state.lastScanCompletedAt = completedAt;
+
     publishStats({
       scannedCount,
       highScoreCount,
       visibleCount,
-      recentCandidates: recentCandidates
-        .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
-        .slice(0, EXECUTOR_SCAN_WINDOW_SIZE)
+      recentCandidates: sortedRecentCandidates,
+      updatedAt: completedAt,
+      lastScanAt: completedAt
     });
 
     if (needsFollowUp && Date.now() - state.lastDomChangeAt < 8000) {
-      scheduleLazyRescan(950);
+      scheduleLazyRescan(1300);
     } else {
       clearLazyRescan();
     }
@@ -5443,13 +7356,15 @@
 
     state.observer = new MutationObserver(() => {
       state.lastDomChangeAt = Date.now();
+      if (state.scanTimer || state.lazyRescanTimer) {
+        return;
+      }
       scheduleScan();
     });
 
     state.observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
       attributes: true,
       attributeFilter: ["aria-label", "title", "href", "datetime", "src"]
     });
@@ -5485,6 +7400,15 @@
 
       if (message?.type === "X_REPLY_SCORER_CAPTURE_PICKUP_SNAPSHOT") {
         capturePickupSnapshot(message.payload || {}).then((result) => {
+          sendResponse(result);
+        }).catch((error) => {
+          sendResponse({ ok: false, reason: String(error?.message || error) });
+        });
+        return true;
+      }
+
+      if (message?.type === "X_REPLY_SCORER_CAPTURE_REPLY_PERFORMANCE_SNAPSHOT") {
+        captureReplyPerformanceSnapshot(message.payload || {}).then((result) => {
           sendResponse(result);
         }).catch((error) => {
           sendResponse({ ok: false, reason: String(error?.message || error) });
@@ -5538,10 +7462,271 @@
     return "";
   }
 
+  function findOwnReplyArticleOnStatusPage(statusUrl) {
+    const normalizedStatusUrl = normalizeTweetUrl(statusUrl);
+    const currentUserHandle = readCurrentUserHandle();
+    if (!normalizedStatusUrl || !currentUserHandle) {
+      return null;
+    }
+
+    const targetTweetId = extractTweetIdFromUrl(normalizedStatusUrl);
+    const articles = getTweetNodes();
+    const targetArticle = findTweetArticleByTweetId(targetTweetId, normalizedStatusUrl);
+    const targetArticleIndex = targetArticle instanceof Element
+      ? articles.indexOf(targetArticle)
+      : -1;
+    const targetAuthorHandle = extractStatusAuthorHandle(normalizedStatusUrl);
+
+    for (let index = 0; index < articles.length; index += 1) {
+      const article = articles[index];
+      if (!(article instanceof Element)) {
+        continue;
+      }
+      if (targetArticleIndex >= 0 && index <= targetArticleIndex) {
+        continue;
+      }
+      const authorHandle = readAuthorHandle(article);
+      if (!authorHandle || authorHandle !== currentUserHandle) {
+        continue;
+      }
+
+      const replyUrl = normalizeTweetUrl(readTweetUrl(article));
+      if (!replyUrl || replyUrl === normalizedStatusUrl) {
+        continue;
+      }
+
+      const replyTweetId = extractTweetIdFromUrl(replyUrl);
+      if (targetTweetId && replyTweetId && replyTweetId === targetTweetId) {
+        continue;
+      }
+      if (!hasReplyContextTextInArticle(article)) {
+        continue;
+      }
+      if (targetAuthorHandle) {
+        const articleText = String(article.textContent || "").toLowerCase();
+        if (!articleText.includes(`@${targetAuthorHandle}`)) {
+          continue;
+        }
+      }
+
+      const tweet = getTweetData(article);
+      if (!String(tweet.text || "").trim() && !tweet.mediaKind) {
+        continue;
+      }
+
+      return article;
+    }
+
+    return null;
+  }
+
+  function buildManualReplyDetectionMeta(targetUrl, replyArticle, detectionSource, targetArticle = null) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || !(replyArticle instanceof Element)) {
+      return null;
+    }
+
+    const replyTweet = getTweetData(replyArticle);
+    if (!String(replyTweet.text || "").trim() && !replyTweet.mediaKind) {
+      return null;
+    }
+
+    const resolvedTargetArticle = targetArticle instanceof Element
+      ? targetArticle
+      : findTweetArticleByTweetId(extractTweetIdFromUrl(normalizedTarget), normalizedTarget);
+    const targetAuthorHandle = resolvedTargetArticle
+      ? readAuthorHandle(resolvedTargetArticle)
+      : extractStatusAuthorHandle(normalizedTarget);
+
+    return {
+      tier: "replied",
+      score: 0,
+      authorHandle: String(targetAuthorHandle || "").trim(),
+      replyText: String(replyTweet.text || "").trim().slice(0, 560),
+      replyUrl: normalizeTweetUrl(replyTweet.url),
+      publishMode: "manual-detected",
+      detectionSource: String(detectionSource || "manual-detected").trim() || "manual-detected"
+    };
+  }
+
+  function markManualReplyDetected(targetUrl, replyArticle, detectionSource, targetArticle = null) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || hasRecordedReply(normalizedTarget)) {
+      return false;
+    }
+
+    const meta = buildManualReplyDetectionMeta(normalizedTarget, replyArticle, detectionSource, targetArticle);
+    if (!meta) {
+      return false;
+    }
+
+    void markTweetAsReplied(normalizedTarget, meta);
+    return true;
+  }
+
+  function isCurrentUserRepliesTimeline() {
+    const match = String(global.location.pathname || "").match(/^\/([^/]+)\/with_replies(?:$|[/?#])/);
+    const timelineHandle = normalizeHandle(match?.[1] || "");
+    const currentUserHandle = readCurrentUserHandle();
+    return Boolean(timelineHandle && currentUserHandle && timelineHandle === currentUserHandle);
+  }
+
+  function hasReplyContextTextInArticle(article) {
+    if (!(article instanceof Element)) {
+      return false;
+    }
+    const articleText = String(article.textContent || "").trim().toLowerCase();
+    if (!articleText) {
+      return false;
+    }
+    return REPLY_CONTEXT_TEXT.some((keyword) => articleText.includes(String(keyword).toLowerCase()));
+  }
+
+  function findPreviousReplyTargetArticle(articles, startIndex) {
+    const limit = Math.max(0, Number(startIndex || 0));
+    for (let index = limit - 1; index >= 0 && limit - index <= 3; index -= 1) {
+      const article = articles[index];
+      if (!(article instanceof Element)) {
+        continue;
+      }
+      const tweet = getTweetData(article);
+      if (!tweet.url || tweet.promoted || tweet.isOwnTweet) {
+        continue;
+      }
+      return article;
+    }
+    return null;
+  }
+
+  function syncManualReplyStateFromStatusPage() {
+    const currentStatusUrl = getCurrentStatusUrl();
+    if (!currentStatusUrl || hasRecordedReply(currentStatusUrl)) {
+      return;
+    }
+
+    const ownReplyArticle = findOwnReplyArticleOnStatusPage(currentStatusUrl);
+    if (!ownReplyArticle) {
+      return;
+    }
+
+    const targetArticle = findTweetArticleByTweetId(extractTweetIdFromUrl(currentStatusUrl), currentStatusUrl);
+    markManualReplyDetected(currentStatusUrl, ownReplyArticle, "status-page-own-reply", targetArticle);
+  }
+
+  function syncManualReplyStateFromRepliesTimeline() {
+    if (!isCurrentUserRepliesTimeline()) {
+      return;
+    }
+
+    const currentUserHandle = readCurrentUserHandle();
+    if (!currentUserHandle) {
+      return;
+    }
+
+    const articles = getTweetNodes();
+    for (let index = 0; index < articles.length; index += 1) {
+      const replyArticle = articles[index];
+      if (!(replyArticle instanceof Element)) {
+        continue;
+      }
+
+      const replyTweet = getTweetData(replyArticle);
+      if (!replyTweet.isOwnTweet || !replyTweet.url) {
+        continue;
+      }
+      if (!hasReplyContextTextInArticle(replyArticle)) {
+        continue;
+      }
+
+      const targetArticle = findPreviousReplyTargetArticle(articles, index);
+      const targetUrl = normalizeTweetUrl(readTweetUrl(targetArticle));
+      if (!targetUrl) {
+        continue;
+      }
+      if (extractTweetIdFromUrl(targetUrl) === extractTweetIdFromUrl(replyTweet.url)) {
+        continue;
+      }
+
+      markManualReplyDetected(targetUrl, replyArticle, "with-replies-own-reply", targetArticle);
+    }
+  }
+
   function waitFor(ms) {
     return new Promise((resolve) => {
       global.setTimeout(resolve, ms);
     });
+  }
+
+  function clearPreparedReplyComposer(targetUrl = "") {
+    const cached = state.preparedReplyComposer;
+    if (!cached) {
+      return;
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || normalizeTweetUrl(cached.targetUrl) === normalizedTarget) {
+      state.preparedReplyComposer = null;
+    }
+  }
+
+  function cachePreparedReplyComposer(payload = {}) {
+    const targetUrl = normalizeTweetUrl(payload?.targetUrl || payload?.url || "");
+    const editor = payload?.editor instanceof HTMLElement ? payload.editor : null;
+    const sendButton = payload?.sendButton instanceof HTMLElement ? payload.sendButton : null;
+    if (!targetUrl || !(editor instanceof HTMLElement) || !(sendButton instanceof HTMLElement)) {
+      clearPreparedReplyComposer(targetUrl);
+      return false;
+    }
+
+    state.preparedReplyComposer = {
+      targetUrl,
+      editor,
+      sendButton,
+      mode: String(payload?.mode || "").trim(),
+      draftLoaded: Boolean(payload?.draftLoaded),
+      at: Date.now()
+    };
+    return true;
+  }
+
+  function getPreparedReplyComposer(targetUrl = "") {
+    const cached = state.preparedReplyComposer;
+    if (!cached) {
+      return null;
+    }
+
+    if (Date.now() - Number(cached.at || 0) > PREPARED_REPLY_COMPOSER_TTL_MS) {
+      state.preparedReplyComposer = null;
+      return null;
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl || cached.targetUrl);
+    if (!normalizedTarget || normalizeTweetUrl(cached.targetUrl) !== normalizedTarget) {
+      return null;
+    }
+
+    const editor = cached.editor instanceof HTMLElement && cached.editor.isConnected ? cached.editor : null;
+    const sendButton = cached.sendButton instanceof HTMLElement && cached.sendButton.isConnected ? cached.sendButton : null;
+    if (!(editor instanceof HTMLElement) || !(sendButton instanceof HTMLElement)) {
+      state.preparedReplyComposer = null;
+      return null;
+    }
+
+    const context = buildReplyComposerContext({ targetUrl: normalizedTarget, editor, sendButton });
+    if (!context.composerLocked || !isReplySubmitButtonEnabled(sendButton)) {
+      state.preparedReplyComposer = null;
+      return null;
+    }
+
+    return {
+      targetUrl: normalizedTarget,
+      editor,
+      sendButton,
+      context,
+      mode: String(cached.mode || "").trim(),
+      draftLoaded: Boolean(cached.draftLoaded),
+      at: Number(cached.at || 0)
+    };
   }
 
   function normalizeApiTimestampMs(value) {
@@ -5565,7 +7750,7 @@
       emptyResultInstruction: "同一轮连续 empty-result 达到3次时，立即停止本轮、切回首页，并提示执行链路异常，建议刷新后重试。",
       emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
       noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
-      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，先刷新/滚动重扫至少1轮；60秒内仍无候选，直接报告 no-auto-safe-candidate 和 pickDiagnostics，不要空转。",
+      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，先刷新/滚动重扫至少1轮；15秒内仍无候选，直接报告 no-auto-safe-candidate 和 pickDiagnostics，不要空转。",
       targetStartedAt: normalizedStartedAt,
       targetDeadlineAt: normalizedStartedAt + EXECUTOR_TARGET_TIMEOUT_MS,
       switchTargetReasonCode: "target-timeout"
@@ -5633,6 +7818,7 @@
       state.executorReplyTargetUrl = "";
       state.executorReplyTargetStartedAt = 0;
     }
+    clearPreparedReplyComposer(normalizedTarget);
   }
 
   function buildReplyTargetTimeoutFailure(targetUrl = "", payload = {}) {
@@ -5648,6 +7834,7 @@
         state.pendingReplyStartedAt = 0;
         state.pendingReplyMeta = null;
       }
+      clearPreparedReplyComposer(normalizedTarget);
       clearReplyTargetAttempt(normalizedTarget);
     }
     return buildReplyActionFailure({
@@ -5762,9 +7949,11 @@
     const targetUrl = normalizeTweetUrl(payload?.targetUrl || payload?.url || "");
     if (!targetUrl || !shouldPersistReplyOpenFailure(reasonCode)) {
       state.lastReplyOpenFailure = null;
+      clearPreparedReplyComposer(targetUrl);
       return;
     }
 
+    clearPreparedReplyComposer(targetUrl);
     state.lastReplyOpenFailure = {
       ok: false,
       targetUrl,
@@ -5851,6 +8040,12 @@
     if (payload.submitReadyDiagnostics && typeof payload.submitReadyDiagnostics === "object") {
       failure.submitReadyDiagnostics = payload.submitReadyDiagnostics;
     }
+    if (Array.isArray(payload.stylePatternHits) && payload.stylePatternHits.length) {
+      failure.stylePatternHits = payload.stylePatternHits.slice(0, 8);
+    }
+    if (payload.draftValidation && typeof payload.draftValidation === "object") {
+      failure.draftValidation = payload.draftValidation;
+    }
     return failure;
   }
 
@@ -5902,23 +8097,36 @@
     if (!normalized) {
       return false;
     }
-    return Boolean(state.repliedTweetUrls.has(normalized) || state.replyDetails?.[normalized]);
+    return Boolean(
+      hasTrackedTweetUrl(state.repliedTweetUrls, normalized) ||
+      hasTrackedTweetUrl(state.replyDetails, normalized)
+    );
   }
 
   async function ensureTargetReplyContext(targetUrl, options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
     const maxRetry = Math.max(0, Math.floor(Number(options.maxRetry) || 0));
     const retryDelayMs = Math.max(120, Number(options.retryDelayMs) || HANDOFF_RETRY_DELAY_MS);
+    const timeoutMs = Math.max(
+      retryDelayMs * Math.max(3, maxRetry + 2),
+      Number(options.timeoutMs) || 2600
+    );
+    const startedAt = Date.now();
     let retryCount = 0;
+    let navigated = false;
 
-    while (retryCount <= maxRetry) {
+    while (Date.now() - startedAt <= timeoutMs) {
       const currentStatusUrl = getCurrentStatusUrl();
-      if (currentStatusUrl === normalizedTarget) {
+      const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
+      const targetArticle = currentUrl === normalizedTarget
+        ? findPrimaryStatusArticle(normalizedTarget)
+        : null;
+      if (currentStatusUrl === normalizedTarget || targetArticle instanceof Element) {
         return {
           ok: true,
           ...buildReplyActionMeta({
             targetUrl: normalizedTarget,
-            currentUrl: currentStatusUrl,
+            currentUrl: currentStatusUrl || currentUrl,
             contextSource: "status-page",
             retryCount,
             retried: retryCount > 0
@@ -5926,16 +8134,9 @@
         };
       }
 
-      if (retryCount >= maxRetry) {
-        const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
+      if (!navigated && currentUrl !== normalizedTarget) {
         global.location.href = normalizedTarget;
-        return buildReplyActionFailure({
-          targetUrl: normalizedTarget,
-          currentUrl,
-          retryCount,
-          retried: retryCount > 0,
-          reason: "navigating"
-        });
+        navigated = true;
       }
 
       await waitFor(retryDelayMs);
@@ -5944,6 +8145,9 @@
 
     return buildReplyActionFailure({
       targetUrl: normalizedTarget,
+      currentUrl: normalizeTweetUrl(getCurrentStatusUrl() || global.location.href),
+      retryCount,
+      retried: retryCount > 0 || navigated,
       reason: "navigating"
     });
   }
@@ -5962,6 +8166,24 @@
     const directMatch = articles.find((article) => readTweetUrl(article) === normalized);
     if (directMatch) {
       return directMatch;
+    }
+
+    return null;
+  }
+
+  function findReplyArticleByTarget(targetUrl, tweetId = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const normalizedTweetId = normalizeApiTweetId(tweetId || extractTweetIdFromUrl(normalizedTarget));
+    const directMatch = normalizedTarget ? findReplyArticle(normalizedTarget) : null;
+    if (directMatch instanceof Element) {
+      return directMatch;
+    }
+
+    if (normalizedTweetId) {
+      const idMatch = findTweetArticleByTweetId(normalizedTweetId, normalizedTarget);
+      if (idMatch instanceof Element) {
+        return idMatch;
+      }
     }
 
     return null;
@@ -6097,6 +8319,33 @@
 
       const refreshedText = readReplyComposerText(editor);
       const draftReady = !expectedDraft || refreshedText === expectedDraft;
+      if (
+        expectedDraft &&
+        editor instanceof HTMLElement &&
+        context.composerLocked &&
+        draftReady
+      ) {
+        const draftValidation = validateReplyDraftAgainstTarget(normalizedTarget, refreshedText);
+        if (!draftValidation.ok) {
+          return {
+            ok: false,
+            context,
+            editor,
+            sendButton,
+            editorText: refreshedText,
+            editorFound: true,
+            sendButtonFound: sendButton instanceof HTMLElement,
+            buttonDisabled: sendButton instanceof HTMLElement ? !isReplySubmitButtonEnabled(sendButton) : true,
+            draftReady,
+            composerLocked: true,
+            pageLocked: Boolean(context.pageLocked),
+            reason: draftValidation.reasonCode,
+            reasonCode: draftValidation.reasonCode,
+            stylePatternHits: Array.isArray(draftValidation.styleHits) ? draftValidation.styleHits.slice(0, 8) : [],
+            draftValidation
+          };
+        }
+      }
       if (
         editor instanceof HTMLElement &&
         sendButton instanceof HTMLElement &&
@@ -6309,10 +8558,102 @@
     return node.closest('[aria-modal="true"], [role="dialog"], [data-testid="sheetDialog"], form') || null;
   }
 
+  function resolveReplyContextArticle(node) {
+    if (!(node instanceof Element)) {
+      return null;
+    }
+
+    const directArticle = node.closest(ARTICLE_SELECTOR);
+    if (directArticle instanceof Element) {
+      return directArticle;
+    }
+
+    const container = getReplyComposerContainer(node);
+    const candidates = [
+      container,
+      container?.querySelector(ARTICLE_SELECTOR),
+      container?.closest(ARTICLE_SELECTOR),
+      container?.previousElementSibling,
+      container?.nextElementSibling,
+      container?.parentElement?.previousElementSibling,
+      container?.parentElement?.nextElementSibling
+    ];
+
+    for (const candidate of candidates) {
+      if (!(candidate instanceof Element)) {
+        continue;
+      }
+      if (candidate.matches(ARTICLE_SELECTOR)) {
+        return candidate;
+      }
+      const nestedArticle = candidate.querySelector(ARTICLE_SELECTOR);
+      if (nestedArticle instanceof Element) {
+        return nestedArticle;
+      }
+    }
+
+    return null;
+  }
+
   function getVisibleReplySubmitButtons(scope = document) {
     const root = scope instanceof Element || scope instanceof Document ? scope : document;
     return Array.from(root.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]'))
       .filter((node) => node instanceof HTMLElement && hasVisibleRect(node));
+  }
+
+  function triggerReplyActionClick(node) {
+    if (!(node instanceof HTMLElement)) {
+      return false;
+    }
+
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: global
+    };
+
+    try {
+      node.dispatchEvent(new PointerEvent("pointerdown", {
+        ...eventInit,
+        pointerId: 1,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1
+      }));
+      node.dispatchEvent(new MouseEvent("mousedown", {
+        ...eventInit,
+        button: 0,
+        buttons: 1
+      }));
+      node.dispatchEvent(new PointerEvent("pointerup", {
+        ...eventInit,
+        pointerId: 1,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0
+      }));
+      node.dispatchEvent(new MouseEvent("mouseup", {
+        ...eventInit,
+        button: 0,
+        buttons: 0
+      }));
+      node.dispatchEvent(new MouseEvent("click", {
+        ...eventInit,
+        button: 0,
+        buttons: 0
+      }));
+      return true;
+    } catch {
+      try {
+        node.click();
+        return true;
+      } catch {
+        return false;
+      }
+    }
   }
 
   async function dismissGenericComposerDialog() {
@@ -6357,6 +8698,53 @@
     }
   }
 
+  async function settleFailedTimelineUi() {
+    const targetUrl = resolveReplyTargetUrl();
+    const editor = queryReplyComposer({
+      targetUrl,
+      replyOnly: false,
+      requireLocked: false
+    });
+    if (editor instanceof HTMLElement) {
+      clearReplyComposerText(editor);
+      await waitFor(120);
+    }
+
+    const dismissed = await dismissGenericComposerDialog();
+    if (dismissed) {
+      await waitFor(220);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.history.back();
+      } catch {}
+      await waitFor(240);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.location.assign("https://x.com/home");
+      } catch {}
+      await waitFor(240);
+    }
+
+    const path = String(global.location.pathname || "").toLowerCase();
+    const onHomeSurface = (
+      path === "/home" ||
+      path.startsWith("/home/") ||
+      path === "/" ||
+      path.startsWith("/i/bookmarks") ||
+      path.startsWith("/notifications")
+    );
+    if (!onHomeSurface) {
+      try {
+        global.location.assign("https://x.com/home");
+      } catch {}
+      await waitFor(240);
+    }
+  }
+
   function buildReplyComposerContext(payload = {}) {
     const targetUrl = normalizeTweetUrl(payload.targetUrl || payload.url || "");
     const targetHandle = normalizeHandle(
@@ -6370,7 +8758,8 @@
     const container = payload.container instanceof Element
       ? payload.container
       : getReplyComposerContainer(editor || explicitButton || scope);
-    const article = container instanceof Element ? container.querySelector(ARTICLE_SELECTOR) : null;
+    const article = resolveReplyContextArticle(editor || explicitButton || scope || container)
+      || (container instanceof Element ? container.querySelector(ARTICLE_SELECTOR) : null);
     const articleUrl = normalizeTweetUrl(readTweetUrl(article));
     const currentStatusUrl = getCurrentStatusUrl();
     const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
@@ -6411,6 +8800,19 @@
       !articleUrl &&
       (hasReplyContextText || hasReplyButtonText)
     );
+    const pageLocked = Boolean(
+      targetUrl && (
+        currentStatusUrl === targetUrl ||
+        contextStatusUrl === targetUrl ||
+        articleUrl === targetUrl
+      )
+    );
+    const inlineStatusReplyEvidence = Boolean(
+      !isComposePostPath() &&
+      pendingTargetFresh &&
+      pageLocked &&
+      Boolean(editor || sendButton || container)
+    );
     const timelinePendingTargetLocked = Boolean(
       timelinePendingReplyEvidence &&
       (
@@ -6419,18 +8821,18 @@
         !targetHandle
       )
     );
-    const explicitReplyEvidence = Boolean(contextStatusUrl || articleUrl || hasReplyButtonText || hasReplyContextText);
-    const pageLocked = Boolean(
-      targetUrl && (
-        currentStatusUrl === targetUrl ||
-        contextStatusUrl === targetUrl ||
-        articleUrl === targetUrl
-      )
+    const explicitReplyEvidence = Boolean(
+      contextStatusUrl ||
+      articleUrl ||
+      hasReplyButtonText ||
+      hasReplyContextText ||
+      inlineStatusReplyEvidence
     );
     const composerLocked = Boolean(
       targetUrl && (
         composePostTargetLocked ||
         timelinePendingTargetLocked ||
+        inlineStatusReplyEvidence ||
         (
           Boolean(editor || sendButton || container) &&
           (
@@ -6453,6 +8855,7 @@
     const replyTargetLost = Boolean(
       targetUrl &&
       explicitReplyEvidence &&
+      !inlineStatusReplyEvidence &&
       !composerLocked &&
       (
         (isComposePostPath() && targetHandle && contextHandles.length > 0 && !contextHandleMatchesTarget) ||
@@ -6473,6 +8876,7 @@
       composerLocked,
       composePostTargetLocked,
       timelinePendingTargetLocked,
+      inlineStatusReplyEvidence,
       explicitReplyEvidence,
       hasReplyButtonText,
       hasReplyContextText,
@@ -6541,37 +8945,52 @@
     return null;
   }
 
+  function resolveReplyComposerEditableNode(node) {
+    if (!(node instanceof HTMLElement)) {
+      return null;
+    }
+    if (node.isContentEditable || String(node.getAttribute("contenteditable") || "").toLowerCase() === "true") {
+      return node;
+    }
+    const nestedEditable = node.querySelector('[contenteditable="true"], div[contenteditable="true"], [data-contents="true"][contenteditable="true"]');
+    return nestedEditable instanceof HTMLElement ? nestedEditable : node;
+  }
+
   function queryReplyComposer(options = {}) {
     const targetUrl = normalizeTweetUrl(options.targetUrl || options.url || "");
     const replyOnly = Boolean(options.replyOnly);
     const requireLocked = Boolean(options.requireLocked);
     const selectors = [
-      '[role="dialog"] [data-testid="tweetTextarea_0"][role="textbox"]',
-      '[data-testid="sheetDialog"] [data-testid="tweetTextarea_0"][role="textbox"]',
-      '[data-testid="tweetTextarea_0"][role="textbox"]',
       '[role="dialog"] [data-testid="tweetTextarea_0"] [contenteditable="true"]',
       '[role="dialog"] [data-testid="tweetTextarea_0"] div[contenteditable="true"]',
       '[data-testid="tweetTextarea_0"] [contenteditable="true"]',
       '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
       '[role="dialog"] div[contenteditable="true"][data-contents="true"]',
-      '[data-testid="sheetDialog"] div[contenteditable="true"][data-contents="true"]'
+      '[data-testid="sheetDialog"] div[contenteditable="true"][data-contents="true"]',
+      '[role="dialog"] [data-testid="tweetTextarea_0"][role="textbox"]',
+      '[data-testid="sheetDialog"] [data-testid="tweetTextarea_0"][role="textbox"]',
+      '[data-testid="tweetTextarea_0"][role="textbox"]'
     ];
 
     const seen = new Set();
     const candidates = selectors
       .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
       .filter((node) => {
-        if (!(node instanceof HTMLElement) || seen.has(node)) {
+        const editableNode = resolveReplyComposerEditableNode(node);
+        if (!(editableNode instanceof HTMLElement) || seen.has(editableNode)) {
           return false;
         }
-        seen.add(node);
+        seen.add(editableNode);
         return true;
       })
-      .map((node) => ({
-        node,
-        visible: hasVisibleRect(node),
-        context: buildReplyComposerContext({ targetUrl, editor: node })
-      }))
+      .map((node) => {
+        const editableNode = resolveReplyComposerEditableNode(node);
+        return {
+          node: editableNode,
+          visible: hasVisibleRect(editableNode),
+          context: buildReplyComposerContext({ targetUrl, editor: editableNode })
+        };
+      })
       .filter((entry) => {
         if (entry.context.genericComposerOpened) {
           return false;
@@ -6628,19 +9047,67 @@
     };
   }
 
+  function shouldRetryTimelineComposerOpen(context = {}, targetUrl = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || isComposePostPath()) {
+      return false;
+    }
+    const currentUrl = normalizeTweetUrl(context?.currentUrl || global.location.href);
+    const articleUrl = normalizeTweetUrl(context?.articleUrl || "");
+    const onTimelineSurface = (
+      currentUrl === "https://x.com/home" ||
+      /https:\/\/x\.com\/(?:home(?:\/)?|i\/bookmarks|notifications)/.test(currentUrl)
+    );
+    return Boolean(
+      onTimelineSurface &&
+      !context?.composerLocked &&
+      !context?.pageLocked &&
+      !context?.genericComposerOpened &&
+      !context?.replyTargetLost &&
+      !articleUrl
+    );
+  }
+
+  async function retryTimelineComposerOpen(article, targetUrl = "", options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!(article instanceof Element) || !normalizedTarget) {
+      return null;
+    }
+
+    const retryArticle = findReplyArticleByTarget(normalizedTarget, extractTweetIdFromUrl(normalizedTarget)) || article;
+    if (!(retryArticle instanceof Element) || !hasVisibleRect(retryArticle)) {
+      return null;
+    }
+
+    const retryReplyButton = queryPrimaryArticleActionNode(retryArticle, ["reply"]);
+    if (!(retryReplyButton instanceof HTMLElement)) {
+      return null;
+    }
+
+    retryArticle.scrollIntoView({ block: "center", behavior: "auto" });
+    await waitFor(Math.max(180, Number(options.settleMs) || 220));
+    triggerReplyActionClick(retryReplyButton);
+    return waitForReplyComposer(normalizedTarget, {
+      timeoutMs: Math.max(600, Number(options.timeoutMs) || EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS),
+      replyOnly: true,
+      requireLocked: true
+    });
+  }
+
   function setReplyComposerText(editor, text) {
+    const editable = resolveReplyComposerEditableNode(editor);
     const value = String(text || "").trim().slice(0, 560);
-    if (!(editor instanceof HTMLElement) || !value) {
+    if (!(editable instanceof HTMLElement) || !value) {
       return false;
     }
 
-    editor.focus();
+    editable.focus();
 
     try {
       const selection = global.getSelection?.();
       if (selection) {
         const range = document.createRange();
-        range.selectNodeContents(editor);
+        range.selectNodeContents(editable);
         selection.removeAllRanges();
         selection.addRange(range);
       }
@@ -6650,24 +9117,129 @@
 
     try {
       if (document.execCommand?.("insertText", false, value)) {
-        return sanitizeSnippet(editor.textContent, 640) === sanitizeSnippet(value, 640);
+        return sanitizeSnippet(editable.textContent, 640) === sanitizeSnippet(value, 640);
       }
     } catch {
       // Fall through to the manual contenteditable update.
     }
 
-    editor.textContent = value;
+    editable.replaceChildren();
+    value.split(/\n/).forEach((line) => {
+      const row = document.createElement("div");
+      if (line) {
+        row.textContent = line;
+      } else {
+        row.appendChild(document.createElement("br"));
+      }
+      editable.appendChild(row);
+    });
+
     try {
-      editor.dispatchEvent(new InputEvent("input", {
+      const selection = global.getSelection?.();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(editable);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    } catch {
+      // Ignore caret placement issues.
+    }
+
+    try {
+      editable.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: value
+      }));
+    } catch {
+      editable.dispatchEvent(new Event("beforeinput", { bubbles: true, cancelable: true }));
+    }
+    try {
+      editable.dispatchEvent(new InputEvent("input", {
         bubbles: true,
         inputType: "insertText",
         data: value
       }));
     } catch {
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      editable.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    editable.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      key: value.slice(-1) || "Unidentified"
+    }));
+    editable.dispatchEvent(new KeyboardEvent("keyup", {
+      bubbles: true,
+      key: value.slice(-1) || "Unidentified"
+    }));
+    editable.dispatchEvent(new Event("change", { bubbles: true }));
+
+    return readReplyComposerText(editable) === sanitizeSnippet(value, 640);
+  }
+
+  function clearReplyComposerText(editor) {
+    const editable = resolveReplyComposerEditableNode(editor);
+    if (!(editable instanceof HTMLElement)) {
+      return false;
     }
 
-    return sanitizeSnippet(editor.textContent, 640) === sanitizeSnippet(value, 640);
+    editable.focus();
+
+    try {
+      const selection = global.getSelection?.();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(editable);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    } catch {
+      // Ignore selection issues and fall through.
+    }
+
+    try {
+      if (document.execCommand?.("delete", false, "")) {
+        return readReplyComposerText(editable) === "";
+      }
+    } catch {
+      // Fall through to the manual contenteditable update.
+    }
+
+    editable.replaceChildren();
+    editable.appendChild(document.createElement("br"));
+
+    try {
+      editable.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteContentBackward",
+        data: null
+      }));
+    } catch {
+      editable.dispatchEvent(new Event("beforeinput", { bubbles: true, cancelable: true }));
+    }
+    try {
+      editable.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "deleteContentBackward",
+        data: null
+      }));
+    } catch {
+      editable.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    editable.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      key: "Backspace"
+    }));
+    editable.dispatchEvent(new KeyboardEvent("keyup", {
+      bubbles: true,
+      key: "Backspace"
+    }));
+    editable.dispatchEvent(new Event("change", { bubbles: true }));
+
+    return readReplyComposerText(editable) === "";
   }
 
   function canAttemptTimelineReply(targetUrl = "", payload = {}) {
@@ -6684,19 +9256,29 @@
 
   async function openTimelineComposerHandoff(targetUrl = "", payload = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (isComposePostPath()) {
+      await settleFailedTimelineUi();
+    }
     if (!canAttemptTimelineReply(normalizedTarget, payload)) {
       return null;
     }
 
-    const article = findReplyArticle(normalizedTarget);
+    const targetTweetId = normalizeApiTweetId(payload?.tweetId || extractTweetIdFromUrl(normalizedTarget));
+    const article = findReplyArticleByTarget(normalizedTarget, targetTweetId);
     if (!(article instanceof Element) || !hasVisibleRect(article)) {
-      return null;
+      return buildReplyActionFailure({
+        ...buildReplyPageContext(normalizedTarget, article),
+        reason: "timeline-article-missing",
+        reasonCode: "timeline-article-missing",
+        timelineAttempted: true,
+        timelineMode: "inline"
+      });
     }
 
     const candidateRecord = { url: normalizedTarget };
     let runtimeState = null;
     try {
-      runtimeState = await getRuntimeStateSnapshot();
+      runtimeState = await getApiRuntimeStateSnapshot();
       Object.assign(candidateRecord, getCandidateByUrlFromState(runtimeState, normalizedTarget) || getQueueItemByUrlFromState(runtimeState, normalizedTarget) || {});
     } catch {
       // Keep the visible article as the fallback context.
@@ -6724,41 +9306,73 @@
 
     const replyButton = queryPrimaryArticleActionNode(article, ["reply"]);
     if (!(replyButton instanceof HTMLElement)) {
-      return null;
+      return buildReplyActionFailure({
+        ...buildReplyPageContext(normalizedTarget, article),
+        reason: "reply-button-missing",
+        reasonCode: "reply-button-missing",
+        recheck,
+        timelineAttempted: true,
+        timelineMode: "inline"
+      });
     }
 
-    article.scrollIntoView({ block: "center", behavior: "smooth" });
-    await waitFor(180);
+    article.scrollIntoView({ block: "center", behavior: "auto" });
+    await waitFor(120);
     state.pendingReplyTargetUrl = normalizedTarget;
     state.pendingReplyStartedAt = Date.now();
     state.pendingReplyMeta = buildReplyMetaFromArticle(article);
-    replyButton.click();
+    triggerReplyActionClick(replyButton);
 
-    const composerState = await waitForReplyComposer(normalizedTarget, {
-      timeoutMs: 2800,
+    let composerState = await waitForReplyComposer(normalizedTarget, {
+      timeoutMs: EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS,
       replyOnly: true,
       requireLocked: true
     });
-    if (!composerState?.ok || !(composerState.editor instanceof HTMLElement)) {
-      return null;
+    if (
+      (!(composerState?.ok) || !(composerState.editor instanceof HTMLElement)) &&
+      shouldRetryTimelineComposerOpen(composerState?.context, normalizedTarget)
+    ) {
+      const retriedComposerState = await retryTimelineComposerOpen(article, normalizedTarget, {
+        timeoutMs: Math.floor(EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS * 0.75),
+        settleMs: 240
+      });
+      if (retriedComposerState) {
+        composerState = retriedComposerState;
+      }
     }
-
+    const timelineEscapedToCompose = Boolean(
+      composerState?.context?.currentUrl &&
+      /\/compose\/post(?:$|[/?#])/.test(String(composerState.context.currentUrl))
+    );
+    if (!composerState?.ok || !(composerState.editor instanceof HTMLElement)) {
+      return buildReplyActionFailure({
+        ...buildReplyPageContext(normalizedTarget, article),
+        ...buildReplyComposerFailurePayload(normalizedTarget, composerState?.context),
+        reason: "composer-not-ready",
+        reasonCode: "composer-not-ready",
+        recheck,
+        timelineAttempted: true,
+        timelineMode: "inline"
+      });
+    }
     const draft = String(payload?.draft || "").trim().slice(0, 560);
     const draftLoaded = draft ? setReplyComposerText(composerState.editor, draft) : true;
     const readyState = await waitForReplySubmitReady(normalizedTarget, draft, {
-      timeoutMs: 2600,
+      timeoutMs: EXECUTOR_TIMELINE_READY_TIMEOUT_MS,
       rewriteDraft: Boolean(draft)
     });
     if (!readyState?.ok) {
       return buildReplyActionFailure({
         ...buildReplyPageContext(normalizedTarget, article),
         ...buildReplyComposerFailurePayload(normalizedTarget, readyState?.context || composerState.context),
-        reason: readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready",
-        reasonCode: readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready",
+        reason: readyState?.reason || (readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready"),
+        reasonCode: readyState?.reasonCode || (readyState?.sendButtonFound ? "send-button-disabled-but-target-locked" : "composer-not-ready"),
         recheck,
         draftLoaded,
         timelineAttempted: true,
         timelineMode: "inline",
+        stylePatternHits: readyState?.stylePatternHits,
+        draftValidation: readyState?.draftValidation,
         composerDiagnostics: {
           editorFound: Boolean(readyState?.editorFound),
           sendButtonFound: Boolean(readyState?.sendButtonFound),
@@ -6768,6 +9382,14 @@
         }
       });
     }
+
+    cachePreparedReplyComposer({
+      targetUrl: normalizedTarget,
+      editor: readyState.editor || composerState.editor,
+      sendButton: readyState.sendButton,
+      mode: timelineEscapedToCompose ? "timeline-compose-overlay" : "timeline-inline",
+      draftLoaded
+    });
 
     return {
       ok: true,
@@ -6779,7 +9401,7 @@
       draftLoaded,
       composerReady: true,
       timelineAttempted: true,
-      timelineMode: "inline",
+      timelineMode: timelineEscapedToCompose ? "compose-overlay" : "inline",
       recheck,
       context: {
         composerLocked: Boolean(readyState.context?.composerLocked),
@@ -6793,6 +9415,7 @@
   async function openQueueComposerHandoff(payload = {}) {
     const targetUrl = normalizeTweetUrl(payload.url);
     const draft = String(payload.draft || "").trim().slice(0, 560);
+    const timelineOnly = payload?.timelineFirst === true && payload?.preferDetailPage !== true && payload?.preferTimeline !== false;
     if (!targetUrl) {
       return buildReplyActionFailure({ reason: "missing-url" });
     }
@@ -6803,14 +9426,6 @@
     if (initialTimeoutFailure) {
       return initialTimeoutFailure;
     }
-    if (hasRecordedReply(targetUrl)) {
-      return buildReplyActionFailure({
-        targetUrl,
-        reason: "already-replied",
-        reasonCode: "already-replied"
-      });
-    }
-
     const timelineResult = await openTimelineComposerHandoff(targetUrl, payload);
     const timelineTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...payload,
@@ -6822,8 +9437,18 @@
     if (timelineResult?.ok) {
       return timelineResult;
     }
-    if (timelineResult && ["value-below-send-floor", "value-dropped-on-open"].includes(String(timelineResult.reasonCode || ""))) {
+    if (timelineResult?.timelineAttempted) {
       return timelineResult;
+    }
+    if (timelineOnly) {
+      return buildReplyActionFailure({
+        targetUrl,
+        currentUrl: normalizeTweetUrl(global.location.href),
+        reason: "timeline-inline-required",
+        reasonCode: "timeline-inline-required",
+        timelineAttempted: true,
+        timelineMode: "inline"
+      });
     }
 
     const contextLock = await ensureTargetReplyContext(targetUrl, { maxRetry: 1 });
@@ -6878,6 +9503,18 @@
       });
     }
 
+    if (hasRecordedReply(targetUrl)) {
+      const verificationEvidence = findReplyVerificationEvidence(targetUrl);
+      if (verificationEvidence) {
+        return buildReplyActionFailure({
+          targetUrl,
+          reason: "already-replied",
+          reasonCode: "already-replied"
+        });
+      }
+      await clearRecordedReply(targetUrl);
+    }
+
     let runtimeState = null;
     try {
       runtimeState = await getRuntimeStateSnapshot();
@@ -6910,7 +9547,7 @@
       });
     }
 
-    article.scrollIntoView({ block: "center", behavior: "smooth" });
+    article.scrollIntoView({ block: "center", behavior: "auto" });
     state.pendingReplyTargetUrl = targetUrl;
     state.pendingReplyStartedAt = Date.now();
     state.pendingReplyMeta = buildReplyMetaFromArticle(article);
@@ -6937,9 +9574,9 @@
           reason: "reply-button-missing"
         });
       }
-      replyButton.click();
+      triggerReplyActionClick(replyButton);
       composerState = await waitForReplyComposer(targetUrl, {
-        timeoutMs: 8200,
+        timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
         replyOnly: true,
         requireLocked: true
       });
@@ -6958,12 +9595,12 @@
         composerState?.context?.genericComposerOpened
       ) {
         await dismissGenericComposerDialog();
-        const retryArticle = await waitForReplyArticle(targetUrl, 2600);
+        const retryArticle = await waitForReplyArticle(targetUrl, EXECUTOR_DETAIL_READY_TIMEOUT_MS);
         const retryReplyButton = queryPrimaryArticleActionNode(retryArticle, ["reply"]);
         if (retryReplyButton instanceof HTMLElement) {
-          retryReplyButton.click();
+          triggerReplyActionClick(retryReplyButton);
           composerState = await waitForReplyComposer(targetUrl, {
-            timeoutMs: 8200,
+            timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
             replyOnly: true,
             requireLocked: true
           });
@@ -7004,7 +9641,7 @@
     editor.focus();
     const draftLoaded = draft ? setReplyComposerText(editor, draft) : false;
     const submitReadyState = draft
-      ? await waitForReplySubmitReady(targetUrl, draft, { timeoutMs: 3200 })
+      ? await waitForReplySubmitReady(targetUrl, draft, { timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS })
       : {
           ok: true,
           editor,
@@ -7028,8 +9665,10 @@
         retried: contextLock.retried,
         currentUrl: submitReadyState?.context?.currentUrl,
         articleUrl: submitReadyState?.context?.articleUrl,
-        reason: "send-disabled",
-        reasonCode: submitReadyState?.context?.composerLocked ? "send-button-disabled-but-target-locked" : "context-not-locked",
+        reason: submitReadyState?.reason || "send-disabled",
+        reasonCode: submitReadyState?.reasonCode || (submitReadyState?.context?.composerLocked ? "send-button-disabled-but-target-locked" : "context-not-locked"),
+        stylePatternHits: submitReadyState?.stylePatternHits,
+        draftValidation: submitReadyState?.draftValidation,
         submitReadyDiagnostics: {
           editorFound: Boolean(submitReadyState?.editorFound),
           sendButtonFound: Boolean(submitReadyState?.sendButtonFound),
@@ -7040,6 +9679,14 @@
         }
       });
     }
+
+    cachePreparedReplyComposer({
+      targetUrl,
+      editor,
+      sendButton: submitReadyState?.sendButton,
+      mode: "detail-page",
+      draftLoaded
+    });
     return {
       ok: true,
       composerReady: true,
@@ -7078,6 +9725,30 @@
     if (targetUrl) {
       await markTweetAsReplied(targetUrl, meta);
     }
+  }
+
+  async function clearRecordedReply(targetUrl, options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    delete state.repliedTweets[normalizedTarget];
+    state.repliedTweetUrls.delete(normalizedTarget);
+    if (state.replyDetails?.[normalizedTarget]) {
+      delete state.replyDetails[normalizedTarget];
+    }
+    renderFloatingWidget();
+    invalidateCache();
+    scheduleScan();
+
+    if (options.propagate !== false) {
+      await sendRuntimeMessage({
+        type: "X_REPLY_SCORER_UNMARK_REPLIED",
+        url: normalizedTarget
+      });
+    }
+    return true;
   }
 
   function readOutcomeText() {
@@ -7226,11 +9897,122 @@
         return;
       }
 
-      if (includesAny(outcomeText, SUCCESS_TEXTS) || Date.now() - startedAt > 5000) {
+      const verificationEvidence = findReplyVerificationEvidence(targetUrl);
+      if (includesAny(outcomeText, SUCCESS_TEXTS) || verificationEvidence) {
         clearPendingReplyOutcome();
-        markReplyAsVerified(targetUrl).catch(() => null);
+        finalizeVerifiedReply(targetUrl, {
+          outcomeText,
+          verificationSource: includesAny(outcomeText, SUCCESS_TEXTS) ? "toast" : String(verificationEvidence?.detectionSource || "page-evidence"),
+          verificationEvidence
+        }).catch(() => null);
+        return;
+      }
+
+      if (Date.now() - startedAt > 8000) {
+        clearPendingReplyOutcome();
+        state.pendingReplyMeta = null;
       }
     }, 400);
+  }
+
+  function findReplyVerificationEvidence(targetUrl) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return null;
+    }
+
+    if (getCurrentStatusUrl() === normalizedTarget) {
+      const ownReplyArticle = findOwnReplyArticleOnStatusPage(normalizedTarget);
+      if (ownReplyArticle instanceof Element) {
+        return {
+          detectionSource: "status-page-own-reply",
+          replyArticle: ownReplyArticle,
+          targetArticle: findTweetArticleByTweetId(extractTweetIdFromUrl(normalizedTarget), normalizedTarget)
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async function recordVerifiedReply(targetUrl, verificationEvidence = null) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    if (verificationEvidence?.replyArticle instanceof Element) {
+      const meta = buildManualReplyDetectionMeta(
+        normalizedTarget,
+        verificationEvidence.replyArticle,
+        verificationEvidence.detectionSource,
+        verificationEvidence.targetArticle || null
+      );
+      clearPendingReplyOutcome();
+      state.pendingReplyMeta = null;
+      if (meta) {
+        await markTweetAsReplied(normalizedTarget, meta);
+        return true;
+      }
+    }
+
+    await markReplyAsVerified(normalizedTarget);
+    return true;
+  }
+
+  async function settleSuccessfulReplyUi(targetUrl) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const editor = queryReplyComposer({
+      targetUrl: normalizedTarget,
+      replyOnly: false,
+      requireLocked: false
+    });
+    if (editor instanceof HTMLElement) {
+      clearReplyComposerText(editor);
+      await waitFor(120);
+    }
+
+    const dismissed = await dismissGenericComposerDialog();
+    if (dismissed) {
+      await waitFor(220);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.history.back();
+      } catch {}
+      await waitFor(240);
+    }
+
+    if (isComposePostPath()) {
+      try {
+        global.location.assign("https://x.com/home");
+      } catch {}
+      await waitFor(240);
+    }
+
+    return {
+      dismissed,
+      currentUrl: normalizeTweetUrl(global.location.href)
+    };
+  }
+
+  async function finalizeVerifiedReply(targetUrl, options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const replyMeta = options.replyMeta || state.pendingReplyMeta;
+    const verificationEvidence = options.verificationEvidence || findReplyVerificationEvidence(normalizedTarget);
+    await recordVerifiedReply(normalizedTarget, verificationEvidence);
+    const likeResult = await tryAutoLikeReplyTarget(normalizedTarget, options.likeOptions || options, replyMeta);
+    await settleSuccessfulReplyUi(normalizedTarget);
+    return {
+      ok: true,
+      verified: true,
+      outcomeText: String(options.outcomeText || readOutcomeText() || "").trim(),
+      href: global.location.href,
+      ...buildReplyActionMeta(buildReplyPageContext(normalizedTarget)),
+      ...likeResult,
+      verificationSource: String(options.verificationSource || verificationEvidence?.detectionSource || "toast").trim()
+    };
   }
 
   function buildReplyMetaFromArticle(article) {
@@ -7320,7 +10102,7 @@
       });
     }
 
-    article.scrollIntoView({ block: "center", behavior: "smooth" });
+    article.scrollIntoView({ block: "center", behavior: "auto" });
     await waitFor(260);
     const meta = buildReplyMetaFromArticle(article) || {};
     const authorReengagement = findAuthorReengagement(targetUrl, meta.authorHandle);
@@ -7365,7 +10147,118 @@
     };
   }
 
-  async function waitForApiReplyOutcome(targetUrl, timeoutMs = 6800, options = {}) {
+  async function captureReplyPerformanceSnapshot(payload = {}) {
+    const targetUrl = normalizeTweetUrl(payload.url || payload.targetUrl);
+    const replyDetail = targetUrl ? (state.replyDetails?.[targetUrl] || null) : null;
+    const archiveMatch = targetUrl
+      ? (Array.isArray(state.replyArchive) ? state.replyArchive : []).find((entry) => normalizeTweetUrl(entry?.targetUrl || entry?.url) === targetUrl) || null
+      : null;
+    const replyUrl = normalizeTweetUrl(payload.replyUrl || replyDetail?.replyUrl || archiveMatch?.replyUrl);
+    const replyTweetId = normalizeApiTweetId(
+      payload.replyTweetId ||
+      replyDetail?.replyTweetId ||
+      archiveMatch?.replyTweetId ||
+      extractTweetIdFromUrl(replyUrl)
+    );
+
+    if (!replyUrl && !replyTweetId) {
+      return buildReplyActionFailure({
+        targetUrl: targetUrl || replyUrl,
+        currentUrl: normalizeTweetUrl(global.location.href),
+        reason: "missing-reply-reference",
+        reasonCode: "reply-target-lost"
+      });
+    }
+
+    const bridgeSnapshot = replyTweetId ? getTrafficSnapshotByTweetId(replyTweetId) : null;
+    if (bridgeSnapshot) {
+      return {
+        ok: true,
+        ...buildReplyActionMeta({
+          targetUrl: replyUrl || bridgeSnapshot.url || targetUrl,
+          currentUrl: normalizeTweetUrl(global.location.href),
+          articleUrl: normalizeTweetUrl(bridgeSnapshot.url || replyUrl || ""),
+          contextSource: "traffic-bridge"
+        }),
+        snapshot: {
+          capturedAt: Number(bridgeSnapshot.trafficCapturedAt || Date.now()),
+          replyUrl: normalizeTweetUrl(bridgeSnapshot.url || replyUrl),
+          replyTweetId: normalizeApiTweetId(bridgeSnapshot.tweetId || replyTweetId),
+          replies: Number(bridgeSnapshot.replies || 0),
+          likes: Number(bridgeSnapshot.likes || 0),
+          views: Number(bridgeSnapshot.views || 0),
+          source: String(bridgeSnapshot.trafficSource || "traffic-bridge").trim(),
+          replyTrafficSource: String(bridgeSnapshot.trafficSource || "traffic-bridge").trim()
+        }
+      };
+    }
+
+    if (!replyUrl) {
+      return buildReplyActionFailure({
+        targetUrl: targetUrl || "",
+        currentUrl: normalizeTweetUrl(global.location.href),
+        reason: "missing-reply-reference",
+        reasonCode: "reply-target-lost"
+      });
+    }
+
+    const contextTargetUrl = replyUrl;
+    const contextLock = await ensureTargetReplyContext(contextTargetUrl, { maxRetry: 1 });
+    if (!contextLock.ok) {
+      return contextLock;
+    }
+
+    const article = await waitForReplyArticle(contextTargetUrl, 12000);
+    if (!(article instanceof Element)) {
+      return buildReplyActionFailure({
+        targetUrl: contextTargetUrl,
+        currentUrl: contextLock.currentUrl,
+        retryCount: contextLock.retryCount,
+        retried: contextLock.retried,
+        reason: "tweet-not-ready",
+        contextSource: contextLock.contextSource
+      });
+    }
+
+    article.scrollIntoView({ block: "center", behavior: "auto" });
+    await waitFor(220);
+    const meta = buildReplyMetaFromArticle(article) || {};
+    const pageContext = buildReplyPageContext(contextTargetUrl, article);
+    if (
+      pageContext.contextSource !== "status-page" &&
+      pageContext.articleDetectedUrl &&
+      pageContext.articleDetectedUrl !== contextTargetUrl
+    ) {
+      return buildReplyActionFailure({
+        ...pageContext,
+        retryCount: contextLock.retryCount,
+        retried: contextLock.retried,
+        reason: "article-url-conflict",
+        reasonCode: "thread-identity-conflict"
+      });
+    }
+
+    return {
+      ok: true,
+      ...buildReplyActionMeta({
+        ...pageContext,
+        retryCount: contextLock.retryCount,
+        retried: contextLock.retried
+      }),
+      snapshot: {
+        capturedAt: Date.now(),
+        replyUrl: normalizeTweetUrl(readTweetUrl(article) || contextTargetUrl),
+        replyTweetId: normalizeApiTweetId(replyTweetId || extractTweetIdFromUrl(readTweetUrl(article) || contextTargetUrl)),
+        replies: Number(meta.replies || 0),
+        likes: Number(meta.likes || 0),
+        views: Number(meta.views || 0),
+        source: "reply-dom",
+        replyTrafficSource: "reply-dom"
+      }
+    };
+  }
+
+  async function waitForApiReplyOutcome(targetUrl, timeoutMs = EXECUTOR_POST_SEND_VERIFY_TIMEOUT_MS, options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
     const startedAt = Date.now();
     const replyMeta = state.pendingReplyMeta;
@@ -7373,6 +10266,7 @@
     while (Date.now() - startedAt <= timeoutMs) {
       const outcomeText = readOutcomeText();
       if (includesAny(outcomeText, FAILURE_TEXTS)) {
+        await settleFailedTimelineUi();
         return {
           ...buildReplyActionFailure({
             targetUrl: normalizedTarget,
@@ -7386,21 +10280,40 @@
       }
 
       if (includesAny(outcomeText, SUCCESS_TEXTS)) {
-        await markReplyAsVerified(normalizedTarget);
-        const likeResult = await tryAutoLikeReplyTarget(normalizedTarget, options, replyMeta);
-        return {
-          ok: true,
-          verified: true,
+        return finalizeVerifiedReply(normalizedTarget, {
           outcomeText,
-          href: global.location.href,
-          ...buildReplyActionMeta(buildReplyPageContext(normalizedTarget)),
-          ...likeResult
-        };
+          replyMeta,
+          likeOptions: options,
+          verificationSource: "toast"
+        });
+      }
+
+      const verificationEvidence = findReplyVerificationEvidence(normalizedTarget);
+      if (verificationEvidence) {
+        return finalizeVerifiedReply(normalizedTarget, {
+          outcomeText,
+          replyMeta,
+          likeOptions: options,
+          verificationSource: verificationEvidence.detectionSource,
+          verificationEvidence
+        });
       }
 
       await waitFor(240);
     }
 
+    const verificationEvidence = findReplyVerificationEvidence(normalizedTarget);
+    if (verificationEvidence) {
+      return finalizeVerifiedReply(normalizedTarget, {
+        outcomeText: readOutcomeText(),
+        replyMeta,
+        likeOptions: options,
+        verificationSource: verificationEvidence.detectionSource,
+        verificationEvidence
+      });
+    }
+
+    await settleFailedTimelineUi();
     return {
       ...buildReplyActionFailure({
         targetUrl: normalizedTarget,
@@ -7428,6 +10341,85 @@
     return context.explicitReplyEvidence;
   }
 
+  function capturePendingReplyTarget(targetUrl, meta = null) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return "";
+    }
+
+    const previousTarget = normalizeTweetUrl(state.pendingReplyTargetUrl);
+    state.pendingReplyTargetUrl = normalizedTarget;
+    state.pendingReplyStartedAt = Date.now();
+    if (meta && typeof meta === "object") {
+      state.pendingReplyMeta = meta;
+    } else if (previousTarget && previousTarget !== normalizedTarget) {
+      state.pendingReplyMeta = null;
+    }
+    return normalizedTarget;
+  }
+
+  function capturePendingReplyFromArticle(article) {
+    if (!(article instanceof Element)) {
+      return "";
+    }
+    return capturePendingReplyTarget(readTweetUrl(article), buildReplyMetaFromArticle(article));
+  }
+
+  function capturePendingReplyFromComposerContext(node) {
+    const article = resolveReplyContextArticle(node);
+    if (article instanceof Element) {
+      return capturePendingReplyFromArticle(article);
+    }
+
+    return capturePendingReplyTarget(getContextStatusUrl() || getCurrentStatusUrl());
+  }
+
+  function findReplyHotkeySourceArticle(target) {
+    if (target instanceof Element) {
+      const directArticle = target.closest(ARTICLE_SELECTOR);
+      if (directArticle instanceof Element) {
+        return directArticle;
+      }
+    }
+
+    if (document.activeElement instanceof Element) {
+      const activeArticle = document.activeElement.closest(ARTICLE_SELECTOR);
+      if (activeArticle instanceof Element) {
+        return activeArticle;
+      }
+    }
+
+    return document.querySelector(`${ARTICLE_SELECTOR}:focus-within`);
+  }
+
+  function beginManualReplyOutcomeMonitor(sendButton) {
+    if (!(sendButton instanceof HTMLElement)) {
+      return false;
+    }
+
+    capturePendingReplyFromComposerContext(sendButton);
+    const targetUrl = resolveReplyTargetUrl();
+    if (!targetUrl || !isReplyComposer(sendButton, targetUrl)) {
+      return false;
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (
+      state.apiSubmitInFlightTargetUrl &&
+      normalizedTarget === state.apiSubmitInFlightTargetUrl
+    ) {
+      return false;
+    }
+    if (state.pendingReplyOutcomeUrl === normalizedTarget) {
+      return true;
+    }
+
+    state.pendingReplyTargetUrl = "";
+    state.pendingReplyStartedAt = 0;
+    monitorReplyOutcome(normalizedTarget);
+    return true;
+  }
+
   function bindReplyTracking() {
     document.addEventListener("click", (event) => {
       const target = event.target;
@@ -7438,34 +10430,33 @@
       const replyButton = target.closest('[data-testid="reply"]');
       if (replyButton) {
         const article = replyButton.closest(ARTICLE_SELECTOR);
-        const tweetUrl = article ? readTweetUrl(article) : "";
-        if (tweetUrl) {
-          state.pendingReplyTargetUrl = tweetUrl;
-          state.pendingReplyStartedAt = Date.now();
-          state.pendingReplyMeta = buildReplyMetaFromArticle(article);
-        }
+        capturePendingReplyFromArticle(article);
         return;
       }
 
       const sendButton = target.closest('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
-      if (!sendButton) {
+      beginManualReplyOutcomeMonitor(sendButton);
+    }, true);
+
+    document.addEventListener("keydown", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || isEditableKeyboardTarget(target)) {
         return;
       }
 
-      const targetUrl = resolveReplyTargetUrl();
-      if (!targetUrl || !isReplyComposer(sendButton, targetUrl)) {
-        return;
-      }
-      if (
-        state.apiSubmitInFlightTargetUrl &&
-        normalizeTweetUrl(targetUrl) === state.apiSubmitInFlightTargetUrl
-      ) {
+      const key = String(event.key || "").toLowerCase();
+      const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
+      if (!hasModifier && !event.shiftKey && key === "r") {
+        capturePendingReplyFromArticle(findReplyHotkeySourceArticle(target));
         return;
       }
 
-      state.pendingReplyTargetUrl = "";
-      state.pendingReplyStartedAt = 0;
-      monitorReplyOutcome(targetUrl);
+      if (hasModifier || (key !== "enter" && key !== " " && key !== "spacebar")) {
+        return;
+      }
+
+      const sendButton = target.closest('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]');
+      beginManualReplyOutcomeMonitor(sendButton);
     }, true);
   }
 
@@ -7475,13 +10466,10 @@
     bindReplyDropApiBridge();
     state.lastDomChangeAt = Date.now();
     await loadSettings();
-    if (!isFloatingUiDisabled()) {
-      ensureFloatingWidget();
-    }
+    teardownFloatingUi();
     bindRuntimeListener();
     bindReplyTracking();
     startObserver();
-    renderFloatingWidget();
     scheduleScan();
   }
 

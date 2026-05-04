@@ -33,6 +33,7 @@ const PRIMARY_LANGUAGE_KEYS = new Set(["langZh", "langEn", "langJa", "langKo"]);
 const PRIMARY_TOPIC_KEYS = new Set(["ai", "crypto", "model", "creator", "gaming", "business"]);
 const PRIORITY_CANDIDATE_LIMIT = 6;
 const CANDIDATE_PREVIEW_LIMIT = 6;
+const REPLY_ARCHIVE_PAGE_SIZE = 12;
 
 const TEXTS = {
   "zh-Hans": {
@@ -699,6 +700,7 @@ const DEFAULT_STATE = {
   repliedTweets: {},
   dismissedTweets: {},
   replyDetails: {},
+  replyArchive: [],
   recentCandidates: [],
   relationshipStates: {},
   replyQueue: [],
@@ -1224,6 +1226,7 @@ const uiState = {
   composerText: "",
   draftSourceUrl: "",
   attributionSignalModel: null,
+  replyArchivePage: 0,
   lastAgentInboxPayload: null,
   lastDraftTargetsPayload: null,
   lastAgentSchemaPayload: null,
@@ -1570,6 +1573,128 @@ async function fileToPosterDataUrl(file) {
   }
 }
 
+function normalizeReplyHistoryEntry(url, detail = {}) {
+  const normalizedUrl = normalizeDeskUrl(url);
+  if (!normalizedUrl || !detail || typeof detail !== "object") {
+    return null;
+  }
+
+  const timestamp = Number(detail.timestamp || Date.now());
+  const pickupCheckedAt = Number(detail.pickupCheckedAt || 0);
+  const pickupChecks = Math.max(0, Math.floor(Number(detail.pickupChecks) || 0));
+  const pickupStatus = normalizePickupStatus(detail.pickupStatus, pickupCheckedAt ? "quiet" : "pending");
+  const pickupReviewPlan = buildPickupReviewPlan({
+    shippedAt: timestamp,
+    checkedAt: pickupCheckedAt,
+    checks: pickupChecks,
+    status: pickupStatus,
+    reviewStage: detail.pickupReviewStage,
+    nextReviewAt: detail.pickupNextReviewAt,
+    settledAt: detail.pickupSettledAt
+  });
+
+  return {
+    targetUrl: normalizedUrl,
+    url: normalizedUrl,
+    timestamp,
+    completedAt: Number(detail.completedAt || timestamp),
+    score: Math.max(0, Math.floor(Number(detail.score) || 0)),
+    tier: String(detail.tier || "replied").trim(),
+    authorHandle: String(detail.authorHandle || "").trim(),
+    authorVerified: Boolean(detail.authorVerified),
+    authorVerificationType: normalizeAuthorVerificationType(detail.authorVerificationType),
+    text: String(detail.text || "").trim().slice(0, 280),
+    replyText: String(detail.replyText || detail.text || "").trim().slice(0, 560),
+    replyUrl: normalizeDeskUrl(detail.replyUrl),
+    replyTweetId: String(detail.replyTweetId || "").trim(),
+    lane: String(detail.lane || "").trim().slice(0, 48),
+    slot: String(detail.slot || "").trim().slice(0, 24),
+    keywordMatched: Boolean(detail.keywordMatched),
+    matchedTopics: uniqueList(detail.matchedTopics).slice(0, 4),
+    matchedLanguages: uniqueList(detail.matchedLanguages).slice(0, 4),
+    highlights: uniqueList(detail.highlights).slice(0, 4),
+    publishMode: String(detail.publishMode || "").trim().slice(0, 32),
+    queuedAt: Number(detail.queuedAt || 0),
+    handedOffAt: Number(detail.handedOffAt || 0),
+    executionLatencyMs: Number(detail.executionLatencyMs || 0),
+    mediaKind: String(detail.mediaKind || "").trim(),
+    baselineReplies: Number(detail.baselineReplies || 0),
+    baselineLikes: Number(detail.baselineLikes || 0),
+    baselineViews: Number(detail.baselineViews || 0),
+    pickupStatus,
+    pickupCheckedAt,
+    pickupChecks,
+    pickupReplies: Number(detail.pickupReplies || 0),
+    pickupLikes: Number(detail.pickupLikes || 0),
+    pickupViews: Number(detail.pickupViews || 0),
+    pickupDeltaReplies: Number(detail.pickupDeltaReplies || 0),
+    pickupDeltaLikes: Number(detail.pickupDeltaLikes || 0),
+    pickupDeltaViews: Number(detail.pickupDeltaViews || 0),
+    pickupReviewStage: pickupReviewPlan.reviewStage,
+    pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
+    pickupSettledAt: pickupReviewPlan.settledAt,
+    pickupAuthorEngaged: Boolean(detail.pickupAuthorEngaged),
+    pickupAuthorReplyUrl: normalizeDeskUrl(detail.pickupAuthorReplyUrl),
+    replyCheckedAt: Number(detail.replyCheckedAt || 0),
+    replyChecks: Math.max(0, Math.floor(Number(detail.replyChecks) || 0)),
+    replyObservedReplies: Number(detail.replyObservedReplies || 0),
+    replyObservedLikes: Number(detail.replyObservedLikes || 0),
+    replyObservedViews: Number(detail.replyObservedViews || 0),
+    replyDeltaReplies: Number(detail.replyDeltaReplies || 0),
+    replyDeltaLikes: Number(detail.replyDeltaLikes || 0),
+    replyDeltaViews: Number(detail.replyDeltaViews || 0),
+    replyTrafficCapturedAt: Number(detail.replyTrafficCapturedAt || 0),
+    replyTrafficSource: String(detail.replyTrafficSource || "").trim().slice(0, 24)
+  };
+}
+
+function getStartOfLocalDay(timestamp = Date.now()) {
+  const date = new Date(Number(timestamp) || Date.now());
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function getReplyArchiveEntries(state = currentState) {
+  const archiveEntries = Array.isArray(state?.replyArchive) ? state.replyArchive : [];
+  if (archiveEntries.length) {
+    return archiveEntries
+      .filter((entry) => entry && typeof entry === "object" && entry.url)
+      .slice()
+      .sort((left, right) => (
+        Math.max(Number(right?.replyCheckedAt || 0), Number(right?.pickupCheckedAt || 0), Number(right?.timestamp || 0)) -
+        Math.max(Number(left?.replyCheckedAt || 0), Number(left?.pickupCheckedAt || 0), Number(left?.timestamp || 0))
+      ));
+  }
+
+  return Object.entries(state?.replyDetails && typeof state.replyDetails === "object" ? state.replyDetails : {})
+    .map(([url, detail]) => normalizeReplyHistoryEntry(url, detail))
+    .filter(Boolean)
+    .sort((left, right) => (
+      Math.max(Number(right?.replyCheckedAt || 0), Number(right?.pickupCheckedAt || 0), Number(right?.timestamp || 0)) -
+      Math.max(Number(left?.replyCheckedAt || 0), Number(left?.pickupCheckedAt || 0), Number(left?.timestamp || 0))
+    ));
+}
+
+function getTodayReplyArchiveEntries(state = currentState, now = Date.now()) {
+  const dayStart = getStartOfLocalDay(now);
+  return getReplyArchiveEntries(state).filter((entry) => Number(entry?.timestamp || 0) >= dayStart);
+}
+
+function getReplyArchivePageEntries(entries = [], page = 0, pageSize = REPLY_ARCHIVE_PAGE_SIZE) {
+  const list = Array.isArray(entries) ? entries : [];
+  const size = Math.max(1, Math.floor(Number(pageSize) || REPLY_ARCHIVE_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(list.length / size));
+  const safePage = Math.max(0, Math.min(pageCount - 1, Math.floor(Number(page) || 0)));
+  const start = safePage * size;
+  return {
+    page: safePage,
+    pageCount,
+    pageSize: size,
+    total: list.length,
+    items: list.slice(start, start + size)
+  };
+}
+
 function normalizeState(state) {
   const next = {
     ...DEFAULT_STATE,
@@ -1622,60 +1747,27 @@ function normalizeState(state) {
   next.replyDetails = state?.replyDetails && typeof state.replyDetails === "object"
     ? Object.fromEntries(
         Object.entries(state.replyDetails)
-          .filter(([url, detail]) => url && detail && typeof detail === "object")
           .map(([url, detail]) => {
-            const timestamp = Number(detail.timestamp || Date.now());
-            const pickupCheckedAt = Number(detail.pickupCheckedAt || 0);
-            const pickupChecks = Math.max(0, Math.floor(Number(detail.pickupChecks) || 0));
-            const pickupStatus = normalizePickupStatus(detail.pickupStatus, pickupCheckedAt ? "quiet" : "pending");
-            const pickupReviewPlan = buildPickupReviewPlan({
-              shippedAt: timestamp,
-              checkedAt: pickupCheckedAt,
-              checks: pickupChecks,
-              status: pickupStatus,
-              reviewStage: detail.pickupReviewStage,
-              nextReviewAt: detail.pickupNextReviewAt,
-              settledAt: detail.pickupSettledAt
-            });
-            return [normalizeDeskUrl(url), {
-              timestamp,
-              score: Math.max(0, Math.floor(Number(detail.score) || 0)),
-              tier: String(detail.tier || "replied").trim(),
-              authorHandle: String(detail.authorHandle || "").trim(),
-              authorVerified: Boolean(detail.authorVerified),
-              authorVerificationType: normalizeAuthorVerificationType(detail.authorVerificationType),
-              text: String(detail.text || "").trim().slice(0, 280),
-              lane: String(detail.lane || "").trim().slice(0, 48),
-              slot: String(detail.slot || "").trim().slice(0, 24),
-              keywordMatched: Boolean(detail.keywordMatched),
-              matchedTopics: uniqueList(detail.matchedTopics).slice(0, 4),
-              matchedLanguages: uniqueList(detail.matchedLanguages).slice(0, 4),
-              highlights: uniqueList(detail.highlights).slice(0, 4),
-              publishMode: String(detail.publishMode || "").trim().slice(0, 32),
-              queuedAt: Number(detail.queuedAt || 0),
-              handedOffAt: Number(detail.handedOffAt || 0),
-              executionLatencyMs: Number(detail.executionLatencyMs || 0),
-              baselineReplies: Number(detail.baselineReplies || 0),
-              baselineLikes: Number(detail.baselineLikes || 0),
-              baselineViews: Number(detail.baselineViews || 0),
-              pickupStatus,
-              pickupCheckedAt,
-              pickupChecks,
-              pickupReplies: Number(detail.pickupReplies || 0),
-              pickupLikes: Number(detail.pickupLikes || 0),
-              pickupViews: Number(detail.pickupViews || 0),
-              pickupDeltaReplies: Number(detail.pickupDeltaReplies || 0),
-              pickupDeltaLikes: Number(detail.pickupDeltaLikes || 0),
-              pickupDeltaViews: Number(detail.pickupDeltaViews || 0),
-              pickupReviewStage: pickupReviewPlan.reviewStage,
-              pickupNextReviewAt: pickupReviewPlan.nextReviewAt,
-              pickupSettledAt: pickupReviewPlan.settledAt,
-              pickupAuthorEngaged: Boolean(detail.pickupAuthorEngaged),
-              pickupAuthorReplyUrl: normalizeDeskUrl(detail.pickupAuthorReplyUrl)
-            }];
+            const normalizedEntry = normalizeReplyHistoryEntry(url, detail);
+            return normalizedEntry ? [normalizedEntry.url, normalizedEntry] : null;
           })
+          .filter(Boolean)
       )
     : {};
+  next.replyArchive = Array.isArray(state?.replyArchive)
+    ? state.replyArchive
+        .map((entry) => normalizeReplyHistoryEntry(entry?.targetUrl || entry?.url, entry))
+        .filter(Boolean)
+        .sort((left, right) => (
+          Math.max(Number(right?.replyCheckedAt || 0), Number(right?.pickupCheckedAt || 0), Number(right?.timestamp || 0)) -
+          Math.max(Number(left?.replyCheckedAt || 0), Number(left?.pickupCheckedAt || 0), Number(left?.timestamp || 0))
+        ))
+    : Object.values(next.replyDetails)
+        .map((entry) => ({ ...entry }))
+        .sort((left, right) => (
+          Math.max(Number(right?.replyCheckedAt || 0), Number(right?.pickupCheckedAt || 0), Number(right?.timestamp || 0)) -
+          Math.max(Number(left?.replyCheckedAt || 0), Number(left?.pickupCheckedAt || 0), Number(left?.timestamp || 0))
+        ));
   next.relationshipStates = state?.relationshipStates && typeof state.relationshipStates === "object" ? state.relationshipStates : {};
   next.replyQueue = Array.isArray(state?.replyQueue) ? state.replyQueue
     .filter((item) => item && typeof item === "object" && item.url)
@@ -2929,22 +3021,16 @@ function getCandidateRelationshipPriority(candidate) {
   const opportunityBoost = Number(candidate?.opportunityBoost) || 0;
   const attributionKind = String(candidate?.attributionKind || "").trim();
   const memoryHot = attributionKind === "author-engaged" || attributionKind === "handle-picked-up";
-  const followTrainRisk = isCandidateFollowTrainBait(candidate);
   if (relationship?.status === "mutual") {
     if (memoryHot) {
       return 3;
     }
-    if (followTrainRisk) {
-      return 0;
-    }
     if (verificationType === "gold" || verificationType === "government") {
-      return 0;
-    }
-    if ((verificationType === "blue" || candidate?.authorVerified) && score < 68 && opportunityBoost < 10) {
-      return 0;
+      return score >= 62 || opportunityBoost >= 10 ? 1 : 0;
     }
     return score >= 64 || opportunityBoost >= 10 ? 2 : 1;
   }
+  const followTrainRisk = isCandidateFollowTrainBait(candidate);
   if (relationship?.status === "pinned") {
     if (!memoryHot && followTrainRisk) {
       return 0;
@@ -3420,11 +3506,11 @@ function buildToneVariantText(toneKey, draft, candidate, baseText) {
           });
         case "question":
           return localize({
-            "zh-Hans": `真正该追问的不是表面反应，而是：把 ${primaryHighlight} 再推一步后，谁在决定后续走向？`,
-            "zh-Hant": `真正該追問的不是表面反應，而是：把 ${primaryHighlight} 再推一步後，誰在決定後續走向？`,
-            en: `The real question is not the surface reaction, but this: once ${primaryHighlight} moves one step further, who or what actually decides where this goes next?`,
-            ja: `本当に問うべきなのは表面の反応ではなく、${primaryHighlight} をもう一歩進めたあと、何が次の流れを決めるのかです。`,
-            ko: `정말 물어야 할 것은 표면 반응이 아니라 이것입니다. ${primaryHighlight} 를 한 단계 더 밀었을 때 이후 흐름을 실제로 누가, 무엇이 결정하나요?`
+            "zh-Hans": `真正该追问的是：把 ${primaryHighlight} 再推一步后，谁在决定后续走向？`,
+            "zh-Hant": `真正該追問的是：把 ${primaryHighlight} 再推一步後，誰在決定後續走向？`,
+            en: `The question is this: once ${primaryHighlight} moves one step further, who or what actually decides where this goes next?`,
+            ja: `本当に問うべきは、${primaryHighlight} をもう一歩進めたあと、何が次の流れを決めるのかです。`,
+            ko: `정말 물어야 할 건 이것입니다. ${primaryHighlight} 를 한 단계 더 밀었을 때 이후 흐름을 실제로 누가, 무엇이 결정하나요?`
           });
         case "bridge":
           return localize({
@@ -3436,11 +3522,11 @@ function buildToneVariantText(toneKey, draft, candidate, baseText) {
           });
         case "contrast":
           return localize({
-            "zh-Hans": `大家现在围着最显眼的一层打转，但更有价值的其实是 ${primaryHighlight}，不是那个一眼就能说完的结论。`,
-            "zh-Hant": `大家現在圍著最顯眼的一層打轉，但更有價值的其實是 ${primaryHighlight}，不是那個一眼就能說完的結論。`,
-            en: `Most people are circling the most visible layer, but the more valuable read is actually ${primaryHighlight}, not the conclusion everyone can state in one breath.`,
-            ja: `みんな一番目立つ層の周りを回っていますが、価値があるのはむしろ ${primaryHighlight} で、ひと言で片づく結論ではありません。`,
-            ko: `지금 사람들은 가장 눈에 띄는 층만 맴돌고 있지만, 더 가치 있는 읽기는 ${primaryHighlight} 쪽이지 한눈에 끝나는 결론 쪽이 아닙니다.`
+            "zh-Hans": `大家现在围着最显眼的一层打转，但更有价值的其实是 ${primaryHighlight}。那一层不会被一句结论说完。`,
+            "zh-Hant": `大家現在圍著最顯眼的一層打轉，但更有價值的其實是 ${primaryHighlight}。那一層不會被一句結論說完。`,
+            en: `Most people are circling the most visible layer, but the more valuable read is actually ${primaryHighlight}. That part cannot be exhausted in one clean conclusion.`,
+            ja: `みんな一番目立つ層の周りを回っていますが、価値があるのはむしろ ${primaryHighlight} です。そこはひと言の結論で片づきません。`,
+            ko: `지금 사람들은 가장 눈에 띄는 층만 맴돌고 있지만, 더 가치 있는 읽기는 ${primaryHighlight} 쪽입니다. 그 층은 한 줄 결론으로 끝나지 않습니다.`
           });
         case "perspective":
         default:
@@ -3568,11 +3654,11 @@ function buildToneVariantText(toneKey, draft, candidate, baseText) {
           });
         case "contrast":
           return localize({
-            "zh-Hans": `我反而觉得最值得接的不是最显眼的那层，而是 ${primaryHighlight} 这里，后劲会更长一点。`,
-            "zh-Hant": `我反而覺得最值得接的不是最顯眼的那層，而是 ${primaryHighlight} 這裡，後勁會更長一點。`,
-            en: `I kind of think the most reply-worthy part is not the loudest layer, but ${primaryHighlight}. That is the bit with more staying power.`,
-            ja: `返す価値があるのは一番大きい層ではなく、むしろ ${primaryHighlight} のほうだと思います。そちらのほうが後まで効きます。`,
-            ko: `오히려 답글할 가치가 있는 건 가장 시끄러운 층이 아니라 ${primaryHighlight} 쪽이라고 봐요. 그쪽이 더 오래 갑니다.`
+            "zh-Hans": `我反而觉得最值得接的是 ${primaryHighlight} 这里，后劲会更长一点。`,
+            "zh-Hant": `我反而覺得最值得接的是 ${primaryHighlight} 這裡，後勁會更長一點。`,
+            en: `I kind of think ${primaryHighlight} is the most reply-worthy part. That is the bit with more staying power.`,
+            ja: `返す価値があるのはむしろ ${primaryHighlight} のほうだと思います。そちらのほうが後まで効きます。`,
+            ko: `오히려 답글할 가치가 있는 건 ${primaryHighlight} 쪽이라고 봐요. 그쪽이 더 오래 갑니다.`
           });
         case "perspective":
         default:
@@ -3644,9 +3730,9 @@ function buildRouteBundleLeadText(candidate, draft, toneKey = "neutral", activeR
       return localize({
         "zh-Hans": `别急着站队，先看 ${primaryHighlight} 往前推一步后，哪个变量最先改掉整条的走向？`,
         "zh-Hant": `別急著站隊，先看 ${primaryHighlight} 往前推一步後，哪個變量最先改掉整條的走向？`,
-        en: `The key is not the surface reaction, but this: once ${primaryHighlight} moves one step further, what variable actually decides where it goes next?`,
-        ja: `鍵になるのは表面の反応ではなく、${primaryHighlight} をもう一歩進めたあと、何が本当に次の流れを決めるのかです。`,
-        ko: `핵심은 표면 반응이 아니라 이것입니다. ${primaryHighlight} 를 한 걸음 더 밀었을 때 무엇이 실제로 다음 방향을 결정하나요?`
+        en: `The key question is this: once ${primaryHighlight} moves one step further, what variable actually decides where it goes next?`,
+        ja: `鍵になる問いは、${primaryHighlight} をもう一歩進めたあと、何が本当に次の流れを決めるのかです。`,
+        ko: `핵심 질문은 이것입니다. ${primaryHighlight} 를 한 걸음 더 밀었을 때 무엇이 실제로 다음 방향을 결정하나요?`
       });
     case "bridge":
       if (toneKey === "warm") {
@@ -4293,11 +4379,11 @@ function buildRouteBundleBodyText(candidate, attributionSummary = null, toneKey 
     case "contrast":
       if (toneKey === "sharp") {
         return localize({
-          "zh-Hans": `能拉开差距的不是主流那句，反而是 ${context.secondaryHighlight} 这段还没人讲透。`,
-          "zh-Hant": `能拉開差距的不是主流那句，反而是 ${context.secondaryHighlight} 這段還沒人講透。`,
-          en: `The part that actually creates contrast is not the dominant line, but the piece around ${context.secondaryHighlight} that still has not been fully unpacked.`,
-          ja: `本当に差がつくのは主流の一言ではなく、${context.secondaryHighlight} のまだ言い切られていない部分です。`,
-          ko: `정말 차이를 만드는 건 주류 한마디가 아니라 ${context.secondaryHighlight} 주변에서 아직 끝까지 말해지지 않은 부분입니다.`
+          "zh-Hans": `能拉开差距的，往往是 ${context.secondaryHighlight} 这段还没人讲透。`,
+          "zh-Hant": `能拉開差距的，往往是 ${context.secondaryHighlight} 這段還沒人講透。`,
+          en: `The part that actually creates contrast is the piece around ${context.secondaryHighlight} that still has not been fully unpacked.`,
+          ja: `本当に差がつくのは、${context.secondaryHighlight} のまだ言い切られていない部分です。`,
+          ko: `정말 차이를 만드는 건 ${context.secondaryHighlight} 주변에서 아직 끝까지 말해지지 않은 부분입니다.`
         });
       }
       return localize({
@@ -4475,9 +4561,9 @@ function buildDraftRouteReason(routePlan, context) {
     case "soft-contrast":
       if (hasReason("acceleration-window") && hasReason("unique-angle-window")) {
         return localize({
-          "zh-Hans": `这条已经有可见热度了，最值钱的不是跟着附和，而是把角度轻轻拐向 ${context.secondaryHighlight}，给一个别人还没说透的主意。`,
-          "zh-Hant": `這條已經有可見熱度了，最值錢的不是跟著附和，而是把角度輕輕拐向 ${context.secondaryHighlight}，給一個別人還沒說透的主意。`,
-          en: `This post already has visible heat, so the better move is not to echo it, but to bend toward ${context.secondaryHighlight} and add an idea people have not fully unpacked yet.`,
+          "zh-Hans": `这条已经有可见热度了，把角度轻轻拐向 ${context.secondaryHighlight} 会更值钱，等于补一个别人还没说透的主意。`,
+          "zh-Hant": `這條已經有可見熱度了，把角度輕輕拐向 ${context.secondaryHighlight} 會更值錢，等於補一個別人還沒說透的主意。`,
+          en: `This post already has visible heat, so bending toward ${context.secondaryHighlight} is the better move because it adds an idea people have not fully unpacked yet.`,
           ja: `すでに熱量が見えているので、同調するより ${context.secondaryHighlight} 側へ少し曲げて、まだ言い切られていない見方を足す方が価値があります。`,
           ko: `이미 열기가 붙은 상태라 맞장구보다 ${context.secondaryHighlight} 쪽으로 살짝 틀어, 아직 끝까지 말해지지 않은 아이디어를 얹는 편이 더 값집니다.`
         });
@@ -4501,9 +4587,9 @@ function buildDraftRouteReason(routePlan, context) {
     case "add-one-layer":
       if (hasReason("unique-angle-window") && hasReason("proven-reach")) {
         return localize({
-          "zh-Hans": `这条已经起量了，最该补的不是一句“说得好”，而是把 ${context.secondaryHighlight} 这一层补进去，让回复本身有新增信息。`,
-          "zh-Hant": `這條已經起量了，最該補的不是一句「說得好」，而是把 ${context.secondaryHighlight} 這一層補進去，讓回覆本身有新增資訊。`,
-          en: `This post already has reach, so the best reply is not praise. It is adding the ${context.secondaryHighlight} layer so your reply actually contributes something new.`,
+          "zh-Hans": `这条已经起量了，最该补的是 ${context.secondaryHighlight} 这一层，让回复本身有新增信息。`,
+          "zh-Hant": `這條已經起量了，最該補的是 ${context.secondaryHighlight} 這一層，讓回覆本身有新增資訊。`,
+          en: `This post already has reach, so the best reply is adding the ${context.secondaryHighlight} layer so your reply actually contributes something new.`,
           ja: `すでに届き始めているので、ここで価値があるのは褒め言葉ではなく ${context.secondaryHighlight} の層を足して、新しい情報を置くことです。`,
           ko: `이미 도달이 붙은 글이라 여기서 값이 있는 건 칭찬 한마디가 아니라 ${context.secondaryHighlight} 층을 보태 답글 자체에 새 정보를 넣는 일입니다.`
         });
@@ -4537,9 +4623,9 @@ function buildDraftRouteReason(routePlan, context) {
     default:
       if (hasReason("acceleration-window") && hasReason("unique-angle-window")) {
         return localize({
-          "zh-Hans": `这条已经在加速，而且曝光也够看见了。现在最值钱的不是夸一句，而是直接从 ${context.primaryHighlight} 给一个能补信息的观点。`,
-          "zh-Hant": `這條已經在加速，而且曝光也夠看見了。現在最值錢的不是誇一句，而是直接從 ${context.primaryHighlight} 給一個能補資訊的觀點。`,
-          en: `This post is already accelerating and the reach is real. The valuable move now is not praise, but a direct take from ${context.primaryHighlight} that adds information.`,
+          "zh-Hans": `这条已经在加速，而且曝光也够看见了。现在最值钱的是直接从 ${context.primaryHighlight} 给一个能补信息的观点。`,
+          "zh-Hant": `這條已經在加速，而且曝光也夠看見了。現在最值錢的是直接從 ${context.primaryHighlight} 給一個能補資訊的觀點。`,
+          en: `This post is already accelerating and the reach is real. The valuable move now is a direct take from ${context.primaryHighlight} that adds information.`,
           ja: `すでに加速して届き始めているので、ここで価値があるのは褒めることではなく ${context.primaryHighlight} から情報を足す見方を直に出すことです。`,
           ko: `이미 가속 중이고 노출도 충분히 붙어서, 여기서 값이 있는 건 칭찬이 아니라 ${context.primaryHighlight} 에서 새 정보를 더하는 관점을 바로 던지는 일입니다.`
         });
@@ -4853,11 +4939,11 @@ function buildDraftBodyOptions(draft, candidate, attributionSummary = null, tone
         {
           label: { "zh-Hans": "落回原帖", "zh-Hant": "落回原貼", en: "Tie back", ja: "元投稿へ戻す", ko: "원문에 걸기" },
           addition: {
-            "zh-Hans": `如果顺着原帖继续接，这里最适合补的不是结论，而是 ${context.primaryHighlight} 为什么值得补。`,
-            "zh-Hant": `如果順著原貼繼續接，這裡最適合補的不是結論，而是 ${context.primaryHighlight} 為什麼值得補。`,
-            en: `If I keep following the original post, the thing to add is not another conclusion, but why ${context.primaryHighlight} deserves the extra layer.`,
-            ja: `元投稿に沿うなら、足すべきなのは新しい結論ではなく、${context.primaryHighlight} を足す意味そのものです。`,
-            ko: `원문을 계속 따른다면 덧붙일 건 새로운 결론이 아니라 왜 ${context.primaryHighlight} 를 덧대야 하는지 그 이유입니다.`
+            "zh-Hans": `如果顺着原帖继续接，这里最适合补的是 ${context.primaryHighlight} 为什么值得补。`,
+            "zh-Hant": `如果順著原貼繼續接，這裡最適合補的是 ${context.primaryHighlight} 為什麼值得補。`,
+            en: `If I keep following the original post, the thing to add is why ${context.primaryHighlight} deserves the extra layer.`,
+            ja: `元投稿に沿うなら、足すべきなのは ${context.primaryHighlight} を足す意味そのものです。`,
+            ko: `원문을 계속 따른다면 덧붙일 건 왜 ${context.primaryHighlight} 를 덧대야 하는지 그 이유입니다.`
           }
         },
         {
@@ -4876,8 +4962,8 @@ function buildDraftBodyOptions(draft, candidate, attributionSummary = null, tone
         {
           label: { "zh-Hans": "压反差", "zh-Hant": "壓反差", en: "Deepen contrast", ja: "対比を深める", ko: "반차이 누르기" },
           addition: {
-            "zh-Hans": `因为真正拉开差距的，往往不是大家已经说烂的那层，而是 ${context.secondaryHighlight} 这段还没被说透。`,
-            "zh-Hant": `因為真正拉開差距的，往往不是大家已經說爛的那層，而是 ${context.secondaryHighlight} 這段還沒被說透。`,
+            "zh-Hans": `因为真正拉开差距的，往往是 ${context.secondaryHighlight} 这段还没被说透。`,
+            "zh-Hant": `因為真正拉開差距的，往往是 ${context.secondaryHighlight} 這段還沒被說透。`,
             en: `The real contrast usually comes from the part nobody has fully unpacked yet, not the layer everyone already repeated.`,
             ja: `差がつくのは、みんなが言い尽くした層ではなく、まだ言い切られていない ${context.secondaryHighlight} のほうです。`,
             ko: `진짜 차이는 모두가 이미 말한 층이 아니라 아직 끝까지 풀리지 않은 ${context.secondaryHighlight} 쪽에서 생깁니다.`
@@ -4920,21 +5006,21 @@ function buildDraftBodyOptions(draft, candidate, attributionSummary = null, tone
         {
           label: { "zh-Hans": "落回原帖", "zh-Hant": "落回原貼", en: "Tie back", ja: "元投稿へ戻す", ko: "원문에 걸기" },
           addition: {
-            "zh-Hans": `顺着 ${context.handle} 这条原帖继续接，我会把重点放在 ${context.primaryHighlight} 为什么不是表面热度，而是后续讨论真正会分叉的地方。`,
-            "zh-Hant": `順著 ${context.handle} 這條原貼繼續接，我會把重點放在 ${context.primaryHighlight} 為什麼不是表面熱度，而是後續討論真正會分叉的地方。`,
-            en: `If I stay attached to the original post, I would stress why ${context.primaryHighlight} is not just surface heat, but the place where the thread actually splits.`,
-            ja: `元投稿に沿うなら、${context.primaryHighlight} が表面の熱量ではなく、その後の議論が分かれる地点だと置きます。`,
-            ko: `원문 흐름을 유지한다면 ${context.primaryHighlight} 가 단순 열기가 아니라 이후 대화가 갈라지는 지점이라는 쪽에 힘을 둘 것 같습니다.`
+            "zh-Hans": `顺着 ${context.handle} 这条原帖继续接，我会把重点放在 ${context.primaryHighlight} 这层，因为它才是后续讨论真正会分叉的地方。`,
+            "zh-Hant": `順著 ${context.handle} 這條原貼繼續接，我會把重點放在 ${context.primaryHighlight} 這層，因為它才是後續討論真正會分叉的地方。`,
+            en: `If I stay attached to the original post, I would stress ${context.primaryHighlight} because that is the place where the thread actually splits.`,
+            ja: `元投稿に沿うなら、${context.primaryHighlight} を、その後の議論が分かれる地点として置きます。`,
+            ko: `원문 흐름을 유지한다면 ${context.primaryHighlight} 를 이후 대화가 갈라지는 지점으로 놓고 힘을 줄 것 같습니다.`
           }
         },
         {
           label: { "zh-Hans": "给半步", "zh-Hant": "給半步", en: "Half-step", ja: "半歩だけ", ko: "반 걸음" },
           addition: {
-            "zh-Hans": `如果只再往前推半步，${context.topic} 里最值得展开的其实不是结论，而是这层为什么还会继续发酵。`,
-            "zh-Hant": `如果只再往前推半步，${context.topic} 裡最值得展開的其實不是結論，而是這層為什麼還會繼續發酵。`,
-            en: `If I only push half a step further, the expandable part in ${context.topic} is not the conclusion itself, but why this layer keeps generating more thread.`,
-            ja: `半歩だけ進めるなら、${context.topic} で広がるのは結論ではなく、この層がなぜまだ発酵するのかのほうです。`,
-            ko: `반 걸음만 더 간다면 ${context.topic} 에서 펼칠 만한 건 결론 자체보다 이 층이 왜 계속 발효되는지 쪽입니다.`
+            "zh-Hans": `如果只再往前推半步，${context.topic} 里最值得展开的，其实是这层为什么还会继续发酵。`,
+            "zh-Hant": `如果只再往前推半步，${context.topic} 裡最值得展開的，其實是這層為什麼還會繼續發酵。`,
+            en: `If I only push half a step further, the expandable part in ${context.topic} is why this layer keeps generating more thread.`,
+            ja: `半歩だけ進めるなら、${context.topic} で広がるのはこの層がなぜまだ発酵するのかという部分です。`,
+            ko: `반 걸음만 더 간다면 ${context.topic} 에서 펼칠 만한 건 이 층이 왜 계속 발효되는지 쪽입니다.`
           }
         }
       ]);
@@ -6438,6 +6524,41 @@ function getPickupDeltaSummary(entry) {
   return parts.slice(0, 2).join(" · ");
 }
 
+function getReplyObservedSummary(entry) {
+  const parts = [];
+  if (Number(entry?.replyObservedReplies || 0) > 0) {
+    parts.push(`${formatCompactCount(entry.replyObservedReplies)} ${localize({"zh-Hans": "回覆", "zh-Hant": "回覆", en: "replies", ja: "返信", ko: "답글"})}`);
+  }
+  if (Number(entry?.replyObservedLikes || 0) > 0) {
+    parts.push(`${formatCompactCount(entry.replyObservedLikes)} ${localize({"zh-Hans": "赞", "zh-Hant": "讚", en: "likes", ja: "いいね", ko: "좋아요"})}`);
+  }
+  if (Number(entry?.replyObservedViews || 0) > 0) {
+    parts.push(`${formatCompactCount(entry.replyObservedViews)} ${localize({"zh-Hans": "浏览", "zh-Hant": "瀏覽", en: "views", ja: "表示", ko: "조회"})}`);
+  }
+  return parts.slice(0, 3).join(" · ");
+}
+
+function getReplyObservedMetaText(entry, now = Date.now()) {
+  const checkedAt = Number(entry?.replyCheckedAt || entry?.replyTrafficCapturedAt || 0);
+  if (!checkedAt) {
+    const age = formatQueueAgeValue(Math.max(0, now - (Number(entry?.timestamp) || now)));
+    return localize({
+      "zh-Hans": `发出后 ${age} 还没查回复自曝`,
+      "zh-Hant": `發出後 ${age} 還沒查回覆自曝`,
+      en: `Shipped ${age} ago without a reply-view check`,
+      ja: `${age} 前に送信、まだ返信自体は未確認`,
+      ko: `${age} 전에 발송, 아직 답글 자체는 미확인`
+    });
+  }
+  return localize({
+    "zh-Hans": `${formatRelativeTime(checkedAt)} 更新回复自曝`,
+    "zh-Hant": `${formatRelativeTime(checkedAt)} 更新回覆自曝`,
+    en: `Reply performance updated ${formatRelativeTime(checkedAt)} ago`,
+    ja: `${formatRelativeTime(checkedAt)} 前に返信自体を更新`,
+    ko: `${formatRelativeTime(checkedAt)} 전에 답글 자체 성과 업데이트`
+  });
+}
+
 function getPickupCheckMetaText(entry, now = Date.now()) {
   if (!entry?.lastCheckedAt) {
     const age = formatQueueAgeValue(Math.max(0, now - (Number(entry?.shippedAt) || now)));
@@ -6708,6 +6829,15 @@ function getReplyArchiveLane(entry) {
 }
 
 function getReplyArchiveStubLabel(entry) {
+  if (Number(entry?.replyObservedViews || 0) > 0) {
+    return localize({
+      "zh-Hans": "回复曝光",
+      "zh-Hant": "回覆曝光",
+      en: "Reply views",
+      ja: "返信表示",
+      ko: "답글 조회"
+    });
+  }
   const topicKey = Array.isArray(entry?.matchedTopics) ? entry.matchedTopics[0] : "";
   if (topicKey) {
     return getTopicLabel(topicKey);
@@ -6728,8 +6858,24 @@ function getReplyArchiveStubLabel(entry) {
   });
 }
 
+function getReplyArchiveStubValue(entry) {
+  if (Number(entry?.replyObservedViews || 0) > 0) {
+    return formatCompactCount(entry.replyObservedViews);
+  }
+  if (Number(entry?.pickupViews || 0) > 0) {
+    return formatCompactCount(entry.pickupViews);
+  }
+  return String(entry?.score || "√");
+}
+
 function getReplyArchiveStubMeta(entry) {
   const parts = [];
+  const replyObservedSummary = getReplyObservedSummary(entry);
+  if (replyObservedSummary) {
+    parts.push(replyObservedSummary);
+  } else if (entry?.replyCheckedAt || entry?.replyTrafficCapturedAt) {
+    parts.push(getReplyObservedMetaText(entry));
+  }
   const pickupStatus = normalizePickupStatus(entry?.pickupStatus, entry?.pickupCheckedAt ? "quiet" : "pending");
   if (entry?.pickupCheckedAt || pickupStatus === "pending") {
     parts.push(getPickupStatusLabel(pickupStatus));
@@ -6809,20 +6955,44 @@ function getReplyArchiveStubSerial(entry, index) {
 }
 
 function appendReplyArchiveSignals(container, entry) {
-  const signalRow = document.createElement("div");
-  signalRow.className = "deskSignalRow";
-  signalRow.appendChild(createSummaryChip(
+  const replyRow = document.createElement("div");
+  replyRow.className = "deskSignalRow";
+  replyRow.appendChild(createSummaryChip(localize({
+    "zh-Hans": "回复自曝",
+    "zh-Hant": "回覆自曝",
+    en: "Reply self",
+    ja: "返信自体",
+    ko: "답글 자체"
+  }), Number(entry?.replyObservedViews || 0) > 0 ? "accent" : "soft"));
+  replyRow.appendChild(createSummaryChip(
+    getReplyObservedSummary(entry) || getReplyObservedMetaText(entry),
+    Number(entry?.replyObservedViews || 0) > 0 ? "accent" : "soft"
+  ));
+  container.appendChild(replyRow);
+
+  const pickupRow = document.createElement("div");
+  pickupRow.className = "deskSignalRow";
+  pickupRow.appendChild(createSummaryChip(localize({
+    "zh-Hans": "线程观测",
+    "zh-Hant": "線程觀測",
+    en: "Thread observed",
+    ja: "スレッド観測",
+    ko: "스레드 관측"
+  }), "soft"));
+  pickupRow.appendChild(createSummaryChip(
     getPickupStatusLabel(normalizePickupStatus(entry?.pickupStatus, entry?.pickupCheckedAt ? "quiet" : "pending")),
     getPickupStatusTone(entry?.pickupStatus)
   ));
-  if (entry?.pickupCheckedAt) {
-    signalRow.appendChild(createSummaryChip(getPickupCheckMetaText({
+  if (getPickupDeltaSummary(entry)) {
+    pickupRow.appendChild(createSummaryChip(getPickupDeltaSummary(entry), "success"));
+  } else if (entry?.pickupCheckedAt) {
+    pickupRow.appendChild(createSummaryChip(getPickupCheckMetaText({
       shippedAt: entry.timestamp,
       lastCheckedAt: entry.pickupCheckedAt
     }), "soft"));
   }
   if (entry?.pickupAuthorEngaged) {
-    signalRow.appendChild(createSummaryChip(localize({
+    pickupRow.appendChild(createSummaryChip(localize({
       "zh-Hans": "作者可见回流",
       "zh-Hant": "作者可見回流",
       en: "Visible author re-engagement",
@@ -6830,13 +7000,19 @@ function appendReplyArchiveSignals(container, entry) {
       ko: "작성자 재참여 확인"
     }), "success"));
   }
-  container.appendChild(signalRow);
+  container.appendChild(pickupRow);
 }
 
 function appendReplyArchiveActions(container, entry) {
   const actionRow = document.createElement("div");
   actionRow.className = "deskActionRow";
-  actionRow.appendChild(createDeskActionButton("check-pickup", getPickupActionLabel(entry), entry.url || "", entry?.pickupCheckedAt ? "soft" : "accent"));
+  actionRow.appendChild(createDeskActionButton("check-pickup", localize({
+    "zh-Hans": "更新表现",
+    "zh-Hant": "更新表現",
+    en: "Refresh stats",
+    ja: "実績更新",
+    ko: "성과 업데이트"
+  }), entry.url || "", (entry?.pickupCheckedAt || entry?.replyCheckedAt) ? "soft" : "accent"));
   actionRow.appendChild(createDeskActionButton("open-post", localize({
     "zh-Hans": "打开原帖",
     "zh-Hant": "打開原貼",
@@ -6866,12 +7042,12 @@ function createReplyArchiveCard(entry, index) {
     serial: `RD-R${String(index + 1).padStart(3, "0")}`,
     lane: getReplyArchiveLane(entry),
     handle: entry.authorHandle ? `@${entry.authorHandle}` : "reply",
-    text: entry.text || "",
+    text: entry.replyText || entry.text || "",
     time: formatRelativeTime(entry.timestamp),
     verified: entry.authorVerified,
     mediaKind: entry.mediaKind || "text",
     stubLabel: getReplyArchiveStubLabel(entry),
-    stubValue: String(entry.score || "√"),
+    stubValue: getReplyArchiveStubValue(entry),
     stubMeta: getReplyArchiveStubMeta(entry),
     stubSerial: getReplyArchiveStubSerial(entry, index),
     tier: entry.tier || "replied"
@@ -7002,7 +7178,11 @@ function buildRelationshipCard(item, index) {
 }
 
 function buildReplyPerformanceSnapshot(replyEntries = []) {
-  return replyEntries.reduce((summary, entry) => {
+  const summary = replyEntries.reduce((summary, entry) => {
+    const replyViews = Math.max(0, Number(entry?.replyObservedViews) || 0);
+    const replyLikes = Math.max(0, Number(entry?.replyObservedLikes) || 0);
+    const replyReplies = Math.max(0, Number(entry?.replyObservedReplies) || 0);
+    const replyChecked = Number(entry?.replyCheckedAt || entry?.replyTrafficCapturedAt || 0) > 0;
     const pickupViews = Math.max(0, Number(entry?.pickupViews) || 0);
     const deltaViews = Math.max(0, Number(entry?.pickupDeltaViews) || 0);
     const deltaLikes = Math.max(0, Number(entry?.pickupDeltaLikes) || 0);
@@ -7011,37 +7191,67 @@ function buildReplyPerformanceSnapshot(replyEntries = []) {
     const status = normalizePickupStatus(entry?.pickupStatus, checked ? "quiet" : "pending");
     summary.replies += 1;
     summary.checked += checked ? 1 : 0;
+    summary.replyChecked += replyChecked ? 1 : 0;
     summary.pickedUp += status === "picked-up" || status === "author-engaged" ? 1 : 0;
     summary.authorBack += status === "author-engaged" || Boolean(entry?.pickupAuthorEngaged) ? 1 : 0;
-    summary.totalViews += pickupViews;
-    summary.totalDeltaViews += deltaViews;
-    summary.totalDeltaLikes += deltaLikes;
-    summary.totalDeltaReplies += deltaReplies;
-    summary.bestViewDelta = Math.max(summary.bestViewDelta, deltaViews);
-    summary.bestObservedViews = Math.max(summary.bestObservedViews, pickupViews);
+    summary.totalReplyViews += replyViews;
+    summary.totalReplyLikes += replyLikes;
+    summary.totalReplyReplies += replyReplies;
+    summary.totalTargetViews += pickupViews;
+    summary.totalTargetDeltaViews += deltaViews;
+    summary.totalTargetDeltaLikes += deltaLikes;
+    summary.totalTargetDeltaReplies += deltaReplies;
+    summary.bestReplyViews = Math.max(summary.bestReplyViews, replyViews);
+    summary.bestReplyLikes = Math.max(summary.bestReplyLikes, replyLikes);
+    summary.bestTargetViewDelta = Math.max(summary.bestTargetViewDelta, deltaViews);
     return summary;
   }, {
     replies: 0,
     checked: 0,
+    replyChecked: 0,
     pickedUp: 0,
     authorBack: 0,
-    totalViews: 0,
-    totalDeltaViews: 0,
-    totalDeltaLikes: 0,
-    totalDeltaReplies: 0,
-    bestViewDelta: 0,
-    bestObservedViews: 0
+    totalReplyViews: 0,
+    totalReplyLikes: 0,
+    totalReplyReplies: 0,
+    totalTargetViews: 0,
+    totalTargetDeltaViews: 0,
+    totalTargetDeltaLikes: 0,
+    totalTargetDeltaReplies: 0,
+    bestReplyViews: 0,
+    bestReplyLikes: 0,
+    bestTargetViewDelta: 0
   });
+  return {
+    ...summary,
+    totalViews: summary.totalReplyViews,
+    totalDeltaViews: summary.totalTargetDeltaViews,
+    totalDeltaLikes: summary.totalTargetDeltaLikes,
+    totalDeltaReplies: summary.totalTargetDeltaReplies,
+    bestViewDelta: summary.bestTargetViewDelta,
+    bestObservedViews: summary.bestReplyViews
+  };
 }
 
 function buildTopReplyPerformanceItems(replyEntries = []) {
   return replyEntries
     .map((entry) => {
+      const replyViews = Math.max(0, Number(entry?.replyObservedViews) || 0);
+      const replyLikes = Math.max(0, Number(entry?.replyObservedLikes) || 0);
+      const replyReplies = Math.max(0, Number(entry?.replyObservedReplies) || 0);
       const pickupViews = Math.max(0, Number(entry?.pickupViews) || 0);
       const deltaViews = Math.max(0, Number(entry?.pickupDeltaViews) || 0);
       const deltaLikes = Math.max(0, Number(entry?.pickupDeltaLikes) || 0);
       const deltaReplies = Math.max(0, Number(entry?.pickupDeltaReplies) || 0);
-      const score = pickupViews + (deltaViews * 2) + (deltaLikes * 120) + (deltaReplies * 180);
+      const score = (
+        replyViews * 1.4 +
+        replyLikes * 140 +
+        replyReplies * 220 +
+        pickupViews * 0.2 +
+        deltaViews * 1.2 +
+        deltaLikes * 72 +
+        deltaReplies * 120
+      );
       const status = normalizePickupStatus(entry?.pickupStatus, entry?.pickupCheckedAt ? "quiet" : "pending");
       return {
         entry,
@@ -7051,8 +7261,10 @@ function buildTopReplyPerformanceItems(replyEntries = []) {
     })
     .sort((left, right) => (
       right.score - left.score ||
+      (Number(right.entry?.replyObservedViews) || 0) - (Number(left.entry?.replyObservedViews) || 0) ||
       (Number(right.entry?.pickupViews) || 0) - (Number(left.entry?.pickupViews) || 0) ||
-      (Number(right.entry?.pickupCheckedAt) || 0) - (Number(left.entry?.pickupCheckedAt) || 0)
+      Math.max(Number(right.entry?.replyCheckedAt || 0), Number(right.entry?.pickupCheckedAt || 0)) -
+        Math.max(Number(left.entry?.replyCheckedAt || 0), Number(left.entry?.pickupCheckedAt || 0))
     ))
     .slice(0, 3);
 }
@@ -7071,38 +7283,38 @@ function renderDashboardLaunchPreview(candidateCount, performanceSnapshot) {
       ko: "발송"
     }), String(performanceSnapshot?.replies || 0), (performanceSnapshot?.replies || 0) ? "success" : "soft"),
     createDeskLedgerChip(localize({
-      "zh-Hans": "曝光",
-      "zh-Hant": "曝光",
-      en: "Views",
-      ja: "表示",
-      ko: "조회"
-    }), formatCompactCount(performanceSnapshot?.totalViews || 0), (performanceSnapshot?.totalViews || 0) ? "accent" : "soft"),
+      "zh-Hans": "回复曝光",
+      "zh-Hant": "回覆曝光",
+      en: "Reply views",
+      ja: "返信表示",
+      ko: "답글 조회"
+    }), formatCompactCount(performanceSnapshot?.totalReplyViews || 0), (performanceSnapshot?.totalReplyViews || 0) ? "accent" : "soft"),
     createDeskLedgerChip(localize({
-      "zh-Hans": "点赞增量",
-      "zh-Hant": "按讚增量",
-      en: "Like lift",
-      ja: "いいね増分",
-      ko: "좋아요 증가"
-    }), formatCompactCount(performanceSnapshot?.totalDeltaLikes || 0), (performanceSnapshot?.totalDeltaLikes || 0) ? "warning" : "soft")
+      "zh-Hans": "线程回复增量",
+      "zh-Hant": "線程回覆增量",
+      en: "Thread reply lift",
+      ja: "スレッド返信増分",
+      ko: "스레드 답글 증가"
+    }), formatCompactCount(performanceSnapshot?.totalTargetDeltaReplies || 0), (performanceSnapshot?.totalTargetDeltaReplies || 0) ? "warning" : "soft")
   ];
 
   els.dashboardPreviewChips.innerHTML = "";
   chips.forEach((chip) => els.dashboardPreviewChips.appendChild(chip));
 
   setText(els.dashboardLaunchMeta, localize({
-    "zh-Hans": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
+    "zh-Hans": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalReplyViews || 0)
       ? `首页只留入口；进仪表盘先看 ${performanceSnapshot.replies} 条已发回复的表现，再决定下一步。`
       : "首页只留入口；候选、表现和关键词都在下一层处理。",
-    "zh-Hant": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
+    "zh-Hant": (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalReplyViews || 0)
       ? `首頁只留入口；進儀表盤先看 ${performanceSnapshot.replies} 條已發回覆的表現，再決定下一步。`
       : "首頁只留入口；候選、表現和關鍵詞都在下一層處理。",
-    en: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
+    en: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalReplyViews || 0)
       ? `Keep the home layer light. Inside the dashboard, start with the performance of your ${performanceSnapshot.replies} shipped replies.`
       : "Keep only the entry on the home layer, then handle candidates and performance in the next layer.",
-    ja: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
+    ja: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalReplyViews || 0)
       ? `ホーム層は入口だけに保ちます。ダッシュボードでは送信済み ${performanceSnapshot.replies} 件の返信実績を先に見ます。`
       : "ホーム層は入口だけにして、候補・実績・キーワードは次の層で扱います。",
-    ko: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalViews || 0)
+    ko: (performanceSnapshot?.replies || 0) || (performanceSnapshot?.totalReplyViews || 0)
       ? `홈 레이어는 입구만 두고, 대시보드 안에서는 이미 보낸 ${performanceSnapshot.replies}개 답글 성과를 먼저 봅니다.`
       : "홈 레이어는 입구만 남기고, 후보·성과·키워드는 다음 레이어에서 다룹니다."
   }));
@@ -7169,11 +7381,11 @@ function createPerformanceLeadCard(topPerformanceItem, performanceSnapshot) {
   body.className = "performanceLeadBody";
   body.textContent = entry
     ? localize({
-        "zh-Hans": `目前最有起色的是这条回复。${getPickupDeltaSummary(entry) ? `${getPickupDeltaSummary(entry)}，` : ""}${entry.pickupViews ? `当前已经观测到 ${formatCompactCount(entry.pickupViews)} 次曝光，` : ""}可以把它当成今天的表现锚点继续观察。`,
-        "zh-Hant": `目前最有起色的是這條回覆。${getPickupDeltaSummary(entry) ? `${getPickupDeltaSummary(entry)}，` : ""}${entry.pickupViews ? `目前已觀測到 ${formatCompactCount(entry.pickupViews)} 次曝光，` : ""}可以把它當成今天的表現錨點繼續觀察。`,
-        en: `This is the reply with the clearest momentum right now. ${getPickupDeltaSummary(entry) ? `${getPickupDeltaSummary(entry)}, ` : ""}${entry.pickupViews ? `${formatCompactCount(entry.pickupViews)} observed views so far, ` : ""}so it becomes the best anchor for today’s performance read.`,
-        ja: `いま最も勢いが見えるのはこの返信です。${getPickupDeltaSummary(entry) ? `${getPickupDeltaSummary(entry)}、` : ""}${entry.pickupViews ? `現在 ${formatCompactCount(entry.pickupViews)} 表示を観測しており、` : ""}今日の実績を見る基準として使えます。`,
-        ko: `지금 가장 움직임이 보이는 답글은 이 항목입니다. ${getPickupDeltaSummary(entry) ? `${getPickupDeltaSummary(entry)}, ` : ""}${entry.pickupViews ? `현재 ${formatCompactCount(entry.pickupViews)}회 노출이 관측되어 ` : ""}오늘 성과를 읽는 기준점으로 삼기 좋습니다.`
+        "zh-Hans": `目前最有起色的是这条回复。${getReplyObservedSummary(entry) ? `回复自曝 ${getReplyObservedSummary(entry)}，` : ""}${getPickupDeltaSummary(entry) ? `线程观测 ${getPickupDeltaSummary(entry)}，` : ""}它可以作为今天调权时最值得参考的样本。`,
+        "zh-Hant": `目前最有起色的是這條回覆。${getReplyObservedSummary(entry) ? `回覆自曝 ${getReplyObservedSummary(entry)}，` : ""}${getPickupDeltaSummary(entry) ? `線程觀測 ${getPickupDeltaSummary(entry)}，` : ""}它可以作為今天調權時最值得參考的樣本。`,
+        en: `This is the clearest live winner right now. ${getReplyObservedSummary(entry) ? `Reply-side performance: ${getReplyObservedSummary(entry)}. ` : ""}${getPickupDeltaSummary(entry) ? `Thread-side pickup: ${getPickupDeltaSummary(entry)}. ` : ""}Use it as the best weighting reference for today.`,
+        ja: `いま最も伸びが見えるのはこの返信です。${getReplyObservedSummary(entry) ? `返信自体は ${getReplyObservedSummary(entry)}。` : ""}${getPickupDeltaSummary(entry) ? `スレッド側では ${getPickupDeltaSummary(entry)}。` : ""}今日の重み調整の基準として使えます。`,
+        ko: `지금 가장 또렷하게 뜨는 답글은 이 항목입니다. ${getReplyObservedSummary(entry) ? `답글 자체 성과는 ${getReplyObservedSummary(entry)}. ` : ""}${getPickupDeltaSummary(entry) ? `스레드 쪽 관측은 ${getPickupDeltaSummary(entry)}. ` : ""}오늘 가중치 조정의 기준 샘플로 삼기 좋습니다.`
       })
     : localize({
         "zh-Hans": "等你在 X 里发出更多回复后，这里会自动挑出当前最有表现的一条。",
@@ -7187,26 +7399,26 @@ function createPerformanceLeadCard(topPerformanceItem, performanceSnapshot) {
   strip.className = "performanceLeadStrip";
   [
     createDeskLedgerChip(localize({
-      "zh-Hans": "总曝光",
-      "zh-Hant": "總曝光",
-      en: "Total views",
-      ja: "総表示",
-      ko: "총 노출"
-    }), formatCompactCount(performanceSnapshot?.totalViews || 0), (performanceSnapshot?.totalViews || 0) ? "accent" : "soft"),
+      "zh-Hans": "回复总曝光",
+      "zh-Hant": "回覆總曝光",
+      en: "Reply views",
+      ja: "返信総表示",
+      ko: "답글 총조회"
+    }), formatCompactCount(performanceSnapshot?.totalReplyViews || 0), (performanceSnapshot?.totalReplyViews || 0) ? "accent" : "soft"),
     createDeskLedgerChip(localize({
-      "zh-Hans": "点赞增量",
-      "zh-Hant": "按讚增量",
-      en: "Like lift",
-      ja: "いいね増分",
-      ko: "좋아요 증가"
-    }), formatCompactCount(performanceSnapshot?.totalDeltaLikes || 0), (performanceSnapshot?.totalDeltaLikes || 0) ? "warning" : "soft"),
+      "zh-Hans": "线程观测曝光",
+      "zh-Hant": "線程觀測曝光",
+      en: "Thread views",
+      ja: "スレッド観測表示",
+      ko: "스레드 관측 조회"
+    }), formatCompactCount(performanceSnapshot?.totalTargetViews || 0), (performanceSnapshot?.totalTargetViews || 0) ? "soft" : "soft"),
     createDeskLedgerChip(localize({
-      "zh-Hans": "最佳曝光增量",
-      "zh-Hant": "最佳曝光增量",
-      en: "Best view lift",
-      ja: "最大表示増分",
-      ko: "최대 노출 증가"
-    }), formatCompactCount(performanceSnapshot?.bestViewDelta || 0), (performanceSnapshot?.bestViewDelta || 0) ? "success" : "soft")
+      "zh-Hans": "最佳回复曝光",
+      "zh-Hant": "最佳回覆曝光",
+      en: "Best reply views",
+      ja: "最高返信表示",
+      ko: "최고 답글 조회"
+    }), formatCompactCount(performanceSnapshot?.bestReplyViews || 0), (performanceSnapshot?.bestReplyViews || 0) ? "success" : "soft")
   ].forEach((chip) => strip.appendChild(chip));
 
   card.append(header, body, strip);
@@ -8707,16 +8919,17 @@ function renderDeskPanel() {
   const { enabledLanguages, enabledTopics } = summarizeActiveBoosts();
   const dismissedCount = getDismissedCount();
   const rawVisibleCandidates = getVisibleDeskCandidates();
-  const replyEntries = Object.entries(currentState.replyDetails || {})
-    .map(([url, detail]) => ({ url, ...(detail || {}) }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  const performanceSnapshot = buildReplyPerformanceSnapshot(replyEntries);
   const queueItems = getReplyQueueItems();
   const publishWatchItems = getPublishWatchItems();
   const pickupItems = getPickupWatchItems();
   const now = Date.now();
+  const archiveEntries = getReplyArchiveEntries(currentState);
+  const todayReplyEntries = getTodayReplyArchiveEntries(currentState, now);
+  const replyArchivePage = getReplyArchivePageEntries(todayReplyEntries, uiState.replyArchivePage, REPLY_ARCHIVE_PAGE_SIZE);
+  uiState.replyArchivePage = replyArchivePage.page;
+  const performanceSnapshot = buildReplyPerformanceSnapshot(todayReplyEntries);
   uiState.attributionSignalModel = typeof AttributionCore?.buildAttributionSignalModel === "function"
-    ? AttributionCore.buildAttributionSignalModel(replyEntries, queueItems, rawVisibleCandidates, { now })
+    ? AttributionCore.buildAttributionSignalModel(archiveEntries, queueItems, rawVisibleCandidates, { now })
     : null;
   const visibleCandidates = sortDeskCandidates(rawVisibleCandidates, uiState.attributionSignalModel);
   const actionableCandidates = sortDeskCandidates(getActionableDeskCandidates(visibleCandidates), uiState.attributionSignalModel);
@@ -8724,8 +8937,8 @@ function renderDeskPanel() {
   const queueSummary = buildDeskQueueSummary(visibleCandidates, dismissedCount);
   const focusCandidate = resolveFocusCandidate(candidates);
   const hotCandidates = actionableCandidates.filter((candidate) => getCandidateLane(candidate).key === 'now').length;
-  const repliesToday = Number(currentState.todayReplyCount || replyEntries.length || 0);
-  const relationships = buildRelationshipItems(visibleCandidates, replyEntries);
+  const repliesToday = Number(currentState.todayReplyCount || todayReplyEntries.length || 0);
+  const relationships = buildRelationshipItems(visibleCandidates, archiveEntries);
   const focusAttributionSummary = focusCandidate && typeof AttributionCore?.summarizeCandidateAttribution === "function"
     ? AttributionCore.summarizeCandidateAttribution(focusCandidate, uiState.attributionSignalModel)
     : null;
@@ -8760,14 +8973,14 @@ function renderDeskPanel() {
     queueCounts.live * 8 +
     queueCounts.shipped * 16
   ));
-  const topPerformanceItems = buildTopReplyPerformanceItems(replyEntries);
+  const topPerformanceItems = buildTopReplyPerformanceItems(todayReplyEntries);
   setDeskSubTabCount(els.deskSubTabFocusCount, visibleCandidates.length);
   setDeskSubTabCount(els.deskSubTabDraftCount, drafts.length);
   setDeskSubTabCount(els.deskSubTabGrowthCount, performanceSnapshot.replies);
   setDeskSubTabCount(els.deskSubTabAiCount, priorityCandidates.length);
   setDeskSubTabCount(els.deskSubTabQueueCount, queueCounts.live);
   setDeskSubTabCount(els.deskSubTabContactsCount, relationships.length);
-  setDeskSubTabCount(els.deskSubTabFeedbackCount, replyEntries.length);
+  setDeskSubTabCount(els.deskSubTabFeedbackCount, todayReplyEntries.length);
   renderDashboardLaunchPreview(visibleCandidates.length, performanceSnapshot);
 
   const focusDigestItems = typeof FocusCore?.buildFocusDigestItems === "function"
@@ -8921,11 +9134,20 @@ function renderDeskPanel() {
 
   setText(els.deskFocusMeta, queueSummary);
   setText(els.candidateDeskMeta, queueSummary);
+  const feedbackPagerText = replyArchivePage.pageCount > 1
+    ? localize({
+        "zh-Hans": ` · 第 ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} 页`,
+        "zh-Hant": ` · 第 ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} 頁`,
+        en: ` · Page ${replyArchivePage.page + 1}/${replyArchivePage.pageCount}`,
+        ja: ` · ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} ページ`,
+        ko: ` · ${replyArchivePage.page + 1}/${replyArchivePage.pageCount}페이지`
+      })
+    : "";
   setText(els.replyFeedbackMeta,
     publishWatchItems.length
-      ? `${localize({"zh-Hans": "待确认", "zh-Hant": "待確認", en: "Awaiting confirm", ja: "確認待ち", ko: "확인 대기"})} ${publishWatchItems.length} · ${localize({"zh-Hans": "待复查", "zh-Hant": "待複查", en: "Pickup due", ja: "要再確認", ko: "재확인"})} ${reviewCounts.due} · ${replyEntries.length ? `${t.todayRepliedLabel} ${replyEntries.length}` : t.noReplies}`
-      : (replyEntries.length
-        ? `${t.todayRepliedLabel} ${replyEntries.length}${reviewCounts.due ? ` · ${localize({"zh-Hans": "待复查", "zh-Hant": "待複查", en: "Pickup due", ja: "要再確認", ko: "재확인"})} ${reviewCounts.due}` : ""}`
+      ? `${localize({"zh-Hans": "待确认", "zh-Hant": "待確認", en: "Awaiting confirm", ja: "確認待ち", ko: "확인 대기"})} ${publishWatchItems.length} · ${localize({"zh-Hans": "待复查", "zh-Hant": "待複查", en: "Pickup due", ja: "要再確認", ko: "재확인"})} ${reviewCounts.due} · ${todayReplyEntries.length ? `${t.todayRepliedLabel} ${todayReplyEntries.length}` : t.noReplies}${feedbackPagerText}`
+      : (todayReplyEntries.length
+        ? `${t.todayRepliedLabel} ${todayReplyEntries.length}${reviewCounts.due ? ` · ${localize({"zh-Hans": "待复查", "zh-Hant": "待複查", en: "Pickup due", ja: "要再確認", ko: "재확인"})} ${reviewCounts.due}` : ""}${feedbackPagerText}`
         : t.noReplies)
   );
   setText(els.relationshipDeskMeta, getRelationshipMetaText(relationships.length));
@@ -8971,7 +9193,7 @@ function renderDeskPanel() {
   });
 
   els.growthPulseGrid.innerHTML = '';
-  if (!replyEntries.length) {
+  if (!todayReplyEntries.length) {
     const empty = document.createElement("div");
     empty.className = "draftDeskEmpty";
     empty.innerHTML = `<strong>${escapeHtml(localize({
@@ -9000,22 +9222,40 @@ function renderDeskPanel() {
         meta: localize({ "zh-Hans": "已执行动作", "zh-Hant": "已執行动作", en: "Sent replies", ja: "送信済み返信", ko: "보낸 답글" })
       },
       {
-        label: localize({ "zh-Hans": "观测曝光", "zh-Hant": "觀測曝光", en: "Observed views", ja: "観測表示", ko: "관측 조회" }),
-        value: formatCompactCount(performanceSnapshot.totalViews),
-        tone: performanceSnapshot.totalViews ? "accent" : "soft",
-        meta: localize({ "zh-Hans": "复查时看到的浏览总量", "zh-Hant": "複查時看到的瀏覽總量", en: "Total views seen during review", ja: "再確認時点の総表示", ko: "재확인 시점 총 조회" })
+        label: localize({ "zh-Hans": "回复曝光", "zh-Hant": "回覆曝光", en: "Reply views", ja: "返信表示", ko: "답글 조회" }),
+        value: formatCompactCount(performanceSnapshot.totalReplyViews),
+        tone: performanceSnapshot.totalReplyViews ? "accent" : "soft",
+        meta: localize({ "zh-Hans": "回复自身当前累计浏览", "zh-Hant": "回覆自身目前累積瀏覽", en: "Current views on the reply itself", ja: "返信自体の現在表示数", ko: "답글 자체 현재 조회" })
       },
       {
-        label: localize({ "zh-Hans": "点赞增量", "zh-Hant": "按讚增量", en: "Like lift", ja: "いいね増分", ko: "좋아요 증가" }),
-        value: formatCompactCount(performanceSnapshot.totalDeltaLikes),
-        tone: performanceSnapshot.totalDeltaLikes ? "warning" : "soft",
-        meta: localize({ "zh-Hans": "相对基线新增", "zh-Hant": "相對基線新增", en: "Added after baseline", ja: "基準からの増分", ko: "기준 대비 증가" })
+        label: localize({ "zh-Hans": "回复点赞", "zh-Hant": "回覆點讚", en: "Reply likes", ja: "返信いいね", ko: "답글 좋아요" }),
+        value: formatCompactCount(performanceSnapshot.totalReplyLikes),
+        tone: performanceSnapshot.totalReplyLikes ? "warning" : "soft",
+        meta: localize({ "zh-Hans": "回复自身累计点赞", "zh-Hant": "回覆自身累積按讚", en: "Likes accumulated on the reply", ja: "返信自体の累積いいね", ko: "답글 자체 누적 좋아요" })
       },
       {
-        label: localize({ "zh-Hans": "回复增量", "zh-Hant": "回覆增量", en: "Reply lift", ja: "返信増分", ko: "답글 증가" }),
-        value: formatCompactCount(performanceSnapshot.totalDeltaReplies),
-        tone: performanceSnapshot.totalDeltaReplies ? "success" : "soft",
-        meta: localize({ "zh-Hans": "线程继续长出来多少", "zh-Hant": "線程繼續長出來多少", en: "How much the thread kept growing", ja: "スレッドがどれだけ伸びたか", ko: "스레드가 얼마나 더 자랐는지" })
+        label: localize({ "zh-Hans": "回复回帖", "zh-Hant": "回覆回帖", en: "Reply replies", ja: "返信への返信", ko: "답글 받은 답글" }),
+        value: formatCompactCount(performanceSnapshot.totalReplyReplies),
+        tone: performanceSnapshot.totalReplyReplies ? "success" : "soft",
+        meta: localize({ "zh-Hans": "别人直接回你这条 reply 的数量", "zh-Hant": "別人直接回你這條 reply 的數量", en: "Replies posted directly to your reply", ja: "自分の返信に付いた返信数", ko: "내 답글에 직접 달린 답글 수" })
+      },
+      {
+        label: localize({ "zh-Hans": "线程观测曝光", "zh-Hant": "線程觀測曝光", en: "Thread views", ja: "スレッド観測表示", ko: "스레드 관측 조회" }),
+        value: formatCompactCount(performanceSnapshot.totalTargetViews),
+        tone: performanceSnapshot.totalTargetViews ? "soft" : "soft",
+        meta: localize({ "zh-Hans": "回原帖时看到的线程浏览量", "zh-Hant": "回原貼時看到的線程瀏覽量", en: "Observed thread views when revisiting the target", ja: "元投稿に戻った時点で見えた表示数", ko: "원문 재방문 시점의 관측 조회" })
+      },
+      {
+        label: localize({ "zh-Hans": "线程点赞增量", "zh-Hant": "線程點讚增量", en: "Thread like lift", ja: "スレッドいいね増分", ko: "스레드 좋아요 증가" }),
+        value: formatCompactCount(performanceSnapshot.totalTargetDeltaLikes),
+        tone: performanceSnapshot.totalTargetDeltaLikes ? "warning" : "soft",
+        meta: localize({ "zh-Hans": "相对发出时基线新增", "zh-Hant": "相對發出時基線新增", en: "Increase versus the thread baseline", ja: "送信時点の基準からの増分", ko: "발송 시점 기준 대비 증가" })
+      },
+      {
+        label: localize({ "zh-Hans": "线程回复增量", "zh-Hant": "線程回覆增量", en: "Thread reply lift", ja: "スレッド返信増分", ko: "스레드 답글 증가" }),
+        value: formatCompactCount(performanceSnapshot.totalTargetDeltaReplies),
+        tone: performanceSnapshot.totalTargetDeltaReplies ? "success" : "soft",
+        meta: localize({ "zh-Hans": "原帖线程后续继续长出来多少", "zh-Hant": "原貼線程後續繼續長出來多少", en: "How much the target thread kept growing", ja: "元投稿スレッドがその後どれだけ伸びたか", ko: "원문 스레드가 이후 얼마나 더 자랐는지" })
       }
     ].forEach((metric) => {
       growthMetricsGrid.appendChild(createGrowthMetricCard(metric.label, String(metric.value), metric.tone, metric.meta));
@@ -9023,12 +9263,11 @@ function renderDeskPanel() {
 
     const truthStrip = document.createElement("div");
     truthStrip.className = "deskBoostSummary growthTruthStrip";
-    const checkedCoverage = performanceSnapshot.replies ? Math.round((performanceSnapshot.checked / performanceSnapshot.replies) * 100) : 0;
     [
-      createDeskLedgerChip(localize({ "zh-Hans": "已复查", "zh-Hant": "已複查", en: "Reviewed", ja: "再確認済み", ko: "재확인" }), String(performanceSnapshot.checked), performanceSnapshot.checked ? "accent" : "soft"),
+      createDeskLedgerChip(localize({ "zh-Hans": "回复已查", "zh-Hant": "回覆已查", en: "Reply checked", ja: "返信自体確認", ko: "답글 자체 확인" }), String(performanceSnapshot.replyChecked), performanceSnapshot.replyChecked ? "accent" : "soft"),
+      createDeskLedgerChip(localize({ "zh-Hans": "线程已查", "zh-Hant": "線程已查", en: "Thread checked", ja: "スレッド確認", ko: "스레드 확인" }), String(performanceSnapshot.checked), performanceSnapshot.checked ? "soft" : "soft"),
       createDeskLedgerChip(localize({ "zh-Hans": "被接住", "zh-Hant": "被接住", en: "Picked up", ja: "反応あり", ko: "반응 있음" }), String(performanceSnapshot.pickedUp), performanceSnapshot.pickedUp ? "success" : "soft"),
-      createDeskLedgerChip(localize({ "zh-Hans": "作者回流", "zh-Hant": "作者回流", en: "Author back", ja: "作者が戻る", ko: "작성자 재등장" }), String(performanceSnapshot.authorBack), performanceSnapshot.authorBack ? "success" : "soft"),
-      createDeskLedgerChip(localize({ "zh-Hans": "复查覆盖", "zh-Hant": "複查覆蓋", en: "Review coverage", ja: "確認カバー", ko: "검토 커버" }), `${checkedCoverage}%`, checkedCoverage >= 70 ? "success" : checkedCoverage ? "warning" : "soft")
+      createDeskLedgerChip(localize({ "zh-Hans": "作者回流", "zh-Hant": "作者回流", en: "Author back", ja: "作者が戻る", ko: "작성자 재등장" }), String(performanceSnapshot.authorBack), performanceSnapshot.authorBack ? "success" : "soft")
     ].forEach((chip) => truthStrip.appendChild(chip));
 
     const growthActionList = document.createElement("div");
@@ -9042,7 +9281,22 @@ function renderDeskPanel() {
           ja: "この返信",
           ko: "이 답글"
         }),
-        reason: getPickupDeltaSummary(entry) || localize({
+        reason: [
+          getReplyObservedSummary(entry) ? localize({
+            "zh-Hans": `回复自曝 ${getReplyObservedSummary(entry)}`,
+            "zh-Hant": `回覆自曝 ${getReplyObservedSummary(entry)}`,
+            en: `Reply-side ${getReplyObservedSummary(entry)}`,
+            ja: `返信自体 ${getReplyObservedSummary(entry)}`,
+            ko: `답글 자체 ${getReplyObservedSummary(entry)}`
+          }) : "",
+          getPickupDeltaSummary(entry) ? localize({
+            "zh-Hans": `线程观测 ${getPickupDeltaSummary(entry)}`,
+            "zh-Hant": `線程觀測 ${getPickupDeltaSummary(entry)}`,
+            en: `Thread-side ${getPickupDeltaSummary(entry)}`,
+            ja: `スレッド側 ${getPickupDeltaSummary(entry)}`,
+            ko: `스레드 쪽 ${getPickupDeltaSummary(entry)}`
+          }) : ""
+        ].filter(Boolean).join(" · ") || localize({
           "zh-Hans": "这条已经开始形成可见反馈，值得继续观察。",
           "zh-Hant": "這條已開始形成可見回饋，值得繼續觀察。",
           en: "This reply is starting to show visible traction.",
@@ -9050,7 +9304,8 @@ function renderDeskPanel() {
           ko: "이 답글은 실제 반응이 보이기 시작했습니다."
         }),
         meta: [
-          entry.pickupViews ? `${formatCompactCount(entry.pickupViews)} ${localize({"zh-Hans":"浏览","zh-Hant":"瀏覽",en:"views",ja:"表示",ko:"조회"})}` : "",
+          entry.replyObservedViews ? `${formatCompactCount(entry.replyObservedViews)} ${localize({"zh-Hans":"回复曝光","zh-Hant":"回覆曝光",en:"reply views",ja:"返信表示",ko:"답글 조회"})}` : "",
+          entry.pickupViews ? `${formatCompactCount(entry.pickupViews)} ${localize({"zh-Hans":"线程浏览","zh-Hant":"線程瀏覽",en:"thread views",ja:"スレッド表示",ko:"스레드 조회"})}` : "",
           getPickupStatusLabel(status),
           getPickupCheckMetaText({ shippedAt: entry.timestamp, lastCheckedAt: entry.pickupCheckedAt }, now)
         ].filter(Boolean).join(" · "),
@@ -9106,29 +9361,45 @@ function renderDeskPanel() {
   }
 
   els.replyFeedbackList.innerHTML = '';
-  if (!replyEntries.length) {
+  if (!todayReplyEntries.length) {
     const empty = document.createElement('p');
     empty.className = 'emptyState';
     empty.textContent = t.noReplies;
     els.replyFeedbackList.appendChild(empty);
   } else {
-    const feedbackPreviewEntries = typeof FeedbackCore?.buildReplyFeedbackPreviewEntries === "function"
-      ? FeedbackCore.buildReplyFeedbackPreviewEntries(replyEntries, now, { limit: 3 })
-      : replyEntries.slice(0, 3);
-    feedbackPreviewEntries.forEach((entry, index) => {
-      els.replyFeedbackList.appendChild(createReplyArchiveCard(entry, index));
+    replyArchivePage.items.forEach((entry, index) => {
+      els.replyFeedbackList.appendChild(createReplyArchiveCard(entry, replyArchivePage.page * replyArchivePage.pageSize + index));
     });
-    if (replyEntries.length > feedbackPreviewEntries.length) {
-      const note = document.createElement('p');
-      note.className = 'queuePreviewNote';
-      note.textContent = localize({
-        "zh-Hans": `当前优先显示最需要复查的 ${feedbackPreviewEntries.length} 条回复记录。`,
-        "zh-Hant": `目前優先顯示最需要複查的 ${feedbackPreviewEntries.length} 條回覆記錄。`,
-        en: `Showing the ${feedbackPreviewEntries.length} reply records that matter most to review right now.`,
-        ja: `いまは再確認優先度の高い ${feedbackPreviewEntries.length} 件を先に表示しています。`,
-        ko: `지금은 재확인 우선순위가 높은 ${feedbackPreviewEntries.length}개 답글 기록만 먼저 보여 줍니다.`
+    if (replyArchivePage.pageCount > 1) {
+      const pager = document.createElement("div");
+      pager.className = "replyFeedbackPager";
+      const prevButton = createDeskActionButton("reply-archive-prev", localize({
+        "zh-Hans": "上一页",
+        "zh-Hant": "上一頁",
+        en: "Prev",
+        ja: "前へ",
+        ko: "이전"
+      }), "", "soft");
+      prevButton.disabled = replyArchivePage.page <= 0;
+      const nextButton = createDeskActionButton("reply-archive-next", localize({
+        "zh-Hans": "下一页",
+        "zh-Hant": "下一頁",
+        en: "Next",
+        ja: "次へ",
+        ko: "다음"
+      }), "", "soft");
+      nextButton.disabled = replyArchivePage.page >= replyArchivePage.pageCount - 1;
+      const meta = document.createElement("p");
+      meta.className = "replyFeedbackPagerMeta";
+      meta.textContent = localize({
+        "zh-Hans": `今天共 ${replyArchivePage.total} 条，当前第 ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} 页`,
+        "zh-Hant": `今天共 ${replyArchivePage.total} 條，目前第 ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} 頁`,
+        en: `${replyArchivePage.total} replies today · page ${replyArchivePage.page + 1}/${replyArchivePage.pageCount}`,
+        ja: `今日 ${replyArchivePage.total} 件 · ${replyArchivePage.page + 1}/${replyArchivePage.pageCount} ページ`,
+        ko: `오늘 ${replyArchivePage.total}개 · ${replyArchivePage.page + 1}/${replyArchivePage.pageCount}페이지`
       });
-      els.replyFeedbackList.appendChild(note);
+      pager.append(prevButton, meta, nextButton);
+      els.replyFeedbackList.appendChild(pager);
     }
   }
 }
@@ -9721,13 +9992,70 @@ async function clearPublishWatchForUrl(url) {
   await syncState({ publishWatch: getPublishWatchItems().filter((item) => item.url !== normalized) });
 }
 
+function getReplyHistoryEntry(url) {
+  const normalized = normalizeDeskUrl(url);
+  if (!normalized) {
+    return null;
+  }
+  return getReplyArchiveEntries(currentState).find((entry) => entry.url === normalized) || currentState.replyDetails?.[normalized] || null;
+}
+
+async function captureReplyPerformanceForUrl(tabId, targetUrl, replyEntry = null) {
+  const normalizedTarget = normalizeDeskUrl(targetUrl);
+  const sourceEntry = replyEntry || getReplyHistoryEntry(normalizedTarget);
+  const replyUrl = normalizeDeskUrl(sourceEntry?.replyUrl);
+  const replyTweetId = String(sourceEntry?.replyTweetId || "").trim();
+  if (!normalizedTarget || (!replyUrl && !replyTweetId)) {
+    return { ok: false, skipped: true, reason: "missing-reply-reference" };
+  }
+
+  const payload = {
+    url: normalizedTarget,
+    targetUrl: normalizedTarget,
+    replyUrl,
+    replyTweetId
+  };
+  const startedAt = Date.now();
+  let lastResponse = null;
+
+  while (Date.now() - startedAt <= 18000) {
+    const response = await sendTabMessage(tabId, {
+      type: "X_REPLY_SCORER_CAPTURE_REPLY_PERFORMANCE_SNAPSHOT",
+      payload
+    });
+    lastResponse = response || null;
+
+    if (response?.ok && response.snapshot) {
+      const record = await sendMessage({
+        type: "X_REPLY_SCORER_RECORD_REPLY_PERFORMANCE_SNAPSHOT",
+        targetUrl: normalizedTarget,
+        snapshot: response.snapshot
+      });
+      if (record?.state) {
+        render(record.state);
+      }
+      return { ok: true, response, record };
+    }
+
+    if (response?.reason === "navigating") {
+      await waitForTargetTabReady(tabId, normalizeDeskUrl(replyUrl || response?.targetUrl || normalizedTarget), 12000);
+    } else if (isTerminalReplyHandoffFailure(response)) {
+      break;
+    } else {
+      await wait(340);
+    }
+  }
+
+  return { ok: false, lastResponse };
+}
+
 async function capturePickupForUrl(url) {
   const targetUrl = normalizeDeskUrl(url);
   if (!targetUrl) {
     return false;
   }
 
-  const replyEntry = currentState.replyDetails?.[targetUrl] || {};
+  const replyEntry = getReplyHistoryEntry(targetUrl) || {};
   const pickupEntry = getPickupWatchItem(targetUrl);
   const tab = await ensureComposeTab(targetUrl);
   if (!tab?.id) {
@@ -9752,6 +10080,7 @@ async function capturePickupForUrl(url) {
   };
   const startedAt = Date.now();
   let lastResponse = null;
+  let pickupSucceeded = false;
 
   while (Date.now() - startedAt <= 18000) {
     const response = await sendTabMessage(tab.id, {
@@ -9769,11 +10098,8 @@ async function capturePickupForUrl(url) {
       if (record?.state) {
         render(record.state);
       }
-      const nextDetail = record?.state?.replyDetails?.[targetUrl] || currentState.replyDetails?.[targetUrl] || {};
-      const pickupLabel = getPickupStatusLabel(nextDetail.pickupStatus || response.snapshot.status || (response.snapshot.authorEngaged ? "author-engaged" : "quiet"));
-      const deltaText = getPickupDeltaSummary(nextDetail);
-      flashStatus(deltaText ? `${pickupLabel} · ${deltaText}` : pickupLabel);
-      return true;
+      pickupSucceeded = true;
+      break;
     }
 
     if (response?.reason === "navigating") {
@@ -9785,12 +10111,50 @@ async function capturePickupForUrl(url) {
     }
   }
 
-  flashStatus(formatReplyHandoffStatus(lastResponse, localize({
-    "zh-Hans": "暂时没能拿到 pickup 快照",
-    "zh-Hant": "暫時沒能拿到 pickup 快照",
-    en: "Could not capture a pickup snapshot yet",
-    ja: "pickup スナップショットをまだ取得できませんでした",
-    ko: "pickup 스냅샷을 아직 가져오지 못했습니다"
+  const replyOutcome = await captureReplyPerformanceForUrl(tab.id, targetUrl, getReplyHistoryEntry(targetUrl));
+  const nextDetail = getReplyHistoryEntry(targetUrl) || {};
+  const pickupLabel = getPickupStatusLabel(nextDetail.pickupStatus || lastResponse?.snapshot?.status || (lastResponse?.snapshot?.authorEngaged ? "author-engaged" : "quiet"));
+  const deltaText = getPickupDeltaSummary(nextDetail);
+  const replyObservedText = Number(nextDetail?.replyObservedViews || 0) > 0
+    ? localize({
+        "zh-Hans": `回复 ${formatCompactCount(nextDetail.replyObservedViews)} 浏览`,
+        "zh-Hant": `回覆 ${formatCompactCount(nextDetail.replyObservedViews)} 瀏覽`,
+        en: `Reply ${formatCompactCount(nextDetail.replyObservedViews)} views`,
+        ja: `返信 ${formatCompactCount(nextDetail.replyObservedViews)} 表示`,
+        ko: `답글 ${formatCompactCount(nextDetail.replyObservedViews)} 조회`
+      })
+    : (nextDetail?.replyCheckedAt
+      ? localize({
+          "zh-Hans": "回复自曝已更新",
+          "zh-Hant": "回覆自曝已更新",
+          en: "Reply stats updated",
+          ja: "返信自体を更新",
+          ko: "답글 자체 성과 업데이트"
+        })
+      : "");
+
+  if (pickupSucceeded || replyOutcome.ok) {
+    flashStatus([deltaText ? `${pickupLabel} · ${deltaText}` : pickupLabel, replyObservedText].filter(Boolean).join(" · "));
+    return true;
+  }
+
+  if (replyOutcome.skipped) {
+    flashStatus(localize({
+      "zh-Hans": "这条回复还没绑定到 reply 链接，暂时只能查线程表现",
+      "zh-Hant": "這條回覆還沒綁定到 reply 連結，暫時只能查線程表現",
+      en: "This reply is not linked to a reply URL yet, so only thread-side performance is available",
+      ja: "この返信はまだ reply URL に結び付いていないため、いまはスレッド側だけ確認できます",
+      ko: "이 답글은 아직 reply URL과 연결되지 않아 지금은 스레드 쪽만 확인할 수 있습니다"
+    }));
+    return false;
+  }
+
+  flashStatus(formatReplyHandoffStatus(replyOutcome.lastResponse || lastResponse, localize({
+    "zh-Hans": "暂时没能拿到表现快照",
+    "zh-Hant": "暫時沒能拿到表現快照",
+    en: "Could not capture performance snapshots yet",
+    ja: "実績スナップショットをまだ取得できませんでした",
+    ko: "성과 스냅샷을 아직 가져오지 못했습니다"
   })));
   return false;
 }
@@ -10061,7 +10425,7 @@ async function setReplyQueueItemStatus(url, status) {
   }
 
   if (nextStatus === "shipped") {
-    await sendMessage({
+    const response = await sendMessage({
       type: "X_REPLY_SCORER_MARK_REPLIED",
       url: normalized,
       meta: {
@@ -10078,6 +10442,9 @@ async function setReplyQueueItemStatus(url, status) {
         highlights: uniqueList(existing.highlights).slice(0, 4)
       }
     });
+    if (response?.state) {
+      render(response.state);
+    }
     await clearPublishWatchForUrl(normalized);
     flashStatus(localize({
       "zh-Hans": "已标记为发出",
@@ -10304,6 +10671,14 @@ async function handleDeskAction(action, url = "") {
       return;
     case "check-pickup":
       await capturePickupForUrl(url);
+      return;
+    case "reply-archive-prev":
+      uiState.replyArchivePage = Math.max(0, uiState.replyArchivePage - 1);
+      render(currentState);
+      return;
+    case "reply-archive-next":
+      uiState.replyArchivePage += 1;
+      render(currentState);
       return;
     case "focus-candidate":
       setFocusCandidate(url);

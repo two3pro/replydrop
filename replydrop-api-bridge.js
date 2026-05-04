@@ -301,7 +301,10 @@
 
   const CHANNEL = "replydrop-api-v1";
   const pending = new Map();
+  const asyncTickets = new Map();
+  const MAX_ASYNC_TICKETS = 64;
   let sequence = 0;
+  let asyncSequence = 0;
 
   function clearPending(id, error, result) {
     const entry = pending.get(id);
@@ -369,6 +372,120 @@
       reasonCode: String(error?.message || error || "replydrop-api-bridge-failed"),
       method
     }));
+  }
+
+  function pruneAsyncTickets() {
+    while (asyncTickets.size > MAX_ASYNC_TICKETS) {
+      const oldestKey = asyncTickets.keys().next().value;
+      asyncTickets.delete(oldestKey);
+    }
+  }
+
+  function createAsyncTicket(method, mode = "call") {
+    const ticketId = `replydrop-ticket:${Date.now()}:${++asyncSequence}`;
+    const entry = {
+      ticketId,
+      method: String(method || "").trim(),
+      mode: String(mode || "call").trim(),
+      state: "pending",
+      done: false,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      ok: false,
+      result: null,
+      error: ""
+    };
+    asyncTickets.set(ticketId, entry);
+    pruneAsyncTickets();
+    return entry;
+  }
+
+  function updateAsyncTicket(ticketId, patch = {}) {
+    const entry = asyncTickets.get(ticketId);
+    if (!entry) {
+      return null;
+    }
+    const next = {
+      ...entry,
+      ...patch,
+      updatedAt: Date.now()
+    };
+    asyncTickets.set(ticketId, next);
+    return next;
+  }
+
+  function beginAsyncAction(method, args = []) {
+    const entry = createAsyncTicket(method, "action");
+    callAction(method, ...args)
+      .then((result) => {
+        const normalizedResult = result == null
+          ? {
+              ok: false,
+              reason: "replydrop-api-null-result",
+              reasonCode: "replydrop-api-null-result",
+              method: entry.method
+            }
+          : result;
+        updateAsyncTicket(entry.ticketId, {
+          state: "resolved",
+          done: true,
+          ok: Boolean(normalizedResult?.ok),
+          result: normalizedResult,
+          error: normalizedResult?.ok ? "" : String(
+            normalizedResult?.reasonCode ||
+            normalizedResult?.reason ||
+            ""
+          )
+        });
+      })
+      .catch((error) => {
+        updateAsyncTicket(entry.ticketId, {
+          state: "rejected",
+          done: true,
+          error: String(error?.message || error || "replydrop-api-bridge-failed")
+        });
+      });
+    return {
+      ok: true,
+      ticketId: entry.ticketId,
+      state: entry.state,
+      done: entry.done,
+      method: entry.method,
+      startedAt: entry.startedAt
+    };
+  }
+
+  function readAsyncAction(ticketId, options = {}) {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return {
+        ok: false,
+        reason: "missing-ticket-id"
+      };
+    }
+    const entry = asyncTickets.get(normalizedTicketId);
+    if (!entry) {
+      return {
+        ok: false,
+        reason: "ticket-not-found",
+        ticketId: normalizedTicketId
+      };
+    }
+    if (options?.consume && entry.done) {
+      asyncTickets.delete(normalizedTicketId);
+    }
+    return {
+      ok: true,
+      ticketId: entry.ticketId,
+      method: entry.method,
+      mode: entry.mode,
+      state: entry.state,
+      done: Boolean(entry.done),
+      startedAt: entry.startedAt,
+      updatedAt: entry.updatedAt,
+      result: entry.result,
+      error: entry.error || ""
+    };
   }
 
   const api = Object.freeze({
@@ -444,8 +561,29 @@
     runExecutorAction(payload = {}) {
       return callAction("runExecutorAction", payload);
     },
+    beginOpenComposer(payload = {}) {
+      return beginAsyncAction("openComposer", [payload]);
+    },
+    beginReplyFromTimeline(payload = {}) {
+      return beginAsyncAction("replyFromTimeline", [payload]);
+    },
+    beginSubmitReply(options = {}) {
+      return beginAsyncAction("submitReply", [options]);
+    },
+    beginExecutorAction(payload = {}) {
+      return beginAsyncAction("runExecutorAction", [payload]);
+    },
+    getAsyncAction(ticketId, options = {}) {
+      return readAsyncAction(ticketId, options);
+    },
+    consumeAsyncAction(ticketId) {
+      return readAsyncAction(ticketId, { consume: true });
+    },
     markShipped(tweetId, replyText = "") {
       return call("markShipped", tweetId, replyText);
+    },
+    unmarkReplied(tweetIdOrUrl) {
+      return call("unmarkReplied", tweetIdOrUrl);
     },
     skipCandidate(tweetId) {
       return call("skipCandidate", tweetId);

@@ -1729,7 +1729,9 @@ test("scorer demotes p2.203 flow leaks below executor floor", () => {
   for (const item of cases) {
     const analysis = scorer.analyzeTweet({ ...common, ...item });
     if (item.key === "riskyContent") {
-      assert.ok(analysis.score >= 54, `${item.text} scored ${analysis.score}`);
+      assert.ok(analysis.score > 0, `${item.text} scored ${analysis.score}`);
+      assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+      assert.ok(!analysis.breakdown.some((entry) => entry.key.startsWith("hardCap")), `${item.text} was hard-capped`);
     } else {
       assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
     }

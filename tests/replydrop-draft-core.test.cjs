@@ -119,3 +119,21 @@ test("buildDraftRoutePlan favors substantive takes on fresh accelerating posts w
   assert.equal(routes[1]?.key, "add-one-layer");
   assert.ok(routes[1]?.reasons.includes("unique-angle-window"));
 });
+
+test("detectStylePatternHits catches binary contrast phrasing", () => {
+  const hits = draftCore.detectStylePatternHits("最猛的不是这个 demo 多炫，而是 3D 网站第一次从拼工程变成了拼想法和审美。");
+
+  assert.deepEqual(hits, ["binary-contrast-zh"]);
+});
+
+test("detectStylePatternHits leaves normal direct phrasing alone", () => {
+  const hits = draftCore.detectStylePatternHits("最猛的是 3D 网站第一次从拼工程变成了拼想法和审美，门槛一下子就降下来了。");
+
+  assert.deepEqual(hits, []);
+});
+
+test("detectStylePatternHits catches report-tone abstraction", () => {
+  const hits = draftCore.detectStylePatternHits("能从地缘政治的限制中找到自己的突破口，这背后是对产业链上下游的深刻理解和快速反应的体现。");
+
+  assert.deepEqual(hits, ["report-tone-zh"]);
+});
