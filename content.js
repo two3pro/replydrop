@@ -4458,37 +4458,67 @@
         position: fixed;
         top: 78px;
         right: 80px;
-        width: min(456px, calc(100vw - 28px));
-        height: min(700px, calc(100vh - 104px));
-        display: none;
+        width: min(420px, calc(100vw - 28px));
+        height: min(660px, calc(100vh - 110px));
+        display: block;
         z-index: 2147483646;
-        border-radius: 24px;
+        border-radius: 28px;
         overflow: hidden;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        box-shadow:
-          0 28px 72px rgba(15, 23, 42, 0.24),
-          0 10px 24px rgba(14, 116, 144, 0.12);
+        border: 1px solid rgba(104, 84, 56, 0.18);
+        box-shadow: 0 26px 56px rgba(59, 41, 17, 0.24);
         background:
-          linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(236, 245, 255, 0.98));
-        backdrop-filter: blur(18px) saturate(130%);
+          linear-gradient(180deg, rgba(255, 251, 241, 0.9), rgba(238, 225, 192, 0.94));
+        backdrop-filter: blur(12px) saturate(115%);
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
+        transform-origin: calc(100% - 24px) 24px;
+        transform: translate3d(34px, -22px, 0) scale3d(0.22, 0.08, 1);
+        clip-path: inset(0 0 calc(100% - 28px) calc(100% - 28px) round 28px);
+        filter: saturate(0.82) blur(6px);
         transition:
           opacity 220ms ease,
-          transform 220ms ease,
+          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          clip-path 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          filter 300ms ease,
           visibility 0s linear 360ms;
-        transform: translateY(-6px);
       }
       #${FLOAT_PANEL_ID}[data-open="1"] {
-        display: block;
         opacity: 1;
         visibility: visible;
         pointer-events: auto;
-        transform: translateY(0);
+        transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+        clip-path: inset(0 0 0 0 round 28px);
+        filter: none;
         transition:
           opacity 220ms ease,
-          transform 220ms ease;
+          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          clip-path 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          filter 300ms ease;
+      }
+      #${FLOAT_PANEL_ID}::before {
+        content: "";
+        position: absolute;
+        top: 14px;
+        bottom: 14px;
+        right: 112px;
+        border-right: 2px dashed rgba(104, 84, 56, 0.22);
+        z-index: 1;
+      }
+      #${FLOAT_PANEL_ID} iframe {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+        background: transparent;
+        transform-origin: top right;
+        transform: scale(1.04) translateY(-6px);
+        transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      #${FLOAT_PANEL_ID}[data-open="1"] iframe {
+        transform: scale(1) translateY(0);
       }
       #${FLOAT_PANEL_ID} .xrs-floating-fallback {
         position: absolute;
@@ -6863,10 +6893,6 @@
     }
     const next = open ? "1" : "0";
     panel.dataset.open = next;
-    if (open) {
-      renderFloatingPanelFallback(panel, true);
-      focusFloatingPanelAnchor(panel);
-    }
     const button = document.querySelector(`#${FLOAT_WIDGET_ID} .${FLOAT_BUTTON_CLASS}`);
     if (button instanceof HTMLElement) {
       button.dataset.open = next;
@@ -6888,52 +6914,11 @@
     panel.id = FLOAT_PANEL_ID;
     panel.dataset.open = "0";
 
-    const keyboardAnchor = document.createElement("button");
-    keyboardAnchor.type = "button";
-    keyboardAnchor.className = "xrs-floating-fallback-focusAnchor";
-    keyboardAnchor.setAttribute("aria-hidden", "true");
-    keyboardAnchor.tabIndex = 0;
-    panel.appendChild(keyboardAnchor);
-
-    const fallback = document.createElement("div");
-    fallback.className = "xrs-floating-fallback";
-    panel.appendChild(fallback);
+    const frame = document.createElement("iframe");
+    frame.src = chrome.runtime.getURL("popup.html?embedded=1");
+    frame.title = "ReplyDrop panel";
+    panel.appendChild(frame);
     document.body.appendChild(panel);
-
-    panel.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-      focusFloatingPanelAnchor(panel);
-    }, true);
-    panel.addEventListener("click", (event) => {
-      const target = event.target instanceof HTMLElement ? event.target.closest("[data-xrs-panel-action]") : null;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      const action = String(target.dataset.xrsPanelAction || "").trim();
-      const url = normalizeTweetUrl(target.dataset.url || "");
-      if (action === "close") {
-        setFloatingPanelOpen(false);
-        return;
-      }
-      if (action === "refresh") {
-        scheduleScan();
-        renderFloatingPanelFallback(panel, true);
-        return;
-      }
-      if (action === "open-post") {
-        const index = Math.max(0, Number(target.dataset.index) || 0);
-        state.floatingPanelSelectedIndex = index;
-        if (!openFloatingCandidateByIndex(index)) {
-          console.warn("[ReplyDrop] floating candidate open rejected", {
-            index,
-            url,
-            reason: "fastpath-open-rejected"
-          });
-        }
-      }
-    });
 
     document.addEventListener("click", (event) => {
       if (!(event.target instanceof Node)) {
@@ -6947,8 +6932,6 @@
         setFloatingPanelOpen(false);
       }
     }, true);
-
-    renderFloatingPanelFallback(panel);
 
     return panel;
   }
@@ -7033,8 +7016,6 @@
     const panel = document.getElementById(FLOAT_PANEL_ID);
     if (visible !== "1" && panel instanceof HTMLElement) {
       setFloatingPanelOpen(false);
-    } else if (panel instanceof HTMLElement && panel.dataset.open === "1") {
-      renderFloatingPanelFallback(panel, true);
     }
 
     const todayReplyCount = getTodayReplyCount(state.repliedTweets);
@@ -7046,93 +7027,7 @@
   }
 
   function renderFloatingPanelFallback(panel, forceVisible = false) {
-    if (!(panel instanceof HTMLElement)) {
-      return;
-    }
-    const fallback = panel.querySelector(".xrs-floating-fallback");
-    if (!(fallback instanceof HTMLElement)) {
-      return;
-    }
-
-    const shouldShow = forceVisible || panel.dataset.embeddedReady !== "1";
-    fallback.dataset.visible = shouldShow ? "1" : "0";
-    if (!shouldShow) {
-      fallback.innerHTML = "";
-      return;
-    }
-
-    const candidates = getFloatingPanelCandidates(FLOATING_PANEL_LIMIT);
-    const selectedIndex = clampFloatingPanelSelection(candidates.length);
-    const items = candidates.map((candidate, index) => {
-      const handle = escapeHtml(candidate?.authorHandle ? `@${candidate.authorHandle}` : "unknown");
-      const score = Number(candidate?.score || 0);
-      const text = escapeHtml(String(candidate?.text || "").trim().slice(0, 108) || "这条还没抓到正文，先点打开回复。");
-      const url = escapeHtml(candidate?.url || "");
-      const modeLabel = escapeHtml(getFloatingCandidateModeLabel(candidate));
-      const modeTone = escapeHtml(getFloatingCandidateModeTone(candidate));
-      const metaChips = [
-        `<span class="xrs-floating-fallback-score">Score ${score}</span>`,
-        `<span class="xrs-floating-fallback-chip">${modeLabel}</span>`
-      ];
-      if (candidate?.quickDraftAllowed) {
-        metaChips.push('<span class="xrs-floating-fallback-chip">正文够用</span>');
-      }
-      if (candidate?.mediaKind) {
-        metaChips.push(`<span class="xrs-floating-fallback-chip">${escapeHtml(String(candidate.mediaKind).trim())}</span>`);
-      }
-      return `
-        <article class="xrs-floating-fallback-item ${index === selectedIndex ? "is-active" : ""}">
-          <button class="xrs-floating-fallback-itemButton" type="button" data-xrs-panel-action="open-post" data-index="${index}" data-url="${url}">
-            <span class="xrs-floating-fallback-itemRank">${index + 1}</span>
-            <span class="xrs-floating-fallback-main">
-              <span class="xrs-floating-fallback-item-top">
-                <strong>${handle}</strong>
-                <span class="xrs-floating-fallback-itemMode" data-tone="${modeTone}">${modeLabel}</span>
-              </span>
-              <p>${text}</p>
-              <span class="xrs-floating-fallback-itemMeta">
-                ${metaChips.join("")}
-                <span class="xrs-floating-fallback-itemAction">Enter 执行</span>
-              </span>
-            </span>
-          </button>
-        </article>
-      `;
-    }).join("");
-
-    fallback.innerHTML = `
-      <div class="xrs-floating-fallback-card">
-        <div class="xrs-floating-fallback-header">
-          <div class="xrs-floating-fallback-brand">
-            <strong>ReplyDrop</strong>
-            <span>Safari 快速压测台</span>
-          </div>
-          <div class="xrs-floating-fallback-actions">
-            <span class="xrs-floating-fallback-kbd">F2</span>
-            <button type="button" data-xrs-panel-action="refresh">刷新</button>
-            <button type="button" data-xrs-panel-action="close">关闭</button>
-          </div>
-        </div>
-        <div class="xrs-floating-fallback-statGrid">
-          <div class="xrs-floating-fallback-stat">
-            <span>扫描</span>
-            <strong>${Number(state.stats?.scannedCount || 0)}</strong>
-          </div>
-          <div class="xrs-floating-fallback-stat">
-            <span>可见</span>
-            <strong>${Number(state.stats?.visibleCount || 0)}</strong>
-          </div>
-          <div class="xrs-floating-fallback-stat">
-            <span>高分</span>
-            <strong>${Number(state.stats?.highScoreCount || 0)}</strong>
-          </div>
-        </div>
-        <div class="xrs-floating-fallback-tip">J/K 切换，Enter 执行，1-6 直达，R 刷新，F3 退出</div>
-        <div class="xrs-floating-fallback-list">
-          ${items || '<div class="xrs-floating-fallback-empty">还没抓到候选，先滚动时间线再点刷新。</div>'}
-        </div>
-      </div>
-    `;
+    return;
   }
 
   function getPopupBridgeStatus() {

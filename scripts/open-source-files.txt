@@ -22,6 +22,7 @@ icons
 background.js
 content.js
 replydrop-api-bridge.js
+replydrop-browser-compat.js
 docs
 manifest.json
 options.html

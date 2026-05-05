@@ -7,6 +7,7 @@ icons/icon128.png
 background.js
 content.js
 replydrop-api-bridge.js
+replydrop-browser-compat.js
 scorer.js
 popup.html
 popup.css
