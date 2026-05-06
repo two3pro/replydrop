@@ -727,8 +727,18 @@
     const payload = detail && typeof detail === "object" ? detail : {};
     const replyText = String(payload.replyText || payload.text || "").trim().slice(0, 560);
     return [normalizedUrl, {
+      ledgerId: String(payload.ledgerId || "").trim().slice(0, 160),
+      ledgerVersion: String(payload.ledgerVersion || "replydrop-ledger-v1").trim().slice(0, 48),
+      parentTweetUrl: normalizedUrl,
+      tweetId: normalizeApiTweetId(payload.tweetId || extractTweetIdFromUrl(normalizedUrl)),
       timestamp: toNonNegativeNumber(payload.timestamp, Date.now()),
+      draftedAt: toNonNegativeNumber(payload.draftedAt, toNonNegativeNumber(payload.queuedAt, toNonNegativeNumber(payload.handedOffAt, 0))),
+      sentAt: toNonNegativeNumber(payload.sentAt, toNonNegativeNumber(payload.timestamp, Date.now())),
       completedAt: toNonNegativeNumber(payload.completedAt, toNonNegativeNumber(payload.timestamp, Date.now())),
+      status: String(payload.status || "shipped").trim().slice(0, 24),
+      sessionId: String(payload.sessionId || "").trim().slice(0, 80),
+      roundId: String(payload.roundId || "").trim().slice(0, 80),
+      sendResult: String(payload.sendResult || "sent").trim().slice(0, 40),
       score: Number(payload.score || 0),
       tier: String(payload.tier || "replied").trim().slice(0, 24),
       authorHandle: String(payload.authorHandle || payload.handle || "").trim().slice(0, 64),
@@ -737,6 +747,7 @@
       text: replyText.slice(0, 280),
       replyText,
       replyUrl: normalizeTweetUrl(payload.replyUrl),
+      replyTweetUrl: normalizeTweetUrl(payload.replyTweetUrl || payload.replyUrl),
       replyTweetId: normalizeApiTweetId(payload.replyTweetId || extractTweetIdFromUrl(payload.replyUrl)),
       lane: String(payload.lane || "").trim().slice(0, 48),
       slot: String(payload.slot || "").trim().slice(0, 24),
@@ -784,7 +795,15 @@
       replyDeltaLikes: toNonNegativeNumber(payload.replyDeltaLikes, 0),
       replyDeltaViews: toNonNegativeNumber(payload.replyDeltaViews, 0),
       replyTrafficCapturedAt: toNonNegativeNumber(payload.replyTrafficCapturedAt, 0),
-      replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24)
+      replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24),
+      performanceLastUpdatedAt: toNonNegativeNumber(
+        payload.performanceLastUpdatedAt,
+        Math.max(
+          toNonNegativeNumber(payload.replyCheckedAt, 0),
+          toNonNegativeNumber(payload.pickupCheckedAt, 0)
+        )
+      ),
+      performanceLastError: String(payload.performanceLastError || "").trim().slice(0, 240)
     }];
   }
 
@@ -812,14 +831,99 @@
   }
 
   function pruneReplyArchive(replyArchive = [], limit = MAX_RUNTIME_REPLY_ARCHIVE) {
-    return (Array.isArray(replyArchive) ? replyArchive : [])
+    const deduped = [];
+    const seen = new Set();
+    (Array.isArray(replyArchive) ? replyArchive : [])
       .map((entry) => sanitizeReplyArchiveEntry(entry))
       .filter(Boolean)
       .sort((left, right) => (
         Math.max(right.replyCheckedAt || 0, right.pickupCheckedAt || 0, right.timestamp || 0) -
         Math.max(left.replyCheckedAt || 0, left.pickupCheckedAt || 0, left.timestamp || 0)
       ))
+      .forEach((entry) => {
+        const key = String(entry.ledgerId || `${entry.targetUrl}::${entry.sentAt || entry.timestamp || 0}::${entry.replyUrl || ""}`);
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        deduped.push(entry);
+      });
+    return deduped.slice(0, limit);
+  }
+
+  function clampReplyArchiveLimit(value, fallback = 50) {
+    return Math.max(1, Math.min(MAX_RUNTIME_REPLY_ARCHIVE, Math.floor(Number(value) || fallback)));
+  }
+
+  function filterRuntimeReplyArchive(replyArchive = [], options = {}) {
+    const source = Array.isArray(replyArchive) ? replyArchive : [];
+    const normalizedTargetUrl = normalizeTweetUrl(options.targetUrl || options.url);
+    const normalizedReplyUrl = normalizeTweetUrl(options.replyUrl || options.replyTweetUrl);
+    const normalizedLedgerId = String(options.ledgerId || "").trim();
+    const normalizedTweetId = normalizeApiTweetId(options.tweetId || options.parentTweetId || extractTweetIdFromUrl(normalizedTargetUrl));
+    const normalizedReplyTweetId = normalizeApiTweetId(options.replyTweetId || extractTweetIdFromUrl(normalizedReplyUrl));
+    const normalizedSessionId = String(options.sessionId || "").trim();
+    const normalizedRoundId = String(options.roundId || "").trim();
+    const normalizedStatus = String(options.status || "").trim().toLowerCase();
+    const since = Math.max(0, Number(options.since ?? options.sentAfter ?? (options.todayOnly ? getStartOfLocalDay(Date.now()) : 0)) || 0);
+    const until = Math.max(0, Number(options.until ?? options.sentBefore ?? 0) || 0);
+    const limit = clampReplyArchiveLimit(options.limit, source.length || 50);
+    return source
+      .filter((entry) => {
+        if (normalizedLedgerId && String(entry?.ledgerId || "").trim() !== normalizedLedgerId) {
+          return false;
+        }
+        if (normalizedTargetUrl && normalizeTweetUrl(entry?.targetUrl || entry?.parentTweetUrl || entry?.url) !== normalizedTargetUrl) {
+          return false;
+        }
+        if (normalizedReplyUrl && normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl) !== normalizedReplyUrl) {
+          return false;
+        }
+        if (normalizedTweetId && normalizeApiTweetId(entry?.tweetId || extractTweetIdFromUrl(entry?.targetUrl || entry?.url)) !== normalizedTweetId) {
+          return false;
+        }
+        if (normalizedReplyTweetId && normalizeApiTweetId(entry?.replyTweetId || extractTweetIdFromUrl(entry?.replyUrl)) !== normalizedReplyTweetId) {
+          return false;
+        }
+        if (normalizedSessionId && String(entry?.sessionId || "").trim() !== normalizedSessionId) {
+          return false;
+        }
+        if (normalizedRoundId && String(entry?.roundId || "").trim() !== normalizedRoundId) {
+          return false;
+        }
+        if (normalizedStatus && String(entry?.status || "").trim().toLowerCase() !== normalizedStatus) {
+          return false;
+        }
+        const sentAt = Number(entry?.sentAt || entry?.timestamp || entry?.completedAt || 0);
+        if (since && sentAt < since) {
+          return false;
+        }
+        if (until && sentAt > until) {
+          return false;
+        }
+        if (options.replyOnly && !normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((left, right) => (
+        Math.max(Number(right?.performanceLastUpdatedAt || 0), Number(right?.replyCheckedAt || 0), Number(right?.pickupCheckedAt || 0), Number(right?.sentAt || right?.timestamp || 0)) -
+        Math.max(Number(left?.performanceLastUpdatedAt || 0), Number(left?.replyCheckedAt || 0), Number(left?.pickupCheckedAt || 0), Number(left?.sentAt || left?.timestamp || 0))
+      ))
       .slice(0, limit);
+  }
+
+  function summarizeRuntimeReplyArchive(entries = []) {
+    const source = Array.isArray(entries) ? entries : [];
+    return {
+      totalEntries: source.length,
+      shippedCount: source.filter((entry) => String(entry?.status || "").trim().toLowerCase() === "shipped").length,
+      withReplyUrlCount: source.filter((entry) => normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl)).length,
+      replyPerformanceCount: source.filter((entry) => Number(entry?.replyCheckedAt || 0) > 0).length,
+      threadPerformanceCount: source.filter((entry) => Number(entry?.pickupCheckedAt || 0) > 0).length,
+      lastSentAt: source.reduce((max, entry) => Math.max(max, Number(entry?.sentAt || entry?.timestamp || 0)), 0),
+      lastPerformanceUpdatedAt: source.reduce((max, entry) => Math.max(max, Number(entry?.performanceLastUpdatedAt || 0)), 0)
+    };
   }
 
   function sanitizeMediaSummaryEntry(tweetId, detail = {}) {
@@ -1877,9 +1981,30 @@
             targetDeadlineAt: "number"
           }
         },
-        markShipped: { type: "write" },
+        markShipped: {
+          type: "write",
+          accepts: {
+            tweetId: "string",
+            replyText: "string",
+            replyUrl: "string",
+            replyTweetId: "string",
+            draftedAt: "number",
+            sentAt: "number",
+            roundId: "string",
+            sessionId: "string",
+            sendResult: "string",
+            publishMode: "string"
+          }
+        },
         unmarkReplied: { type: "write" },
         skipCandidate: { type: "write" },
+        getReplyLedger: { type: "read" },
+        exportReplyLedger: { type: "read" },
+        importReplyLedger: { type: "write" },
+        capturePickupSnapshot: { type: "write" },
+        captureReplyPerformance: { type: "write" },
+        refreshReplyPerformance: { type: "write" },
+        getReplyPerformanceReport: { type: "read" },
         runExecutorAction: {
           type: "write",
           accepts: {
@@ -3485,8 +3610,16 @@
     return summarizeApiQueueItem(nextItem);
   }
 
-  async function markReplyDropTweetShipped(tweetId, replyText = "") {
-    const normalizedTweetId = normalizeApiTweetId(tweetId);
+  async function markReplyDropTweetShipped(tweetId, replyText = "", meta = {}) {
+    const payload = tweetId && typeof tweetId === "object" ? tweetId : {};
+    const metaPayload = replyText && typeof replyText === "object"
+      ? replyText
+      : (meta && typeof meta === "object" ? meta : {});
+    const normalizedTweetId = normalizeApiTweetId(
+      payload.tweetId ||
+      payload.targetTweetId ||
+      tweetId
+    );
     if (!normalizedTweetId) {
       throw new Error("invalid-tweet-id");
     }
@@ -3499,24 +3632,48 @@
 
     const queueItem = getQueueItemByTweetIdFromState(runtimeState, normalizedTweetId);
     const candidate = getCandidateByTweetIdFromState(runtimeState, normalizedTweetId);
-    const finalReplyText = String(replyText || queueItem?.draft || queueItem?.text || candidate?.text || "").trim().slice(0, 560);
+    const explicitReplyText = typeof replyText === "string" ? replyText : "";
+    const finalReplyText = String(
+      payload.replyText ||
+      payload.text ||
+      metaPayload.replyText ||
+      metaPayload.text ||
+      explicitReplyText ||
+      queueItem?.draft ||
+      queueItem?.text ||
+      candidate?.text ||
+      ""
+    ).trim().slice(0, 560);
     const response = await sendRuntimeApiMessage({
       type: "X_REPLY_SCORER_MARK_REPLIED",
       url,
       meta: {
+        ledgerId: String(payload.ledgerId || metaPayload.ledgerId || "").trim(),
         score: Number(queueItem?.score ?? candidate?.score ?? 0),
         tier: "replied",
         authorHandle: String(queueItem?.authorHandle || candidate?.authorHandle || "").trim(),
         authorVerified: Boolean(candidate?.authorVerified),
         authorVerificationType: String(candidate?.authorVerificationType || "").trim(),
         text: finalReplyText,
+        replyText: finalReplyText,
+        replyUrl: normalizeTweetUrl(payload.replyUrl || metaPayload.replyUrl),
+        replyTweetId: normalizeApiTweetId(
+          payload.replyTweetId ||
+          metaPayload.replyTweetId ||
+          extractTweetIdFromUrl(payload.replyUrl || metaPayload.replyUrl)
+        ),
         lane: String(queueItem?.lane || "").trim(),
         slot: String(queueItem?.slot || getDefaultQueueSlot(candidate, runtimeState?.uiLanguage || "zh-Hans")).trim(),
         keywordMatched: Boolean(queueItem?.keywordMatched || candidate?.keywordMatched),
         matchedTopics: Array.isArray(queueItem?.matchedTopics) && queueItem.matchedTopics.length ? queueItem.matchedTopics.slice(0, 4) : (candidate?.matchedTopics || []).slice(0, 4),
         matchedLanguages: Array.isArray(queueItem?.matchedLanguages) && queueItem.matchedLanguages.length ? queueItem.matchedLanguages.slice(0, 4) : (candidate?.matchedLanguages || []).slice(0, 4),
         highlights: Array.isArray(queueItem?.highlights) && queueItem.highlights.length ? queueItem.highlights.slice(0, 4) : (candidate?.highlights || []).slice(0, 4),
-        publishMode: queueItem ? "queue" : "manual"
+        draftedAt: Number(payload.draftedAt ?? metaPayload.draftedAt ?? queueItem?.createdAt ?? 0),
+        sentAt: Number(payload.sentAt ?? metaPayload.sentAt ?? Date.now()),
+        roundId: String(payload.roundId || metaPayload.roundId || "").trim(),
+        sessionId: String(payload.sessionId || metaPayload.sessionId || "").trim(),
+        sendResult: String(payload.sendResult || metaPayload.sendResult || "sent").trim(),
+        publishMode: String(payload.publishMode || metaPayload.publishMode || (queueItem ? "queue" : "manual")).trim() || (queueItem ? "queue" : "manual")
       }
     });
 
@@ -3529,7 +3686,10 @@
       tweetId: normalizedTweetId,
       status: "shipped",
       url,
-      replyText: finalReplyText
+      replyText: finalReplyText,
+      ledgerId: String(response?.state?.replyArchive?.[0]?.ledgerId || "").trim(),
+      roundId: String(payload.roundId || metaPayload.roundId || "").trim(),
+      sessionId: String(payload.sessionId || metaPayload.sessionId || "").trim()
     };
   }
 
@@ -3870,7 +4030,10 @@
         };
       }
       case "mark-shipped":
-        return markReplyDropTweetShipped(tweetId, normalizedPayload.replyText || normalizedPayload.draft || "");
+        return markReplyDropTweetShipped({
+          ...normalizedPayload,
+          tweetId
+        });
       case "skip":
         return skipReplyDropCandidate(tweetId);
       default:
@@ -4100,14 +4263,28 @@
         return buildReplyDropExecutorSchema();
       case "getState":
         return getApiRuntimeStateSnapshot();
+      case "getReplyLedger":
+        return getReplyDropApiReplyLedger(args[0] || {});
+      case "exportReplyLedger":
+        return exportReplyDropApiReplyLedger(args[0] || {});
+      case "importReplyLedger":
+        return importReplyDropApiReplyLedger(args[0] || {});
       case "addToQueue":
         return addReplyDropCandidateToQueue(args[0]);
       case "markShipped":
-        return markReplyDropTweetShipped(args[0], args[1]);
+        return markReplyDropTweetShipped(args[0], args[1], args[2] || {});
       case "unmarkReplied":
         return unmarkReplyDropTweet(args[0]);
       case "skipCandidate":
         return skipReplyDropCandidate(args[0]);
+      case "capturePickupSnapshot":
+        return captureAndRecordPickupSnapshot(args[0] || {});
+      case "captureReplyPerformance":
+        return captureAndRecordReplyPerformance(args[0] || {});
+      case "refreshReplyPerformance":
+        return refreshReplyDropApiReplyPerformance(args[0] || {});
+      case "getReplyPerformanceReport":
+        return getReplyDropApiReplyPerformanceReport(args[0] || {});
       case "openComposer":
         return openReplyDropComposer(args[0] || {});
       case "replyFromTimeline":
@@ -10272,6 +10449,155 @@
         source: "reply-dom",
         replyTrafficSource: "reply-dom"
       }
+    };
+  }
+
+  async function callBackgroundReplyDropApi(method, args = [], timeoutMs = 15000) {
+    const response = await sendRuntimeApiMessage({
+      type: "X_REPLY_SCORER_API_CALL",
+      method,
+      args: Array.isArray(args) ? args : []
+    }, timeoutMs);
+    if (!response?.ok) {
+      throw new Error(String(response?.error || "replydrop-runtime-api-failed"));
+    }
+    return response.result;
+  }
+
+  async function captureAndRecordPickupSnapshot(payload = {}) {
+    const result = await capturePickupSnapshot(payload);
+    if (!result?.ok) {
+      return result;
+    }
+    const recordResponse = await sendRuntimeApiMessage({
+      type: "X_REPLY_SCORER_RECORD_PICKUP_SNAPSHOT",
+      url: normalizeTweetUrl(payload.url || payload.targetUrl || result?.targetUrl),
+      snapshot: {
+        ...(result.snapshot || {}),
+        ledgerId: String(payload.ledgerId || "").trim()
+      }
+    }, 10000);
+    if (!recordResponse?.ok) {
+      return {
+        ...result,
+        ok: false,
+        reason: "runtime-record-failed",
+        reasonCode: String(recordResponse?.error || "pickup-record-failed")
+      };
+    }
+    return {
+      ...result,
+      recorded: true,
+      recordedState: recordResponse.state || null
+    };
+  }
+
+  async function captureAndRecordReplyPerformance(payload = {}) {
+    const result = await captureReplyPerformanceSnapshot(payload);
+    if (!result?.ok) {
+      return result;
+    }
+    const recordResponse = await sendRuntimeApiMessage({
+      type: "X_REPLY_SCORER_RECORD_REPLY_PERFORMANCE_SNAPSHOT",
+      targetUrl: normalizeTweetUrl(payload.targetUrl || payload.url || result?.targetUrl),
+      snapshot: {
+        ...(result.snapshot || {}),
+        ledgerId: String(payload.ledgerId || "").trim()
+      }
+    }, 10000);
+    if (!recordResponse?.ok) {
+      return {
+        ...result,
+        ok: false,
+        reason: "runtime-record-failed",
+        reasonCode: String(recordResponse?.error || "reply-performance-record-failed")
+      };
+    }
+    return {
+      ...result,
+      recorded: true,
+      recordedState: recordResponse.state || null
+    };
+  }
+
+  async function getReplyDropApiReplyLedger(options = {}) {
+    return callBackgroundReplyDropApi("getReplyLedger", [options], 15000);
+  }
+
+  async function exportReplyDropApiReplyLedger(options = {}) {
+    return callBackgroundReplyDropApi("exportReplyLedger", [options], 15000);
+  }
+
+  async function importReplyDropApiReplyLedger(payload = {}) {
+    return callBackgroundReplyDropApi("importReplyLedger", [payload], 30000);
+  }
+
+  async function getReplyDropApiReplyPerformanceReport(options = {}) {
+    return callBackgroundReplyDropApi("getReplyPerformanceReport", [options], 15000);
+  }
+
+  async function refreshReplyDropApiReplyPerformance(options = {}) {
+    const runtimeState = await getApiRuntimeStateSnapshot();
+    const archiveEntries = filterRuntimeReplyArchive(runtimeState?.replyArchive, options);
+    const includeReply = options.includeReply !== false;
+    const includeThread = options.includeThread !== false;
+    const originalUrl = normalizeTweetUrl(global.location.href);
+    const results = [];
+
+    for (const entry of archiveEntries) {
+      const item = {
+        ledgerId: String(entry?.ledgerId || "").trim(),
+        targetUrl: normalizeTweetUrl(entry?.targetUrl || entry?.parentTweetUrl || entry?.url),
+        replyUrl: normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl),
+        replyTweetId: normalizeApiTweetId(entry?.replyTweetId || extractTweetIdFromUrl(entry?.replyUrl)),
+        roundId: String(entry?.roundId || "").trim(),
+        sessionId: String(entry?.sessionId || "").trim()
+      };
+
+      if (includeReply) {
+        item.reply = await captureAndRecordReplyPerformance({
+          targetUrl: item.targetUrl,
+          replyUrl: item.replyUrl,
+          replyTweetId: item.replyTweetId,
+          ledgerId: item.ledgerId
+        });
+      }
+
+      if (includeThread) {
+        item.pickup = await captureAndRecordPickupSnapshot({
+          url: item.targetUrl,
+          lane: entry?.lane,
+          slot: entry?.slot,
+          baselineReplies: Number(entry?.baselineReplies || 0),
+          baselineLikes: Number(entry?.baselineLikes || 0),
+          baselineViews: Number(entry?.baselineViews || 0),
+          ledgerId: item.ledgerId
+        });
+      }
+
+      results.push(item);
+    }
+
+    const report = await getReplyDropApiReplyPerformanceReport({
+      ...options,
+      limit: clampReplyArchiveLimit(options.limit, archiveEntries.length || 50)
+    }).catch(() => null);
+
+    if (options.restoreOriginalUrl !== false && originalUrl && normalizeTweetUrl(global.location.href) !== originalUrl) {
+      global.location.assign(originalUrl);
+    }
+
+    return {
+      ok: true,
+      version: "replydrop-performance-refresh-v1",
+      generatedAt: Date.now(),
+      originalUrl,
+      processedCount: results.length,
+      includeReply,
+      includeThread,
+      summary: summarizeRuntimeReplyArchive(archiveEntries),
+      results,
+      report
     };
   }
 

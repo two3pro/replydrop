@@ -17,6 +17,8 @@ const WorkflowCore = globalThis.ReplyDropWorkflowCore || null;
 const AttributionCore = globalThis.ReplyDropAttributionCore || null;
 
 const STORAGE_KEY = "x-reply-scorer-state";
+const REPLY_LEDGER_STORAGE_KEY = "replydrop-reply-ledger-v1";
+const REPLY_LEDGER_VERSION = "replydrop-ledger-v1";
 const MAX_REPLIED_TWEETS = 500;
 const MAX_RECENT_CANDIDATES = 16;
 const FLOATING_PANEL_LIMIT = 6;
@@ -574,6 +576,199 @@ function cloneApiValue(value) {
   }
 }
 
+function clampLedgerLimit(value, fallback = 50) {
+  return Math.max(1, Math.min(MAX_REPLY_ARCHIVE, Math.floor(clampNumber(value, fallback))));
+}
+
+function getReplyLedgerEntries() {
+  return normalizeReplyArchive(state.replyArchive, state.replyArchive);
+}
+
+function filterReplyLedgerEntries(entries = [], options = {}) {
+  const source = Array.isArray(entries) ? entries : [];
+  const normalizedTargetUrl = normalizeTweetUrl(options.targetUrl || options.url);
+  const normalizedReplyUrl = normalizeTweetUrl(options.replyUrl || options.replyTweetUrl);
+  const normalizedTweetId = normalizeApiTweetId(options.tweetId || options.parentTweetId || extractTweetIdFromUrl(normalizedTargetUrl));
+  const normalizedReplyTweetId = normalizeApiTweetId(options.replyTweetId || extractTweetIdFromUrl(normalizedReplyUrl));
+  const normalizedLedgerId = String(options.ledgerId || "").trim();
+  const normalizedSessionId = String(options.sessionId || "").trim();
+  const normalizedRoundId = String(options.roundId || "").trim();
+  const normalizedStatus = String(options.status || "").trim().toLowerCase();
+  const since = Math.max(0, clampNumber(options.since ?? options.sentAfter, options.todayOnly ? getStartOfLocalDay(Date.now()) : 0));
+  const until = Math.max(0, clampNumber(options.until ?? options.sentBefore, 0));
+  const limit = clampLedgerLimit(options.limit, source.length || 50);
+  return source
+    .filter((entry) => {
+      if (normalizedLedgerId && String(entry?.ledgerId || "").trim() !== normalizedLedgerId) {
+        return false;
+      }
+      if (normalizedTargetUrl && normalizeTweetUrl(entry?.targetUrl || entry?.parentTweetUrl || entry?.url) !== normalizedTargetUrl) {
+        return false;
+      }
+      if (normalizedReplyUrl && normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl) !== normalizedReplyUrl) {
+        return false;
+      }
+      if (normalizedTweetId && normalizeApiTweetId(entry?.tweetId || extractTweetIdFromUrl(entry?.targetUrl || entry?.url)) !== normalizedTweetId) {
+        return false;
+      }
+      if (normalizedReplyTweetId && normalizeApiTweetId(entry?.replyTweetId || extractTweetIdFromUrl(entry?.replyUrl)) !== normalizedReplyTweetId) {
+        return false;
+      }
+      if (normalizedSessionId && String(entry?.sessionId || "").trim() !== normalizedSessionId) {
+        return false;
+      }
+      if (normalizedRoundId && String(entry?.roundId || "").trim() !== normalizedRoundId) {
+        return false;
+      }
+      if (normalizedStatus && String(entry?.status || "").trim().toLowerCase() !== normalizedStatus) {
+        return false;
+      }
+      const sentAt = clampNumber(entry?.sentAt ?? entry?.timestamp ?? entry?.completedAt, 0);
+      if (since && sentAt < since) {
+        return false;
+      }
+      if (until && sentAt > until) {
+        return false;
+      }
+      if (options.replyOnly && !normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl)) {
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) => {
+      const rightUpdated = Math.max(
+        clampNumber(right?.performanceLastUpdatedAt, 0),
+        clampNumber(right?.replyCheckedAt, 0),
+        clampNumber(right?.pickupCheckedAt, 0),
+        clampNumber(right?.sentAt ?? right?.timestamp, 0)
+      );
+      const leftUpdated = Math.max(
+        clampNumber(left?.performanceLastUpdatedAt, 0),
+        clampNumber(left?.replyCheckedAt, 0),
+        clampNumber(left?.pickupCheckedAt, 0),
+        clampNumber(left?.sentAt ?? left?.timestamp, 0)
+      );
+      return rightUpdated - leftUpdated;
+    })
+    .slice(0, limit);
+}
+
+function buildReplyLedgerSummary(entries = []) {
+  const source = Array.isArray(entries) ? entries : [];
+  return {
+    totalEntries: source.length,
+    shippedCount: source.filter((entry) => String(entry?.status || "").trim().toLowerCase() === "shipped").length,
+    withReplyUrlCount: source.filter((entry) => normalizeTweetUrl(entry?.replyUrl || entry?.replyTweetUrl)).length,
+    replyPerformanceCount: source.filter((entry) => clampNumber(entry?.replyCheckedAt, 0) > 0).length,
+    threadPerformanceCount: source.filter((entry) => clampNumber(entry?.pickupCheckedAt, 0) > 0).length,
+    lastSentAt: source.reduce((max, entry) => Math.max(max, clampNumber(entry?.sentAt ?? entry?.timestamp, 0)), 0),
+    lastPerformanceUpdatedAt: source.reduce((max, entry) => Math.max(max, clampNumber(entry?.performanceLastUpdatedAt, 0)), 0)
+  };
+}
+
+function getReplyLedgerSnapshot(options = {}) {
+  const entries = filterReplyLedgerEntries(getReplyLedgerEntries(), options);
+  return {
+    version: REPLY_LEDGER_VERSION,
+    generatedAt: Date.now(),
+    filters: {
+      todayOnly: Boolean(options.todayOnly),
+      limit: clampLedgerLimit(options.limit, entries.length || 50),
+      roundId: String(options.roundId || "").trim(),
+      sessionId: String(options.sessionId || "").trim()
+    },
+    summary: buildReplyLedgerSummary(entries),
+    entries: cloneApiValue(entries)
+  };
+}
+
+function buildReplyPerformanceRow(entry = {}) {
+  return {
+    ledgerId: String(entry.ledgerId || "").trim(),
+    tweetId: normalizeApiTweetId(entry.tweetId || extractTweetIdFromUrl(entry.targetUrl || entry.url)),
+    parentTweetUrl: normalizeTweetUrl(entry.parentTweetUrl || entry.targetUrl || entry.url),
+    replyTweetUrl: normalizeTweetUrl(entry.replyTweetUrl || entry.replyUrl),
+    replyTweetId: normalizeApiTweetId(entry.replyTweetId || extractTweetIdFromUrl(entry.replyUrl)),
+    draftedAt: clampNumber(entry.draftedAt, 0),
+    sentAt: clampNumber(entry.sentAt ?? entry.timestamp ?? entry.completedAt, 0),
+    status: String(entry.status || "shipped").trim(),
+    roundId: String(entry.roundId || "").trim(),
+    sessionId: String(entry.sessionId || "").trim(),
+    sendResult: String(entry.sendResult || "").trim(),
+    replyText: String(entry.replyText || entry.text || "").trim(),
+    replyViews: clampNumber(entry.replyObservedViews, 0),
+    replyLikes: clampNumber(entry.replyObservedLikes, 0),
+    replyReplies: clampNumber(entry.replyObservedReplies, 0),
+    targetViews: clampNumber(entry.pickupViews, 0),
+    targetDeltaLikes: clampNumber(entry.pickupDeltaLikes, 0),
+    targetDeltaReplies: clampNumber(entry.pickupDeltaReplies, 0),
+    performanceLastUpdatedAt: Math.max(
+      clampNumber(entry.performanceLastUpdatedAt, 0),
+      clampNumber(entry.replyCheckedAt, 0),
+      clampNumber(entry.pickupCheckedAt, 0)
+    )
+  };
+}
+
+function getReplyPerformanceReport(options = {}) {
+  const entries = filterReplyLedgerEntries(getReplyLedgerEntries(), options);
+  const performance = entries.map((entry) => buildReplyPerformanceRow(entry));
+  return {
+    version: "replydrop-performance-report-v1",
+    generatedAt: Date.now(),
+    filters: {
+      todayOnly: Boolean(options.todayOnly),
+      limit: clampLedgerLimit(options.limit, performance.length || 50),
+      roundId: String(options.roundId || "").trim(),
+      sessionId: String(options.sessionId || "").trim()
+    },
+    summary: {
+      ...buildReplyLedgerSummary(entries),
+      performanceCount: performance.filter((entry) => entry.performanceLastUpdatedAt > 0).length,
+      replyViewTotal: performance.reduce((sum, entry) => sum + clampNumber(entry.replyViews, 0), 0),
+      targetViewTotal: performance.reduce((sum, entry) => sum + clampNumber(entry.targetViews, 0), 0)
+    },
+    replies: performance
+  };
+}
+
+async function importReplyLedgerSnapshot(payload = {}) {
+  const entries = Array.isArray(payload?.entries)
+    ? payload.entries
+    : (Array.isArray(payload) ? payload : []);
+  const normalizedEntries = normalizeReplyArchive(entries, state.replyArchive);
+  if (!normalizedEntries.length) {
+    return getReplyLedgerSnapshot({ limit: 1 });
+  }
+
+  const nextReplyDetails = { ...(state.replyDetails || {}) };
+  normalizedEntries.forEach((entry) => {
+    const targetUrl = normalizeTweetUrl(entry?.targetUrl || entry?.url);
+    if (!targetUrl) {
+      return;
+    }
+    const existing = nextReplyDetails[targetUrl] || null;
+    const entryFreshness = Math.max(
+      clampNumber(entry?.performanceLastUpdatedAt, 0),
+      clampNumber(entry?.sentAt ?? entry?.timestamp, 0)
+    );
+    const existingFreshness = Math.max(
+      clampNumber(existing?.performanceLastUpdatedAt, 0),
+      clampNumber(existing?.sentAt ?? existing?.timestamp, 0)
+    );
+    if (!existing || entryFreshness >= existingFreshness) {
+      nextReplyDetails[targetUrl] = entry;
+    }
+  });
+
+  await patchState({
+    replyDetails: nextReplyDetails,
+    replyArchive: normalizeReplyArchive([...(state.replyArchive || []), ...normalizedEntries], state.replyArchive)
+  }, "reply-ledger-imported");
+
+  return getReplyLedgerSnapshot({ limit: normalizedEntries.length });
+}
+
 function resolveTweetUrlById(tweetId) {
   const normalizedTweetId = normalizeApiTweetId(tweetId);
   if (!normalizedTweetId) {
@@ -703,8 +898,16 @@ async function addCandidateToQueueByTweetId(tweetId) {
   return summarizeApiQueueItem(nextQueue.find((item) => item.url === candidate.url) || nextItem);
 }
 
-async function markTweetAsShippedById(tweetId, replyText = "") {
-  const normalizedTweetId = normalizeApiTweetId(tweetId);
+async function markTweetAsShippedById(tweetId, replyText = "", meta = {}) {
+  const payload = tweetId && typeof tweetId === "object" ? tweetId : {};
+  const metaPayload = replyText && typeof replyText === "object"
+    ? replyText
+    : (meta && typeof meta === "object" ? meta : {});
+  const normalizedTweetId = normalizeApiTweetId(
+    payload.tweetId ||
+    payload.targetTweetId ||
+    tweetId
+  );
   if (!normalizedTweetId) {
     throw new Error("invalid-tweet-id");
   }
@@ -718,9 +921,21 @@ async function markTweetAsShippedById(tweetId, replyText = "") {
   const candidate = getCandidateByTweetId(normalizedTweetId);
   const replyDetailMatch = state.replyDetails?.[url] || null;
   const pickupWatchMatch = (state.pickupWatch || []).find((item) => item?.url === url) || null;
-  const finalReplyText = String(replyText || queueItem?.draft || queueItem?.text || candidate?.text || "").trim().slice(0, 560);
+  const explicitReplyText = typeof replyText === "string" ? replyText : "";
+  const finalReplyText = String(
+    payload.replyText ||
+    payload.text ||
+    metaPayload.replyText ||
+    metaPayload.text ||
+    explicitReplyText ||
+    queueItem?.draft ||
+    queueItem?.text ||
+    candidate?.text ||
+    ""
+  ).trim().slice(0, 560);
 
   await markTweetAsReplied(url, {
+    ledgerId: String(payload.ledgerId || metaPayload.ledgerId || "").trim(),
     score: clampNumber(
       queueItem?.score,
       clampNumber(candidate?.score, clampNumber(replyDetailMatch?.score, clampNumber(pickupWatchMatch?.score, 0)))
@@ -774,15 +989,36 @@ async function markTweetAsShippedById(tweetId, replyText = "") {
     baselineReplies: clampNumber(candidate?.replies, clampNumber(replyDetailMatch?.baselineReplies, 0)),
     baselineLikes: clampNumber(candidate?.likes, clampNumber(replyDetailMatch?.baselineLikes, 0)),
     baselineViews: clampNumber(candidate?.views, clampNumber(replyDetailMatch?.baselineViews, 0)),
-    publishMode: queueItem ? "queue" : "manual"
+    draftedAt: clampNumber(payload.draftedAt ?? metaPayload.draftedAt, clampNumber(queueItem?.createdAt, 0)),
+    sentAt: clampNumber(payload.sentAt ?? metaPayload.sentAt, Date.now()),
+    roundId: String(payload.roundId || metaPayload.roundId || "").trim(),
+    sessionId: String(payload.sessionId || metaPayload.sessionId || "").trim(),
+    sendResult: String(payload.sendResult || metaPayload.sendResult || "sent").trim(),
+    replyUrl: normalizeTweetUrl(payload.replyUrl || metaPayload.replyUrl || replyDetailMatch?.replyUrl),
+    replyTweetId: normalizeApiTweetId(
+      payload.replyTweetId ||
+      metaPayload.replyTweetId ||
+      extractTweetIdFromUrl(payload.replyUrl || metaPayload.replyUrl || replyDetailMatch?.replyUrl)
+    ),
+    status: "shipped",
+    publishMode: String(payload.publishMode || metaPayload.publishMode || (queueItem ? "queue" : "manual")).trim() || (queueItem ? "queue" : "manual")
   });
+
+  const latestEntry = filterReplyLedgerEntries(getReplyLedgerEntries(), {
+    targetUrl: url,
+    replyUrl: normalizeTweetUrl(payload.replyUrl || metaPayload.replyUrl || replyDetailMatch?.replyUrl),
+    limit: 1
+  })[0] || null;
 
   return {
     ok: true,
     tweetId: normalizedTweetId,
     status: "shipped",
     url,
-    replyText: finalReplyText
+    replyText: finalReplyText,
+    ledgerId: String(latestEntry?.ledgerId || "").trim(),
+    roundId: String(latestEntry?.roundId || payload.roundId || metaPayload.roundId || "").trim(),
+    sessionId: String(latestEntry?.sessionId || payload.sessionId || metaPayload.sessionId || "").trim()
   };
 }
 
@@ -844,10 +1080,18 @@ async function handleReplyDropApiCall(message, sender) {
         .filter((item) => item.tweetId);
     case "getState":
       return cloneApiValue(getPublicState());
+    case "getReplyLedger":
+      return getReplyLedgerSnapshot(args[0] || {});
+    case "exportReplyLedger":
+      return getReplyLedgerSnapshot(args[0] || {});
+    case "importReplyLedger":
+      return importReplyLedgerSnapshot(args[0] || {});
+    case "getReplyPerformanceReport":
+      return getReplyPerformanceReport(args[0] || {});
     case "addToQueue":
       return addCandidateToQueueByTweetId(args[0]);
     case "markShipped":
-      return markTweetAsShippedById(args[0], args[1]);
+      return markTweetAsShippedById(args[0], args[1], args[2]);
     case "skipCandidate":
       return skipCandidateByTweetId(args[0]);
     default:
@@ -1027,6 +1271,7 @@ function sanitizeReplyArchiveEntry(entry = {}, fallbackTargetUrl = "") {
   }
 
   const timestamp = clampNumber(payload.timestamp || payload.shippedAt || payload.completedAt, Date.now());
+  const targetTweetId = normalizeApiTweetId(payload.tweetId || extractTweetIdFromUrl(targetUrl));
   const pickupCheckedAt = clampNumber(payload.pickupCheckedAt ?? payload.targetCheckedAt, 0);
   const pickupChecks = Math.max(0, Math.floor(clampNumber(payload.pickupChecks ?? payload.targetChecks, pickupCheckedAt ? 1 : 0)));
   const pickupStatus = normalizePickupStatus(payload.pickupStatus ?? payload.targetStatus, pickupCheckedAt ? "quiet" : "pending");
@@ -1046,12 +1291,37 @@ function sanitizeReplyArchiveEntry(entry = {}, fallbackTargetUrl = "") {
   const replyObservedReplies = clampNumber(payload.replyObservedReplies ?? payload.replyReplies, 0);
   const replyObservedLikes = clampNumber(payload.replyObservedLikes ?? payload.replyLikes, 0);
   const replyObservedViews = clampNumber(payload.replyObservedViews ?? payload.replyViews, 0);
+  const sentAt = clampNumber(payload.sentAt ?? payload.timestamp ?? payload.shippedAt ?? payload.completedAt, timestamp);
+  const draftedAt = clampNumber(payload.draftedAt, clampNumber(payload.queuedAt, clampNumber(payload.handedOffAt, 0)));
+  const performanceLastUpdatedAt = Math.max(
+    clampNumber(payload.performanceLastUpdatedAt, 0),
+    replyCheckedAt,
+    pickupCheckedAt
+  );
+  const ledgerId = String(
+    payload.ledgerId ||
+    [
+      targetTweetId || "target",
+      sentAt || 0,
+      normalizeApiTweetId(payload.replyTweetId || extractTweetIdFromUrl(replyUrl)) || "reply"
+    ].join(":")
+  ).trim().slice(0, 160);
 
   return {
+    ledgerId,
+    ledgerVersion: REPLY_LEDGER_VERSION,
     targetUrl,
+    parentTweetUrl: targetUrl,
     url: targetUrl,
+    tweetId: targetTweetId,
     timestamp,
+    draftedAt,
+    sentAt,
     completedAt: clampNumber(payload.completedAt, timestamp),
+    status: String(payload.status || "shipped").trim().slice(0, 24) || "shipped",
+    sessionId: String(payload.sessionId || "").trim().slice(0, 80),
+    roundId: String(payload.roundId || "").trim().slice(0, 80),
+    sendResult: String(payload.sendResult || "sent").trim().slice(0, 40) || "sent",
     score: Math.max(0, Math.min(100, Math.floor(clampNumber(payload.score, 0)))),
     tier: String(payload.tier || "replied"),
     authorHandle: String(payload.authorHandle || "").trim(),
@@ -1060,6 +1330,7 @@ function sanitizeReplyArchiveEntry(entry = {}, fallbackTargetUrl = "") {
     text: String(payload.text || "").trim().slice(0, 280),
     replyText: String(payload.replyText || payload.text || "").trim().slice(0, 560),
     replyUrl,
+    replyTweetUrl: replyUrl,
     replyTweetId,
     lane: String(payload.lane || "").trim().slice(0, 48),
     slot: String(payload.slot || "").trim().slice(0, 24),
@@ -1107,7 +1378,9 @@ function sanitizeReplyArchiveEntry(entry = {}, fallbackTargetUrl = "") {
     replyDeltaLikes: clampNumber(payload.replyDeltaLikes, replyObservedLikes),
     replyDeltaViews: clampNumber(payload.replyDeltaViews, replyObservedViews),
     replyTrafficCapturedAt: clampNumber(payload.replyTrafficCapturedAt, replyCheckedAt),
-    replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24)
+    replyTrafficSource: String(payload.replyTrafficSource || "").trim().slice(0, 24),
+    performanceLastUpdatedAt,
+    performanceLastError: String(payload.performanceLastError || "").trim().slice(0, 240)
   };
 }
 
@@ -1125,7 +1398,7 @@ function normalizeReplyArchive(value, fallback = []) {
   const deduped = [];
   const seen = new Set();
   for (const entry of entries) {
-    const key = `${entry.targetUrl}::${entry.replyUrl || ""}`;
+    const key = String(entry.ledgerId || `${entry.targetUrl}::${entry.sentAt || entry.timestamp || 0}::${entry.replyUrl || ""}`);
     if (seen.has(key)) {
       continue;
     }
@@ -1300,10 +1573,29 @@ function upsertReplyArchiveEntry(targetUrl, patch = {}) {
   }
 
   const normalizedReplyUrl = normalizeTweetUrl(patch.replyUrl);
-  const existing = (Array.isArray(state.replyArchive) ? state.replyArchive : []).find((item) => (
-    item?.targetUrl === normalizedTarget ||
-    (normalizedReplyUrl && normalizeTweetUrl(item?.replyUrl) === normalizedReplyUrl)
-  )) || state.replyDetails?.[normalizedTarget] || null;
+  const normalizedLedgerId = String(patch.ledgerId || "").trim();
+  const normalizedReplyTweetId = normalizeApiTweetId(patch.replyTweetId || extractTweetIdFromUrl(normalizedReplyUrl));
+  const normalizedSentAt = clampNumber(patch.sentAt ?? patch.timestamp ?? patch.shippedAt ?? patch.completedAt, 0);
+  const archiveEntries = Array.isArray(state.replyArchive) ? state.replyArchive : [];
+  const existing = archiveEntries.find((item) => {
+    if (normalizedLedgerId && String(item?.ledgerId || "").trim() === normalizedLedgerId) {
+      return true;
+    }
+    if (normalizedReplyUrl && normalizeTweetUrl(item?.replyUrl) === normalizedReplyUrl) {
+      return true;
+    }
+    if (normalizedReplyTweetId && normalizeApiTweetId(item?.replyTweetId || extractTweetIdFromUrl(item?.replyUrl)) === normalizedReplyTweetId) {
+      return true;
+    }
+    if (
+      normalizeTweetUrl(item?.targetUrl || item?.url) === normalizedTarget &&
+      normalizedSentAt > 0 &&
+      clampNumber(item?.sentAt ?? item?.timestamp ?? item?.completedAt, 0) === normalizedSentAt
+    ) {
+      return true;
+    }
+    return false;
+  }) || archiveEntries.find((item) => normalizeTweetUrl(item?.targetUrl || item?.url) === normalizedTarget) || state.replyDetails?.[normalizedTarget] || null;
   const nextEntry = sanitizeReplyArchiveEntry({
     ...(existing && typeof existing === "object" ? existing : {}),
     ...(patch && typeof patch === "object" ? patch : {}),
@@ -1313,13 +1605,22 @@ function upsertReplyArchiveEntry(targetUrl, patch = {}) {
     return normalizeReplyArchive(state.replyArchive, state.replyArchive);
   }
 
-  const remaining = (Array.isArray(state.replyArchive) ? state.replyArchive : []).filter((item) => {
+  const remaining = archiveEntries.filter((item) => {
     const itemTargetUrl = normalizeTweetUrl(item?.targetUrl || item?.url);
     const itemReplyUrl = normalizeTweetUrl(item?.replyUrl);
-    if (itemTargetUrl === normalizedTarget) {
+    const itemLedgerId = String(item?.ledgerId || "").trim();
+    const itemReplyTweetId = normalizeApiTweetId(item?.replyTweetId || extractTweetIdFromUrl(itemReplyUrl));
+    const itemSentAt = clampNumber(item?.sentAt ?? item?.timestamp ?? item?.completedAt, 0);
+    if (normalizedLedgerId && itemLedgerId && itemLedgerId === normalizedLedgerId) {
       return false;
     }
     if (normalizedReplyUrl && itemReplyUrl && itemReplyUrl === normalizedReplyUrl) {
+      return false;
+    }
+    if (normalizedReplyTweetId && itemReplyTweetId && itemReplyTweetId === normalizedReplyTweetId) {
+      return false;
+    }
+    if (itemTargetUrl === normalizedTarget && normalizedSentAt > 0 && itemSentAt === normalizedSentAt) {
       return false;
     }
     return true;
@@ -1520,7 +1821,10 @@ async function broadcastState(reason = "settings") {
 }
 
 async function persistState() {
-  await chrome.storage.local.set({ [STORAGE_KEY]: state });
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: state,
+    [REPLY_LEDGER_STORAGE_KEY]: Array.isArray(state.replyArchive) ? state.replyArchive : []
+  });
 }
 
 async function setState(nextState, reason = "settings", persist = true) {
@@ -1538,8 +1842,42 @@ async function patchState(patch, reason = "settings", persist = true) {
 }
 
 async function loadState() {
-  const stored = await chrome.storage.local.get(STORAGE_KEY);
-  state = stored[STORAGE_KEY] ? normalizeState(stored[STORAGE_KEY]) : { ...DEFAULT_STATE };
+  const stored = await chrome.storage.local.get([STORAGE_KEY, REPLY_LEDGER_STORAGE_KEY]);
+  const storedState = stored[STORAGE_KEY] || null;
+  const storedLedger = normalizeReplyArchive(stored[REPLY_LEDGER_STORAGE_KEY], []);
+  const normalizedStoredState = storedState ? normalizeState(storedState) : { ...DEFAULT_STATE };
+  if (storedLedger.length) {
+    const nextReplyDetails = { ...(normalizedStoredState.replyDetails || {}) };
+    storedLedger.forEach((entry) => {
+      const targetUrl = normalizeTweetUrl(entry?.targetUrl || entry?.url);
+      if (!targetUrl) {
+        return;
+      }
+      const existing = nextReplyDetails[targetUrl] || null;
+      const entryFreshness = Math.max(
+        clampNumber(entry?.performanceLastUpdatedAt, 0),
+        clampNumber(entry?.sentAt, 0),
+        clampNumber(entry?.timestamp, 0)
+      );
+      const existingFreshness = Math.max(
+        clampNumber(existing?.performanceLastUpdatedAt, 0),
+        clampNumber(existing?.sentAt, 0),
+        clampNumber(existing?.timestamp, 0)
+      );
+      if (!existing || entryFreshness >= existingFreshness) {
+        nextReplyDetails[targetUrl] = entry;
+      }
+    });
+    state = normalizeState({
+      ...normalizedStoredState,
+      replyDetails: nextReplyDetails,
+      replyArchive: storedLedger.length >= (Array.isArray(normalizedStoredState.replyArchive) ? normalizedStoredState.replyArchive.length : 0)
+        ? storedLedger
+        : normalizedStoredState.replyArchive
+    });
+  } else {
+    state = normalizedStoredState;
+  }
   updateBadge();
   await scheduleMidnightAlarm();
 }
@@ -1616,8 +1954,18 @@ async function markTweetAsReplied(url, meta = {}) {
     ...(state.pickupWatch || []).filter((item) => item?.url !== normalized)
   ], state.pickupWatch);
   const nextReplyDetail = {
+    ledgerId: String(meta.ledgerId || "").trim().slice(0, 160),
+    ledgerVersion: REPLY_LEDGER_VERSION,
     timestamp: replyTimestamp,
+    parentTweetUrl: normalized,
+    tweetId: normalizeApiTweetId(extractTweetIdFromUrl(normalized)),
+    draftedAt: clampNumber(meta.draftedAt, clampNumber(meta.queuedAt, clampNumber(meta.handedOffAt, clampNumber(queueMatch?.createdAt, 0)))),
+    sentAt: clampNumber(meta.sentAt, replyTimestamp),
     completedAt: replyTimestamp,
+    status: String(meta.status || "shipped").trim().slice(0, 24) || "shipped",
+    sessionId: String(meta.sessionId || "").trim().slice(0, 80),
+    roundId: String(meta.roundId || "").trim().slice(0, 80),
+    sendResult: String(meta.sendResult || "sent").trim().slice(0, 40) || "sent",
     score: clampNumber(meta.score, clampNumber(queueMatch?.score, clampNumber(candidateMatch?.score, 0))),
     tier: String(meta.tier || "replied"),
     authorHandle: String(meta.authorHandle || queueMatch?.authorHandle || candidateMatch?.authorHandle || "").trim(),
@@ -1626,6 +1974,7 @@ async function markTweetAsReplied(url, meta = {}) {
     text: String(meta.text || queueMatch?.text || queueMatch?.draft || candidateMatch?.text || "").trim().slice(0, 280),
     replyText: String(meta.replyText || meta.text || queueMatch?.draft || queueMatch?.text || candidateMatch?.text || "").trim().slice(0, 560),
     replyUrl: normalizeTweetUrl(meta.replyUrl || replyDetailMatch?.replyUrl),
+    replyTweetUrl: normalizeTweetUrl(meta.replyUrl || replyDetailMatch?.replyUrl),
     replyTweetId: normalizeApiTweetId(meta.replyTweetId || extractTweetIdFromUrl(meta.replyUrl || replyDetailMatch?.replyUrl)),
     lane: String(meta.lane || queueMatch?.lane || "").trim().slice(0, 48),
     slot: String(meta.slot || queueMatch?.slot || "").trim().slice(0, 24),
@@ -1679,7 +2028,9 @@ async function markTweetAsReplied(url, meta = {}) {
     replyDeltaLikes: 0,
     replyDeltaViews: 0,
     replyTrafficCapturedAt: 0,
-    replyTrafficSource: ""
+    replyTrafficSource: "",
+    performanceLastUpdatedAt: 0,
+    performanceLastError: ""
   };
   const nextReplyArchive = upsertReplyArchiveEntry(normalized, nextReplyDetail);
 
@@ -1813,6 +2164,7 @@ async function recordPickupSnapshot(url, snapshot = {}) {
     ...(replyDetailMatch || {}),
     targetUrl: normalized,
     url: normalized,
+    ledgerId: String(replyDetailMatch?.ledgerId || "").trim(),
     timestamp: clampNumber(replyDetailMatch?.timestamp, checkedAt),
     score: clampNumber(replyDetailMatch?.score, score),
     tier: String(replyDetailMatch?.tier || "replied"),
@@ -1859,7 +2211,9 @@ async function recordPickupSnapshot(url, snapshot = {}) {
     replyDeltaLikes: clampNumber(replyDetailMatch?.replyDeltaLikes, clampNumber(replyDetailMatch?.replyObservedLikes, 0)),
     replyDeltaViews: clampNumber(replyDetailMatch?.replyDeltaViews, clampNumber(replyDetailMatch?.replyObservedViews, 0)),
     replyTrafficCapturedAt: clampNumber(replyDetailMatch?.replyTrafficCapturedAt, clampNumber(replyDetailMatch?.replyCheckedAt, 0)),
-    replyTrafficSource: String(replyDetailMatch?.replyTrafficSource || "").trim().slice(0, 24)
+    replyTrafficSource: String(replyDetailMatch?.replyTrafficSource || "").trim().slice(0, 24),
+    performanceLastUpdatedAt: Math.max(clampNumber(replyDetailMatch?.performanceLastUpdatedAt, 0), checkedAt),
+    performanceLastError: String(replyDetailMatch?.performanceLastError || "").trim().slice(0, 240)
   };
   const nextReplyArchive = upsertReplyArchiveEntry(normalized, nextReplyDetail);
 
@@ -1880,7 +2234,13 @@ async function recordReplyPerformanceSnapshot(targetUrl, snapshot = {}) {
   }
 
   const replyDetailMatch = state.replyDetails?.[normalizedTarget] || null;
-  const archiveMatch = (Array.isArray(state.replyArchive) ? state.replyArchive : []).find((item) => item?.targetUrl === normalizedTarget) || null;
+  const archiveMatch = filterReplyLedgerEntries(getReplyLedgerEntries(), {
+    targetUrl: normalizedTarget,
+    replyUrl: normalizeTweetUrl(snapshot.replyUrl || snapshot.url || replyDetailMatch?.replyUrl),
+    replyTweetId: normalizeApiTweetId(snapshot.replyTweetId || snapshot.tweetId || replyDetailMatch?.replyTweetId),
+    ledgerId: String(snapshot.ledgerId || replyDetailMatch?.ledgerId || "").trim(),
+    limit: 1
+  })[0] || null;
   const replyCheckedAt = clampNumber(snapshot.capturedAt, Date.now());
   const replyUrl = normalizeTweetUrl(snapshot.replyUrl || snapshot.url || replyDetailMatch?.replyUrl || archiveMatch?.replyUrl);
   const replyTweetId = normalizeApiTweetId(snapshot.replyTweetId || snapshot.tweetId || replyDetailMatch?.replyTweetId || archiveMatch?.replyTweetId || extractTweetIdFromUrl(replyUrl));
@@ -1901,7 +2261,9 @@ async function recordReplyPerformanceSnapshot(targetUrl, snapshot = {}) {
     ...(replyDetailMatch || {}),
     targetUrl: normalizedTarget,
     url: normalizedTarget,
+    ledgerId: String(snapshot.ledgerId || replyDetailMatch?.ledgerId || archiveMatch?.ledgerId || "").trim(),
     replyUrl,
+    replyTweetUrl: replyUrl,
     replyTweetId,
     replyCheckedAt,
     replyChecks,
@@ -1912,7 +2274,9 @@ async function recordReplyPerformanceSnapshot(targetUrl, snapshot = {}) {
     replyDeltaLikes: observedLikes,
     replyDeltaViews: observedViews,
     replyTrafficCapturedAt: replyCheckedAt,
-    replyTrafficSource: String(snapshot.replyTrafficSource || snapshot.source || replyDetailMatch?.replyTrafficSource || "reply-dom").trim().slice(0, 24)
+    replyTrafficSource: String(snapshot.replyTrafficSource || snapshot.source || replyDetailMatch?.replyTrafficSource || "reply-dom").trim().slice(0, 24),
+    performanceLastUpdatedAt: replyCheckedAt,
+    performanceLastError: ""
   };
   const nextReplyArchive = upsertReplyArchiveEntry(normalizedTarget, nextReplyDetail);
 

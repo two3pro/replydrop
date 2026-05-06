@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.252
+
+- 补齐 Chrome 导出版的 reply ledger 链路：`markShipped` 现在会稳定透传 `ledgerId / roundId / sessionId / replyUrl / replyTweetId / sendResult` 等字段，不再只靠同一父帖 URL 粗糙覆盖
+- 新增可恢复的 ledger / performance API：`getReplyLedger`、`exportReplyLedger`、`importReplyLedger`、`capturePickupSnapshot`、`captureReplyPerformance`、`refreshReplyPerformance`、`getReplyPerformanceReport`
+- 目的就是把“推荐 -> 发出 -> 跟踪 -> 导出 round 表现”这条链在 Chrome 版补完整，同时保留 `0.2.250 / 0.2.251` 已确认正确的 traffic-first 时序调参
+
 ## 0.2.251
 
 - 收紧 traffic-first 的时间窗细节：`45-60` 分钟不再因为轻量互动就轻松留在 reply lane，首小时后半段需要更明确的起量证明

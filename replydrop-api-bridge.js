@@ -342,6 +342,14 @@
         return 125000;
       case "submitReply":
         return 125000;
+      case "refreshReplyPerformance":
+        return 125000;
+      case "captureReplyPerformance":
+        return 125000;
+      case "capturePickupSnapshot":
+        return 125000;
+      case "importReplyLedger":
+        return 125000;
       default:
         return 15000;
     }
@@ -546,6 +554,27 @@
     getState() {
       return call("getState");
     },
+    getReplyLedger(options = {}) {
+      return call("getReplyLedger", options);
+    },
+    exportReplyLedger(options = {}) {
+      return call("exportReplyLedger", options);
+    },
+    importReplyLedger(payload = {}) {
+      return call("importReplyLedger", payload);
+    },
+    getReplyPerformanceReport(options = {}) {
+      return call("getReplyPerformanceReport", options);
+    },
+    capturePickupSnapshot(payload = {}) {
+      return callAction("capturePickupSnapshot", payload);
+    },
+    captureReplyPerformance(payload = {}) {
+      return callAction("captureReplyPerformance", payload);
+    },
+    refreshReplyPerformance(options = {}) {
+      return callAction("refreshReplyPerformance", options);
+    },
     addToQueue(tweetId) {
       return call("addToQueue", tweetId);
     },
@@ -579,8 +608,8 @@
     consumeAsyncAction(ticketId) {
       return readAsyncAction(ticketId, { consume: true });
     },
-    markShipped(tweetId, replyText = "") {
-      return call("markShipped", tweetId, replyText);
+    markShipped(tweetIdOrPayload, replyTextOrMeta = "", meta = {}) {
+      return call("markShipped", tweetIdOrPayload, replyTextOrMeta, meta);
     },
     unmarkReplied(tweetIdOrUrl) {
       return call("unmarkReplied", tweetIdOrUrl);
