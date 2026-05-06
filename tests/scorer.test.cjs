@@ -83,6 +83,146 @@ test("scorer penalizes fresh posts that have not proven reach yet", () => {
   assert.ok(proven.breakdown.some((item) => item.key === "accelerationWindow"));
 });
 
+test("scorer tightens late first-hour posts that still have not stood up", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const softLateHour = scorer.analyzeTweet({
+    text: "Fresh post with some reaction but unclear if it is really taking off.",
+    authorFollowers: 28000,
+    likes: 70,
+    replies: 6,
+    views: 900,
+    timestamp: now - (56 * 60 * 1000),
+    trafficVelocityPerHour: 900,
+    trafficReplyVelocityPerHour: 6,
+    trafficReplyRatio: 0.0067,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const provenLateHour = scorer.analyzeTweet({
+    text: "Fresh post that may or may not have enough proof yet.",
+    authorFollowers: 28000,
+    likes: 110,
+    replies: 9,
+    views: 1800,
+    timestamp: now - (50 * 60 * 1000),
+    trafficVelocityPerHour: 1800,
+    trafficReplyVelocityPerHour: 9,
+    trafficReplyRatio: 0.005,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(softLateHour.score < provenLateHour.score);
+  assert.ok(softLateHour.score < 54, `soft late first-hour post scored ${softLateHour.score}`);
+  assert.ok(hasBreakdownKey(softLateHour, ["timingWindow", "unprovenWindow"]));
+  assert.ok(hasBreakdownKey(provenLateHour, ["accelerationWindow", "trafficMomentum"]));
+});
+
+test("scorer restores the original 60-120 minute traffic-first gate", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const weakMidWindow = scorer.analyzeTweet({
+    text: "Older thread with some traction but probably too weak for reply now.",
+    authorFollowers: 24000,
+    likes: 95,
+    replies: 14,
+    views: 2100,
+    timestamp: now - (92 * 60 * 1000),
+    trafficVelocityPerHour: 1200,
+    trafficReplyVelocityPerHour: 9,
+    trafficReplyRatio: 0.0066,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const strongMidWindow = scorer.analyzeTweet({
+    text: "Older thread that still has decent room and traffic.",
+    authorFollowers: 24000,
+    likes: 220,
+    replies: 24,
+    views: 7200,
+    timestamp: now - (88 * 60 * 1000),
+    trafficVelocityPerHour: 4900,
+    trafficReplyVelocityPerHour: 16,
+    trafficReplyRatio: 0.0033,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(strongMidWindow.score > weakMidWindow.score);
+  assert.ok(weakMidWindow.score <= 54, `weak 60-120 minute post scored ${weakMidWindow.score}`);
+  assert.ok(hasBreakdownKey(weakMidWindow, ["timingWindow", "unprovenWindow"]));
+  assert.ok(hasBreakdownKey(strongMidWindow, ["accelerationWindow", "trafficMomentum"]));
+});
+
+test("scorer hard-drops 120+ minute homepage leftovers unless they are exceptional", () => {
+  const scorer = loadScorer();
+  const now = Date.now();
+
+  const staleModerate = scorer.analyzeTweet({
+    text: "Older post still visible on homepage with some movement and some room for reply.",
+    authorFollowers: 50000,
+    likes: 280,
+    replies: 26,
+    views: 9000,
+    timestamp: now - (126 * 60 * 1000),
+    trafficVelocityPerHour: 4300,
+    trafficReplyVelocityPerHour: 12,
+    trafficReplyRatio: 0.0029,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  const staleBigger = scorer.analyzeTweet({
+    text: "Older post still visible on homepage with some movement and some room for reply.",
+    authorFollowers: 50000,
+    likes: 420,
+    replies: 34,
+    views: 14000,
+    timestamp: now - (132 * 60 * 1000),
+    trafficVelocityPerHour: 6400,
+    trafficReplyVelocityPerHour: 15,
+    trafficReplyRatio: 0.0024,
+    authorVerified: true,
+    authorVerificationType: "blue",
+    hasMedia: false,
+    mediaKind: "text",
+    langs: ["en"],
+    sourceSurface: "for-you"
+  });
+
+  assert.ok(staleModerate.score < 54, `stale moderate post scored ${staleModerate.score}`);
+  assert.ok(staleBigger.score < 54, `stale bigger post scored ${staleBigger.score}`);
+  assert.ok(staleModerate.breakdown.some((item) => item.key === "timingWindow"));
+  assert.ok(staleBigger.breakdown.some((item) => item.key === "timingWindow"));
+  assert.ok(!hasBreakdownKey(staleModerate, ["accelerationWindow", "trafficMomentum"]));
+  assert.ok(!hasBreakdownKey(staleBigger, ["accelerationWindow", "trafficMomentum"]));
+});
+
 test("scorer prefers conversational mid-size threads over broadcast-heavy giants", () => {
   const scorer = loadScorer();
   const now = Date.now();

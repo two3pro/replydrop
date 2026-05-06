@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.251
+
+- 收紧 traffic-first 的时间窗细节：`45-60` 分钟不再因为轻量互动就轻松留在 reply lane，首小时后半段需要更明确的起量证明
+- 把 `60-120` 分钟门槛拉回原始 homepage spec：要求更强绝对流量、更强速度、以及更薄的回复地板，弱流量中窗帖不再漂进 `reply-now`
+- `120+` 分钟窗口更严格：正向 bonus 提前衰减，并补上更明确的 `timingWindow` stale drop，老帖和拥挤帖会更快掉出主窗口
+- 新增 scorer 边界测试，固定 `56m`、`92m`、`126m+` 三档行为，防止 timing/traffic 规则再次漂移
+
 ## 0.2.250
 
 - Chrome / Brave 评分切到 `traffic first, topic neutral`：`0-60` 分钟的起速帖更容易进自动池，`60-120` 分钟需要更强流量和更薄回复层，`120+` 的陈旧或拥挤帖子会更快掉出窗口

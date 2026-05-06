@@ -1130,14 +1130,20 @@
     }
 
     let freshnessFit = 0;
-    if (ageMinutes <= 60) {
+    if (ageMinutes <= 45) {
       freshnessFit = 1;
+    } else if (ageMinutes <= 60) {
+      freshnessFit = 1 - ((ageMinutes - 45) / 15) * 0.16;
+    } else if (ageMinutes <= 90) {
+      freshnessFit = 0.92 - ((ageMinutes - 60) / 30) * 0.32;
     } else if (ageMinutes <= 120) {
-      freshnessFit = 1 - ((ageMinutes - 60) / 60) * 0.4;
+      freshnessFit = 0.6 - ((ageMinutes - 90) / 30) * 0.32;
+    } else if (ageMinutes <= 150) {
+      freshnessFit = 0.28 - ((ageMinutes - 120) / 30) * 0.18;
     } else if (ageMinutes <= 180) {
-      freshnessFit = 0.6 - ((ageMinutes - 120) / 60) * 0.45;
+      freshnessFit = 0.1 - ((ageMinutes - 150) / 30) * 0.1;
     } else if (ageMinutes <= 240) {
-      freshnessFit = 0.15 - ((ageMinutes - 180) / 60) * 0.15;
+      freshnessFit = 0;
     } else {
       freshnessFit = 0;
     }
@@ -1255,7 +1261,14 @@
     const replyRoomFit = clamp((tweet.replies - 4) / 28, 0, 1) * (1 - clamp((tweet.replies - 120) / 220, 0, 1));
     const ratioFit = clamp(ratio / 0.0035, 0, 1) * (1 - clamp((ratio - 0.018) / 0.04, 0, 1) * 0.45);
     const roomGate = clamp(0.3 + (replyRoomFit * 0.7), 0.3, 1);
-    const windowFit = ageMinutes <= 180 ? 1 : clamp(1 - (ageMinutes - 180) / 240, 0.25, 1);
+    let windowFit = 1;
+    if (ageMinutes <= 60) {
+      windowFit = 1;
+    } else if (ageMinutes <= 120) {
+      windowFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.42, 0.58, 1);
+    } else {
+      windowFit = clamp(0.58 - ((ageMinutes - 120) / 60) * 0.48, 0.08, 0.58);
+    }
     const bonus = ((ratioFit * roomGate * 0.58) + (replyRoomFit * 0.42)) * windowFit * weight;
     return bonus >= 1 ? bonus : null;
   }
@@ -1274,7 +1287,14 @@
     const replyRoomFit = clamp((replies - 3) / 24, 0, 1) * (1 - clamp((replies - 72) / 220, 0, 1));
     const conversationFit = clamp(conversationRatio / 0.0035, 0, 1) * (1 - clamp((conversationRatio - 0.02) / 0.04, 0, 1) * 0.45);
     const balanceFit = clamp(1 - Math.max(0, likeReplyRatio - 12) / 36, 0.2, 1);
-    const ageFit = ageMinutes <= 150 ? 1 : clamp(1 - (ageMinutes - 150) / 420, 0.3, 1);
+    let ageFit = 1;
+    if (ageMinutes <= 60) {
+      ageFit = 1;
+    } else if (ageMinutes <= 120) {
+      ageFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.36, 0.64, 1);
+    } else {
+      ageFit = clamp(0.64 - ((ageMinutes - 120) / 60) * 0.56, 0.08, 0.64);
+    }
     const bonus = (
       (replyRoomFit * 0.44) +
       (conversationFit * 0.42) +
@@ -1289,7 +1309,7 @@
     const views = Number.isFinite(tweet.views) ? tweet.views : 0;
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
     const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
-    if (ageMinutes == null || ageMinutes > 180 || views <= 0) {
+    if (ageMinutes == null || ageMinutes > 165 || views <= 0) {
       return null;
     }
 
@@ -1298,32 +1318,52 @@
     const repliesPerHour = replies / hoursSincePost;
     const conversationRatio = replies / Math.max(views, 1);
     const earlyWindow = ageMinutes <= 60;
+    const midWindow = ageMinutes > 60 && ageMinutes <= 120;
+    const lateWindow = ageMinutes > 120;
+
+    if (ageMinutes > 45 && ageMinutes <= 60 && (views < 1600 || viewsPerHour < 1400 || repliesPerHour < 7)) {
+      return null;
+    }
+    if (midWindow && (views < 2800 || viewsPerHour < 1500 || repliesPerHour < 10)) {
+      return null;
+    }
+    if (lateWindow && (views < 15000 || viewsPerHour < 6000 || repliesPerHour < 14 || conversationRatio < 0.0018)) {
+      return null;
+    }
 
     let windowFit = 0;
     if (ageMinutes < 8) {
       windowFit = clamp(ageMinutes / 8, 0.35, 1) * 0.82;
-    } else if (ageMinutes <= 60) {
+    } else if (ageMinutes <= 45) {
       windowFit = 1;
+    } else if (ageMinutes <= 60) {
+      windowFit = clamp(1 - ((ageMinutes - 45) / 15) * 0.16, 0.84, 1);
     } else if (ageMinutes <= 120) {
-      windowFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.52, 0.48, 1);
+      windowFit = clamp(0.92 - ((ageMinutes - 60) / 60) * 0.54, 0.38, 0.92);
     } else {
-      windowFit = clamp(0.48 - ((ageMinutes - 120) / 60) * 0.48, 0, 0.48);
+      windowFit = clamp(0.38 - ((ageMinutes - 120) / 45) * 0.38, 0, 0.38);
     }
 
     const proofFit = earlyWindow
       ? clamp((Math.log10(views + 1) - 2.35) / 1.45, 0, 1)
-      : clamp((Math.log10(views + 1) - 3.05) / 1.3, 0, 1);
+      : (midWindow
+        ? clamp((Math.log10(views + 1) - 3.18) / 1.18, 0, 1)
+        : clamp((Math.log10(views + 1) - 3.52) / 1.06, 0, 1));
     const velocityFit = earlyWindow
       ? clamp((Math.log10(viewsPerHour + 1) - 2.1) / 1.45, 0, 1)
-      : clamp((Math.log10(viewsPerHour + 1) - 2.7) / 1.25, 0, 1);
+      : (midWindow
+        ? clamp((Math.log10(viewsPerHour + 1) - 2.92) / 1.12, 0, 1)
+        : clamp((Math.log10(viewsPerHour + 1) - 3.22) / 1.02, 0, 1));
     const replyFit = earlyWindow
       ? clamp((Math.log10(repliesPerHour + 1) - 0.15) / 0.9, 0, 1)
-      : clamp((Math.log10(repliesPerHour + 1) - 0.4) / 0.95, 0, 1);
+      : (midWindow
+        ? clamp((Math.log10(repliesPerHour + 1) - 0.5) / 0.9, 0, 1)
+        : clamp((Math.log10(repliesPerHour + 1) - 0.68) / 0.82, 0, 1));
     const conversationFit = clamp(
-      conversationRatio / (earlyWindow ? 0.0026 : 0.0035),
+      conversationRatio / (earlyWindow ? 0.0026 : (midWindow ? 0.0039 : 0.0048)),
       0,
       1
-    ) * (1 - clamp((conversationRatio - 0.028) / 0.04, 0, 0.35));
+    ) * (1 - clamp((conversationRatio - (earlyWindow ? 0.028 : (midWindow ? 0.024 : 0.02))) / 0.04, 0, 0.42));
     const engagementFit = clamp((Math.log10(likes + 1) - 1.55) / 1.4, 0, 1);
 
     const bonus = (
@@ -1365,9 +1405,9 @@
     const hasMedia = Boolean(tweet?.hasMedia || (tweet?.mediaKind && tweet.mediaKind !== "text"));
     const earlyWindow = ageMinutes <= 60;
     const midWindow = ageMinutes > 60 && ageMinutes <= 120;
-    const velocityGate = earlyWindow ? 140 : (midWindow ? 620 : 900);
+    const velocityGate = earlyWindow ? 220 : (midWindow ? 1500 : 4000);
 
-    if (ageMinutes == null || ageMinutes > 210 || views <= 0 || velocityPerHour < velocityGate) {
+    if (ageMinutes == null || ageMinutes > 165 || views <= 0 || velocityPerHour < velocityGate) {
       return null;
     }
     if (
@@ -1389,8 +1429,17 @@
     const replyRatio = Number.isFinite(tweet.trafficReplyRatio) && tweet.trafficReplyRatio > 0
       ? tweet.trafficReplyRatio
       : replies / Math.max(views, 1);
-    const replyRatioGate = earlyWindow ? 0.001 : (midWindow ? 0.0016 : 0.0022);
-    const replyVelocityGate = earlyWindow ? 8 : (midWindow ? 16 : 24);
+    if (ageMinutes > 45 && ageMinutes <= 60 && (views < 1600 || velocityPerHour < 1400 || replyVelocityPerHour < 8)) {
+      return null;
+    }
+    if (midWindow && views < 3000) {
+      return null;
+    }
+    if (!earlyWindow && !midWindow && (views < 16000 || replyRatio < 0.0018)) {
+      return null;
+    }
+    const replyRatioGate = earlyWindow ? 0.0012 : (midWindow ? 0.002 : 0.0028);
+    const replyVelocityGate = earlyWindow ? 10 : (midWindow ? 18 : 28);
     if (replyRatio < replyRatioGate && replyVelocityPerHour < replyVelocityGate) {
       return null;
     }
@@ -1399,12 +1448,16 @@
 
     const velocityFit = earlyWindow
       ? clamp((Math.log10(velocityPerHour + 1) - 2.05) / 1.55, 0, 1)
-      : clamp((Math.log10(velocityPerHour + 1) - 2.55) / 1.35, 0, 1);
+      : (midWindow
+        ? clamp((Math.log10(velocityPerHour + 1) - 2.78) / 1.18, 0, 1)
+        : clamp((Math.log10(velocityPerHour + 1) - 3.18) / 1.02, 0, 1));
     const replyVelocityFit = earlyWindow
       ? clamp((Math.log10(replyVelocityPerHour + 1) + 0.05) / 0.95, 0, 1)
-      : clamp((Math.log10(replyVelocityPerHour + 1) - 0.1) / 1.05, 0, 1);
+      : (midWindow
+        ? clamp((Math.log10(replyVelocityPerHour + 1) - 0.18) / 0.98, 0, 1)
+        : clamp((Math.log10(replyVelocityPerHour + 1) - 0.32) / 0.9, 0, 1));
     const conversationFit = clamp(
-      replyRatio / (earlyWindow ? 0.0032 : (midWindow ? 0.0038 : 0.0044)),
+      replyRatio / (earlyWindow ? 0.0032 : (midWindow ? 0.0042 : 0.0049)),
       0,
       1
     ) * (1 - clamp((replyRatio - 0.026) / 0.04, 0, 0.35));
@@ -1412,10 +1465,10 @@
     const roomFit = earlyWindow
       ? 1 - clamp((replies - 78) / 220, 0, 0.6)
       : (midWindow
-        ? 1 - clamp((replies - 64) / 180, 0, 0.72)
-        : 1 - clamp((replies - 48) / 120, 0, 0.8));
+        ? 1 - clamp((replies - 52) / 120, 0, 0.8)
+        : 1 - clamp((replies - 36) / 84, 0, 0.86));
     const oneWayDrag = clamp(
-      ((earlyWindow ? 0.0015 : 0.0022) - replyRatio) / (earlyWindow ? 0.0015 : 0.0022),
+      ((earlyWindow ? 0.0016 : (midWindow ? 0.0024 : 0.003)) - replyRatio) / (earlyWindow ? 0.0016 : (midWindow ? 0.0024 : 0.003)),
       0,
       0.55
     );
@@ -1426,12 +1479,14 @@
     let windowFit = 1;
     if (ageMinutes < 10) {
       windowFit = clamp(ageMinutes / 10, 0.48, 1);
-    } else if (ageMinutes <= 60) {
+    } else if (ageMinutes <= 45) {
       windowFit = 1;
+    } else if (ageMinutes <= 60) {
+      windowFit = clamp(1 - ((ageMinutes - 45) / 15) * 0.16, 0.84, 1);
     } else if (ageMinutes <= 120) {
-      windowFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.32, 0.68, 1);
+      windowFit = clamp(0.92 - ((ageMinutes - 60) / 60) * 0.44, 0.48, 0.92);
     } else {
-      windowFit = clamp(0.68 - ((ageMinutes - 120) / 90) * 0.48, 0.2, 0.68);
+      windowFit = clamp(0.24 - ((ageMinutes - 120) / 45) * 0.24, 0, 0.24);
     }
 
     const bonus = (
@@ -1498,31 +1553,42 @@
     let penalty = 0;
 
     if (ageMinutes <= 60) {
+      const lateFirstHour = ageMinutes > 40;
+      const minViews = lateFirstHour ? 1600 : (ageMinutes > 20 ? 520 : 260);
+      const minReplies = lateFirstHour ? 9 : (ageMinutes > 20 ? 5 : 3);
+      const minLikes = lateFirstHour ? 110 : (ageMinutes > 20 ? 42 : 22);
+      const minVelocity = lateFirstHour ? 1800 : (ageMinutes > 20 ? 950 : 650);
       const earlyProofReady = (
-        (views >= 280 && (replies >= 4 || likes >= 30 || velocityPerHour >= 850)) ||
-        replies >= 6 ||
-        likes >= 40 ||
-        velocityPerHour >= 1200
+        (views >= minViews && replies >= minReplies && (likes >= minLikes || velocityPerHour >= minVelocity)) ||
+        replies >= (lateFirstHour ? 12 : (ageMinutes > 20 ? 7 : 5)) ||
+        (likes >= (lateFirstHour ? 160 : (ageMinutes > 20 ? 70 : 38)) && views >= minViews * 0.85) ||
+        velocityPerHour >= (lateFirstHour ? 2400 : (ageMinutes > 20 ? 1350 : 950))
       );
       if (earlyProofReady) {
         return null;
       }
-      const ageFit = ageMinutes < 10 ? 0.72 : 1;
+      const ageFit = ageMinutes < 10 ? 0.72 : (lateFirstHour ? 1.18 : 1);
       penalty = (
-        clamp((280 - views) / 280, 0, 1) * 0.42 +
-        clamp((6 - replies) / 6, 0, 1) * 0.32 +
-        clamp((40 - likes) / 40, 0, 1) * 0.14 +
-        clamp((850 - velocityPerHour) / 850, 0, 1) * 0.12
+        clamp((minViews - views) / minViews, 0, 1) * 0.4 +
+        clamp((minReplies - replies) / minReplies, 0, 1) * 0.28 +
+        clamp((minLikes - likes) / minLikes, 0, 1) * 0.18 +
+        clamp((minVelocity - velocityPerHour) / minVelocity, 0, 1) * 0.14
       ) * ageFit * weight;
     } else {
-      if (views >= 1800 || replies >= 12 || likes >= 120 || velocityPerHour >= 900) {
+      const midProofReady = (
+        (views >= 3800 && (replies >= 16 || likes >= 160 || velocityPerHour >= 1800)) ||
+        (views >= 5200 && replies >= 12) ||
+        replies >= 18 ||
+        velocityPerHour >= 2600
+      );
+      if (midProofReady) {
         return null;
       }
       penalty = (
-        clamp((1800 - views) / 1800, 0, 1) * 0.46 +
-        clamp((12 - replies) / 12, 0, 1) * 0.26 +
-        clamp((120 - likes) / 120, 0, 1) * 0.14 +
-        clamp((900 - velocityPerHour) / 900, 0, 1) * 0.14
+        clamp((3800 - views) / 3800, 0, 1) * 0.42 +
+        clamp((16 - replies) / 16, 0, 1) * 0.24 +
+        clamp((160 - likes) / 160, 0, 1) * 0.14 +
+        clamp((1800 - velocityPerHour) / 1800, 0, 1) * 0.2
       ) * weight;
     }
 
@@ -1535,42 +1601,65 @@
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
     const velocityPerHour = getTrafficVelocityPerHour(tweet);
     const replyRatio = replies / Math.max(views, 1);
-    if (ageMinutes == null || ageMinutes <= 60) {
+    if (ageMinutes == null) {
       return null;
     }
 
     let penalty = 0;
-    if (ageMinutes <= 120) {
+    if (ageMinutes <= 60) {
+      if (ageMinutes <= 45) {
+        return null;
+      }
       if (views < 1800) {
-        penalty += clamp((1800 - views) / 1800, 0, 1) * weight * 0.38;
+        penalty += clamp((1800 - views) / 1800, 0, 1) * weight * 0.4;
       }
-      if (velocityPerHour < 900) {
-        penalty += clamp((900 - velocityPerHour) / 900, 0, 1) * weight * 0.28;
+      if (velocityPerHour < 1800) {
+        penalty += clamp((1800 - velocityPerHour) / 1800, 0, 1) * weight * 0.3;
       }
-      if (replies > 120) {
-        penalty += clamp((replies - 120) / 160, 0, 1) * weight * 0.24;
+      if (replies < 10) {
+        penalty += clamp((10 - replies) / 10, 0, 1) * weight * 0.22;
       }
-      if (views >= 2500 && replyRatio > 0 && replyRatio < 0.0028) {
-        penalty += clamp((0.0028 - replyRatio) / 0.0028, 0, 1) * weight * 0.16;
+      if (views >= 1200 && replyRatio > 0 && replyRatio < 0.0045) {
+        penalty += clamp((0.0045 - replyRatio) / 0.0045, 0, 1) * weight * 0.18;
       }
       return penalty >= 2 ? penalty : null;
     }
 
-    const staleFit = clamp((ageMinutes - 120) / 120, 0, 1);
-    if (velocityPerHour < 700) {
-      penalty += clamp((700 - velocityPerHour) / 700, 0, 1) * weight * 0.32;
-    }
-    if (views < 4500) {
-      penalty += clamp((4500 - views) / 4500, 0, 1) * weight * 0.18;
-    }
-    if (replies > 90) {
-      penalty += clamp((replies - 90) / 180, 0, 1) * weight * 0.3;
-    }
-    if (views >= 18000 && replyRatio > 0 && replyRatio < 0.0024) {
-      penalty += clamp((0.0024 - replyRatio) / 0.0024, 0, 1) * weight * 0.2;
+    if (ageMinutes <= 120) {
+      if (views < 3600) {
+        penalty += clamp((3600 - views) / 3600, 0, 1) * weight * 0.42;
+      }
+      if (velocityPerHour < 1600) {
+        penalty += clamp((1600 - velocityPerHour) / 1600, 0, 1) * weight * 0.3;
+      }
+      if (replies > 84) {
+        penalty += clamp((replies - 84) / 120, 0, 1) * weight * 0.2;
+      }
+      if (replies > 56 && views < 9000) {
+        penalty += clamp((replies - 56) / 80, 0, 1) * weight * 0.12;
+      }
+      if (views >= 3000 && replyRatio > 0 && replyRatio < 0.0032) {
+        penalty += clamp((0.0032 - replyRatio) / 0.0032, 0, 1) * weight * 0.2;
+      }
+      return penalty >= 2 ? penalty : null;
     }
 
-    penalty *= 0.72 + (staleFit * 0.58);
+    const staleFit = clamp((ageMinutes - 120) / 90, 0, 1);
+    if (velocityPerHour < 1200) {
+      penalty += clamp((1200 - velocityPerHour) / 1200, 0, 1) * weight * 0.34;
+    }
+    if (views < 15000) {
+      penalty += clamp((15000 - views) / 15000, 0, 1) * weight * 0.26;
+    }
+    if (replies > 72) {
+      penalty += clamp((replies - 72) / 120, 0, 1) * weight * 0.26;
+    }
+    if (views >= 12000 && replyRatio > 0 && replyRatio < 0.003) {
+      penalty += clamp((0.003 - replyRatio) / 0.003, 0, 1) * weight * 0.22;
+    }
+    penalty += clamp((ageMinutes - 120) / 30, 0.2, 1) * weight * 0.22;
+
+    penalty *= 0.92 + (staleFit * 0.68);
     return penalty >= 2 ? penalty : null;
   }
 
@@ -1582,15 +1671,15 @@
     if (ageMinutes == null || ageMinutes <= 120) {
       return null;
     }
-    if (views < 12000 && replies < 72 && velocityPerHour > 900) {
+    if (views < 9000 && replies < 60 && velocityPerHour > 1200) {
       return null;
     }
 
-    const staleFit = clamp((ageMinutes - 120) / 300, 0.2, 1);
-    const reachFit = clamp((Math.log10(views + 1) - 3.9) / 1.6, 0, 1);
-    const crowdFit = clamp((Math.log10(replies + 1) - 1.85) / 1.1, 0, 1);
-    const velocityDrag = clamp((900 - velocityPerHour) / 900, 0, 1);
-    const penalty = ((reachFit * 0.28) + (crowdFit * 0.42) + (velocityDrag * 0.3)) * staleFit * weight;
+    const staleFit = clamp((ageMinutes - 120) / 180, 0.32, 1);
+    const reachFit = clamp((Math.log10(views + 1) - 3.75) / 1.45, 0, 1);
+    const crowdFit = clamp((Math.log10(replies + 1) - 1.72) / 1, 0, 1);
+    const velocityDrag = clamp((1200 - velocityPerHour) / 1200, 0, 1);
+    const penalty = ((reachFit * 0.3) + (crowdFit * 0.44) + (velocityDrag * 0.26)) * staleFit * weight;
     return penalty >= 2 ? penalty : null;
   }
 

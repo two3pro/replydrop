@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.250`
+Current version: `0.2.251`
 
-This Chrome / Brave baseline now syncs the Safari `0.2.249` traffic-first scoring and shared runtime line, published here as `0.2.250`.
+This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line and tightens homepage timing and traffic tuning in `0.2.251`: the late first-hour penalty is firmer, the `60-120` minute lane is stricter, and `120+` minute leftovers fall out sooner.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.251` tightens homepage timing and traffic tuning without changing the blue-check gate, mutual lift, media allowance, or topic-neutral policy:
+
+- `45-60` minute posts now need stronger proof before they stay in the live reply lane.
+- The `60-120` minute lane now asks for stronger absolute views, stronger velocity, and a thinner reply floor.
+- `120+` minute leftovers lose positive window support earlier and pick up a stricter stale drop.
 
 Version `0.2.250` moves Chrome / Brave onto the new traffic-first, topic-neutral scoring line and syncs it into the Safari `0.2.249` source package:
 
@@ -135,7 +141,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.250.zip](./downloads/replydrop-p2.250.zip)
+- Chrome / Brave runtime package: [replydrop-p2.251.zip](./downloads/replydrop-p2.251.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
 - Safari for macOS source package: [replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
@@ -143,7 +149,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.250` public baseline in this repo.
+  - Chrome / Brave now uses the `0.2.251` public baseline in this repo.
   - Safari currently follows its own `0.2.249` release line.
 
 ## Local Install
