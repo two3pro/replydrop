@@ -1055,6 +1055,7 @@
     visionRequiredPenalty = 0,
     emptySemanticPenalty = 0,
     unsupportedLanguagePenalty = 0,
+    timingWindowPenalty = 0,
     peakDecayPenalty = 0,
     unprovenWindowPenalty = 0
   }) {
@@ -1082,6 +1083,7 @@
       clamp(visionRequiredPenalty / 36, 0, 1) * 0.28 -
       clamp(emptySemanticPenalty / 32, 0, 1) * 0.32 -
       clamp(unsupportedLanguagePenalty / 34, 0, 1) * 0.24 -
+      clamp(timingWindowPenalty / 18, 0, 1) * 0.18 -
       clamp(peakDecayPenalty / 16, 0, 1) * 0.16 -
       clamp(unprovenWindowPenalty / 8, 0, 1) * 0.08,
       0,
@@ -1090,7 +1092,10 @@
     return Math.round(fit * 100);
   }
 
-  function computeBlockReason(mediaSemanticContext, understandingConfidence) {
+  function computeBlockReason(tweet, mediaSemanticContext, understandingConfidence) {
+    if (!isBlueCheckEligible(tweet)) {
+      return "blue-check-required-auto-block";
+    }
     if (
       mediaSemanticContext?.hasMedia &&
       mediaSemanticContext.lowConfidence &&
@@ -1113,6 +1118,11 @@
     return ageMinutes;
   }
 
+  function isBlueCheckEligible(tweet = {}) {
+    const verificationType = normalizeVerificationType(tweet?.authorVerificationType);
+    return verificationType === "blue";
+  }
+
   function computeRecencyScore(timestamp, weight) {
     const ageMinutes = getTweetAgeMinutes(timestamp);
     if (ageMinutes == null) {
@@ -1120,12 +1130,16 @@
     }
 
     let freshnessFit = 0;
-    if (ageMinutes <= 75) {
+    if (ageMinutes <= 60) {
       freshnessFit = 1;
+    } else if (ageMinutes <= 120) {
+      freshnessFit = 1 - ((ageMinutes - 60) / 60) * 0.4;
     } else if (ageMinutes <= 180) {
-      freshnessFit = 1 - ((ageMinutes - 75) / 105) * 0.65;
+      freshnessFit = 0.6 - ((ageMinutes - 120) / 60) * 0.45;
+    } else if (ageMinutes <= 240) {
+      freshnessFit = 0.15 - ((ageMinutes - 180) / 60) * 0.15;
     } else {
-      freshnessFit = 0.35 - ((ageMinutes - 180) / 180) * 0.35;
+      freshnessFit = 0;
     }
 
     return clamp(freshnessFit, 0, 1) * weight;
@@ -1275,38 +1289,49 @@
     const views = Number.isFinite(tweet.views) ? tweet.views : 0;
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
     const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
-    if (ageMinutes == null || ageMinutes > 240 || views <= 0) {
+    if (ageMinutes == null || ageMinutes > 180 || views <= 0) {
       return null;
     }
 
-    const hoursSincePost = Math.max(ageMinutes / 60, 0.2);
+    const hoursSincePost = Math.max(ageMinutes / 60, 0.15);
     const viewsPerHour = views / hoursSincePost;
     const repliesPerHour = replies / hoursSincePost;
     const conversationRatio = replies / Math.max(views, 1);
+    const earlyWindow = ageMinutes <= 60;
 
     let windowFit = 0;
-    if (ageMinutes < 12) {
-      windowFit = clamp(ageMinutes / 12, 0.45, 1) * 0.7;
-    } else if (ageMinutes <= 75) {
+    if (ageMinutes < 8) {
+      windowFit = clamp(ageMinutes / 8, 0.35, 1) * 0.82;
+    } else if (ageMinutes <= 60) {
       windowFit = 1;
-    } else if (ageMinutes <= 180) {
-      windowFit = clamp(1 - (ageMinutes - 75) / 105, 0, 1);
+    } else if (ageMinutes <= 120) {
+      windowFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.52, 0.48, 1);
     } else {
-      windowFit = clamp(0.25 - ((ageMinutes - 180) / 60) * 0.25, 0, 0.25);
+      windowFit = clamp(0.48 - ((ageMinutes - 120) / 60) * 0.48, 0, 0.48);
     }
 
-    const proofFit = clamp((Math.log10(views + 1) - 3.2) / 1.6, 0, 1);
-    const velocityFit = clamp((Math.log10(viewsPerHour + 1) - 3.75) / 1.35, 0, 1);
-    const replyFit = clamp((Math.log10(repliesPerHour + 1) - 0.55) / 0.95, 0, 1);
-    const conversationFit = clamp(conversationRatio / 0.003, 0, 1);
-    const engagementFit = clamp((Math.log10(likes + 1) - 1.9) / 1.3, 0, 1);
+    const proofFit = earlyWindow
+      ? clamp((Math.log10(views + 1) - 2.35) / 1.45, 0, 1)
+      : clamp((Math.log10(views + 1) - 3.05) / 1.3, 0, 1);
+    const velocityFit = earlyWindow
+      ? clamp((Math.log10(viewsPerHour + 1) - 2.1) / 1.45, 0, 1)
+      : clamp((Math.log10(viewsPerHour + 1) - 2.7) / 1.25, 0, 1);
+    const replyFit = earlyWindow
+      ? clamp((Math.log10(repliesPerHour + 1) - 0.15) / 0.9, 0, 1)
+      : clamp((Math.log10(repliesPerHour + 1) - 0.4) / 0.95, 0, 1);
+    const conversationFit = clamp(
+      conversationRatio / (earlyWindow ? 0.0026 : 0.0035),
+      0,
+      1
+    ) * (1 - clamp((conversationRatio - 0.028) / 0.04, 0, 0.35));
+    const engagementFit = clamp((Math.log10(likes + 1) - 1.55) / 1.4, 0, 1);
 
     const bonus = (
-      (replyFit * 0.34) +
+      (replyFit * 0.32) +
       (conversationFit * 0.24) +
-      (velocityFit * 0.2) +
-      (proofFit * 0.12) +
-      (engagementFit * 0.1)
+      (velocityFit * 0.22) +
+      (proofFit * 0.14) +
+      (engagementFit * 0.08)
     ) * windowFit * weight;
 
     return bonus >= 1 ? bonus : null;
@@ -1338,8 +1363,11 @@
     const semanticText = normalizeSemanticText(getSemanticText(tweet) || tweet?.text || "");
     const semanticTokens = countSemanticTokens(semanticText);
     const hasMedia = Boolean(tweet?.hasMedia || (tweet?.mediaKind && tweet.mediaKind !== "text"));
+    const earlyWindow = ageMinutes <= 60;
+    const midWindow = ageMinutes > 60 && ageMinutes <= 120;
+    const velocityGate = earlyWindow ? 140 : (midWindow ? 620 : 900);
 
-    if (ageMinutes == null || ageMinutes > 360 || views <= 0 || velocityPerHour < 220) {
+    if (ageMinutes == null || ageMinutes > 210 || views <= 0 || velocityPerHour < velocityGate) {
       return null;
     }
     if (
@@ -1361,29 +1389,49 @@
     const replyRatio = Number.isFinite(tweet.trafficReplyRatio) && tweet.trafficReplyRatio > 0
       ? tweet.trafficReplyRatio
       : replies / Math.max(views, 1);
-    if (replyRatio < 0.0012 && replyVelocityPerHour < 18) {
+    const replyRatioGate = earlyWindow ? 0.001 : (midWindow ? 0.0016 : 0.0022);
+    const replyVelocityGate = earlyWindow ? 8 : (midWindow ? 16 : 24);
+    if (replyRatio < replyRatioGate && replyVelocityPerHour < replyVelocityGate) {
       return null;
     }
 
     const saveShareRatio = likes > 0 ? (retweets + bookmarks) / Math.max(likes, 1) : 0;
 
-    const velocityFit = clamp((Math.log10(velocityPerHour + 1) - 2.45) / 1.65, 0, 1);
-    const replyVelocityFit = clamp((Math.log10(replyVelocityPerHour + 1) - 0.2) / 1.05, 0, 1);
-    const conversationFit = clamp(replyRatio / 0.004, 0, 1) * (1 - clamp((replyRatio - 0.026) / 0.04, 0, 0.35));
+    const velocityFit = earlyWindow
+      ? clamp((Math.log10(velocityPerHour + 1) - 2.05) / 1.55, 0, 1)
+      : clamp((Math.log10(velocityPerHour + 1) - 2.55) / 1.35, 0, 1);
+    const replyVelocityFit = earlyWindow
+      ? clamp((Math.log10(replyVelocityPerHour + 1) + 0.05) / 0.95, 0, 1)
+      : clamp((Math.log10(replyVelocityPerHour + 1) - 0.1) / 1.05, 0, 1);
+    const conversationFit = clamp(
+      replyRatio / (earlyWindow ? 0.0032 : (midWindow ? 0.0038 : 0.0044)),
+      0,
+      1
+    ) * (1 - clamp((replyRatio - 0.026) / 0.04, 0, 0.35));
     const qualityFit = clamp(saveShareRatio / 0.36, 0, 1);
-    const roomFit = 1 - clamp((replies - 96) / 260, 0, 0.72);
-    const oneWayDrag = clamp((0.0018 - replyRatio) / 0.0018, 0, 0.55);
+    const roomFit = earlyWindow
+      ? 1 - clamp((replies - 78) / 220, 0, 0.6)
+      : (midWindow
+        ? 1 - clamp((replies - 64) / 180, 0, 0.72)
+        : 1 - clamp((replies - 48) / 120, 0, 0.8));
+    const oneWayDrag = clamp(
+      ((earlyWindow ? 0.0015 : 0.0022) - replyRatio) / (earlyWindow ? 0.0015 : 0.0022),
+      0,
+      0.55
+    );
     const semanticFit = hasMedia
       ? 1
       : clamp((semanticTokens - 7) / 10, 0.45, 1);
 
     let windowFit = 1;
-    if (ageMinutes < 12) {
-      windowFit = clamp(ageMinutes / 12, 0.55, 1);
-    } else if (ageMinutes <= 150) {
+    if (ageMinutes < 10) {
+      windowFit = clamp(ageMinutes / 10, 0.48, 1);
+    } else if (ageMinutes <= 60) {
       windowFit = 1;
+    } else if (ageMinutes <= 120) {
+      windowFit = clamp(1 - ((ageMinutes - 60) / 60) * 0.32, 0.68, 1);
     } else {
-      windowFit = clamp(1 - (ageMinutes - 150) / 210, 0.25, 1);
+      windowFit = clamp(0.68 - ((ageMinutes - 120) / 90) * 0.48, 0.2, 0.68);
     }
 
     const bonus = (
@@ -1443,20 +1491,86 @@
     const views = Number.isFinite(tweet.views) ? tweet.views : 0;
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
     const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
-    if (ageMinutes == null || ageMinutes > 90) {
+    const velocityPerHour = getTrafficVelocityPerHour(tweet);
+    if (ageMinutes == null || ageMinutes > 120) {
       return null;
     }
-    if (views >= 1200 || replies >= 10 || likes >= 100) {
+    let penalty = 0;
+
+    if (ageMinutes <= 60) {
+      const earlyProofReady = (
+        (views >= 280 && (replies >= 4 || likes >= 30 || velocityPerHour >= 850)) ||
+        replies >= 6 ||
+        likes >= 40 ||
+        velocityPerHour >= 1200
+      );
+      if (earlyProofReady) {
+        return null;
+      }
+      const ageFit = ageMinutes < 10 ? 0.72 : 1;
+      penalty = (
+        clamp((280 - views) / 280, 0, 1) * 0.42 +
+        clamp((6 - replies) / 6, 0, 1) * 0.32 +
+        clamp((40 - likes) / 40, 0, 1) * 0.14 +
+        clamp((850 - velocityPerHour) / 850, 0, 1) * 0.12
+      ) * ageFit * weight;
+    } else {
+      if (views >= 1800 || replies >= 12 || likes >= 120 || velocityPerHour >= 900) {
+        return null;
+      }
+      penalty = (
+        clamp((1800 - views) / 1800, 0, 1) * 0.46 +
+        clamp((12 - replies) / 12, 0, 1) * 0.26 +
+        clamp((120 - likes) / 120, 0, 1) * 0.14 +
+        clamp((900 - velocityPerHour) / 900, 0, 1) * 0.14
+      ) * weight;
+    }
+
+    return penalty >= 2 ? penalty : null;
+  }
+
+  function computeTimingWindowPenalty(tweet, weight = 18) {
+    const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
+    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
+    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+    const velocityPerHour = getTrafficVelocityPerHour(tweet);
+    const replyRatio = replies / Math.max(views, 1);
+    if (ageMinutes == null || ageMinutes <= 60) {
       return null;
     }
 
-    const ageFit = ageMinutes < 12 ? 0.6 : 1;
-    const penalty = (
-      clamp((1200 - views) / 1200, 0, 1) * 0.55 +
-      clamp((10 - replies) / 10, 0, 1) * 0.3 +
-      clamp((100 - likes) / 100, 0, 1) * 0.15
-    ) * ageFit * weight;
+    let penalty = 0;
+    if (ageMinutes <= 120) {
+      if (views < 1800) {
+        penalty += clamp((1800 - views) / 1800, 0, 1) * weight * 0.38;
+      }
+      if (velocityPerHour < 900) {
+        penalty += clamp((900 - velocityPerHour) / 900, 0, 1) * weight * 0.28;
+      }
+      if (replies > 120) {
+        penalty += clamp((replies - 120) / 160, 0, 1) * weight * 0.24;
+      }
+      if (views >= 2500 && replyRatio > 0 && replyRatio < 0.0028) {
+        penalty += clamp((0.0028 - replyRatio) / 0.0028, 0, 1) * weight * 0.16;
+      }
+      return penalty >= 2 ? penalty : null;
+    }
 
+    const staleFit = clamp((ageMinutes - 120) / 120, 0, 1);
+    if (velocityPerHour < 700) {
+      penalty += clamp((700 - velocityPerHour) / 700, 0, 1) * weight * 0.32;
+    }
+    if (views < 4500) {
+      penalty += clamp((4500 - views) / 4500, 0, 1) * weight * 0.18;
+    }
+    if (replies > 90) {
+      penalty += clamp((replies - 90) / 180, 0, 1) * weight * 0.3;
+    }
+    if (views >= 18000 && replyRatio > 0 && replyRatio < 0.0024) {
+      penalty += clamp((0.0024 - replyRatio) / 0.0024, 0, 1) * weight * 0.2;
+    }
+
+    penalty *= 0.72 + (staleFit * 0.58);
     return penalty >= 2 ? penalty : null;
   }
 
@@ -1464,17 +1578,19 @@
     const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
     const views = Number.isFinite(tweet.views) ? tweet.views : 0;
     const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+    const velocityPerHour = getTrafficVelocityPerHour(tweet);
     if (ageMinutes == null || ageMinutes <= 120) {
       return null;
     }
-    if (views < 30000 && replies < 180) {
+    if (views < 12000 && replies < 72 && velocityPerHour > 900) {
       return null;
     }
 
-    const staleFit = clamp((ageMinutes - 120) / 360, 0, 1);
-    const reachFit = clamp((Math.log10(views + 1) - 4.5) / 1.7, 0, 1);
-    const crowdFit = clamp((Math.log10(replies + 1) - 2.2) / 1.1, 0, 1);
-    const penalty = ((reachFit * 0.6) + (crowdFit * 0.4)) * staleFit * weight;
+    const staleFit = clamp((ageMinutes - 120) / 300, 0.2, 1);
+    const reachFit = clamp((Math.log10(views + 1) - 3.9) / 1.6, 0, 1);
+    const crowdFit = clamp((Math.log10(replies + 1) - 1.85) / 1.1, 0, 1);
+    const velocityDrag = clamp((900 - velocityPerHour) / 900, 0, 1);
+    const penalty = ((reachFit * 0.28) + (crowdFit * 0.42) + (velocityDrag * 0.3)) * staleFit * weight;
     return penalty >= 2 ? penalty : null;
   }
 
@@ -1708,114 +1824,11 @@
   }
 
   function computePoliticalFigurePenalty(tweet, weight = 18) {
-    const verificationType = normalizeVerificationType(
-      tweet?.authorVerificationType,
-      tweet?.authorVerified ? "verified" : ""
-    );
-    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
-    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
-    const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
-    const followers = Number.isFinite(tweet.authorFollowers) ? tweet.authorFollowers : 0;
-    const authorName = String(tweet.authorName || "");
-    const authorHandle = String(tweet.authorHandle || "");
-    const text = String(tweet.text || "");
-    const conversationRatio = replies > 0 && views > 0 ? (replies / views) : 0;
-    const likeReplyRatio = replies > 0 ? (likes / Math.max(replies, 1)) : (likes > 0 ? likes : 0);
-    const handleHits = countTermMatches(authorHandle, POLITICAL_HANDLE_TERMS);
-    const nameHits = countTermMatches(authorName, POLITICAL_NAME_TERMS);
-    const textHits = countTermMatches(text, POLITICAL_TEXT_TERMS);
-    const dialogueHits = countTermMatches(text, DIALOGUE_TEXT_TERMS) + (/[?？]/.test(text) ? 1 : 0);
-    const directOfficeSignals = handleHits + (nameHits * 1.18);
-    const verifiedBoost = verificationType === "government"
-      ? 0.92
-      : (verificationType === "gold" ? 0.46 : (tweet?.authorVerified ? 0.24 : 0));
-    const officeFit = clamp(
-      (directOfficeSignals + (textHits * 0.52) + verifiedBoost - (dialogueHits * 0.55)) / 3.2,
-      0,
-      1
-    );
-    if (officeFit <= 0) {
-      return null;
-    }
-    if (directOfficeSignals <= 0.2 && textHits < 1) {
-      return null;
-    }
-
-    const shallowConversationFit = views >= 5000
-      ? clamp((0.0045 - conversationRatio) / 0.0045, 0, 1)
-      : clamp((0.0035 - conversationRatio) / 0.0035, 0, 0.55);
-    const applauseFit = clamp((likeReplyRatio - 11) / 26, 0, 1);
-    const scaleFit = clamp(
-      Math.max(
-        (Math.log10(views + 1) - 3.6) / 1.5,
-        (Math.log10(followers + 1) - 4.2) / 1.8
-      ),
-      0,
-      1
-    );
-    const campaignFit = clamp((textHits - 1) / 3, 0, 1);
-    const dialogueRelief = clamp(dialogueHits / 2.4, 0, 0.45);
-    const typeMultiplier = verificationType === "government"
-      ? 1.18
-      : (verificationType === "gold" ? 1.06 : 1);
-    const penalty = (
-      (officeFit * 0.45) +
-      (shallowConversationFit * 0.22) +
-      (applauseFit * 0.14) +
-      (scaleFit * 0.11) +
-      (campaignFit * 0.08)
-    ) * (1 - dialogueRelief) * weight * typeMultiplier;
-
-    return penalty >= 2 ? penalty : null;
+    return null;
   }
 
   function computeBroadcastAccountPenalty(tweet, weight = 18) {
-    const verificationType = normalizeVerificationType(
-      tweet?.authorVerificationType,
-      tweet?.authorVerified ? "verified" : ""
-    );
-    if (!tweet?.authorVerified && !verificationType) {
-      return null;
-    }
-
-    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
-    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
-    const likes = Number.isFinite(tweet.likes) ? tweet.likes : 0;
-    const authorName = String(tweet.authorName || "");
-    const authorHandle = String(tweet.authorHandle || "");
-    const text = String(tweet.text || "");
-    const conversationRatio = replies > 0 && views > 0 ? (replies / views) : 0;
-    const likeReplyRatio = replies > 0 && likes > 0 ? (likes / replies) : (likes > 0 ? likes : 0);
-    const handleHits = countTermMatches(authorHandle, OFFICIAL_BROADCAST_HANDLE_TERMS);
-    const nameHits = countTermMatches(authorName, OFFICIAL_BROADCAST_NAME_TERMS);
-    const textHits = countTermMatches(text, BROADCAST_TEXT_TERMS);
-    const dialogueHits = countTermMatches(text, DIALOGUE_TEXT_TERMS) + (/[?？]/.test(text) ? 1 : 0);
-
-    const verificationBoost = verificationType === "government"
-      ? 0.9
-      : (verificationType === "gold" ? 0.65 : 0);
-    const orgFit = clamp((handleHits + nameHits * 1.15 + textHits * 0.65 + verificationBoost - dialogueHits * 0.7) / 3.2, 0, 1);
-    if (orgFit <= 0) {
-      return null;
-    }
-
-    const shallowConversationFit = views >= 10000
-      ? clamp((0.0028 - conversationRatio) / 0.0028, 0, 1)
-      : 0;
-    const applauseFit = clamp((likeReplyRatio - 14) / 34, 0, 1);
-    const proofFit = clamp((Math.log10(Math.max(views, likes) + 1) - 3.1) / 1.6, 0, 1);
-    const dialogueRelief = clamp(dialogueHits / 2.2, 0, 0.55);
-    const oneWayFit = Math.max(shallowConversationFit, applauseFit, textHits ? 0.45 : 0);
-    const verificationMultiplier = verificationType === "government"
-      ? 1.14
-      : (verificationType === "gold" ? 1.08 : 1);
-    const penalty = (
-      (orgFit * 0.52) +
-      (oneWayFit * 0.34) +
-      (proofFit * 0.14)
-    ) * (1 - dialogueRelief) * weight * verificationMultiplier;
-
-    return penalty >= 3 ? penalty : null;
+    return null;
   }
 
   function computeVerifiedPileOnPenalty(tweet, weight = 16) {
@@ -2393,31 +2406,11 @@
       return null;
     }
 
-    const verificationType = normalizeVerificationType(
-      tweet?.authorVerificationType,
-      tweet?.authorVerified ? "verified" : ""
-    );
-    const authorName = String(tweet?.authorName || "");
-    const authorHandle = String(tweet?.authorHandle || "");
-    const politicalHits = (
-      countTermMatches(authorHandle, POLITICAL_HANDLE_TERMS) +
-      countTermMatches(authorName, POLITICAL_NAME_TERMS) +
-      countTermMatches(normalized, POLITICAL_TEXT_TERMS)
-    );
-    const broadcastHits = (
-      countTermMatches(authorHandle, OFFICIAL_BROADCAST_HANDLE_TERMS) +
-      countTermMatches(authorName, OFFICIAL_BROADCAST_NAME_TERMS) +
-      countTermMatches(normalized, BROADCAST_TEXT_TERMS)
-    );
     const promoHits = (
       countTermMatches(normalized, PROTOCOL_PROMO_TERMS) +
       countRegexMatches(normalized, PROTOCOL_PROMO_PATTERNS)
     );
-    const trustPenalty = verificationType === "government" || verificationType === "gold"
-      ? 12
-      : (tweet?.authorVerified ? 6 : 0);
-    const riskPenalty = Math.min(14, politicalHits * 5 + broadcastHits * 4 + promoHits * 4);
-    return Math.round(Math.min(46, weight + trustPenalty + riskPenalty));
+    return Math.round(Math.min(38, weight + Math.min(10, promoHits * 4)));
   }
 
   function formatBreakdownText(item) {
@@ -2560,6 +2553,17 @@
         key: "unprovenWindow",
         label: "Not moving yet",
         amount: -unprovenWindowPenalty,
+        kind: "penalty"
+      });
+    }
+
+    const timingWindowPenalty = computeTimingWindowPenalty(tweet, 18);
+    if (timingWindowPenalty != null) {
+      score -= timingWindowPenalty;
+      breakdown.push({
+        key: "timingWindow",
+        label: "Timing window",
+        amount: -timingWindowPenalty,
         kind: "penalty"
       });
     }
@@ -2916,6 +2920,7 @@
       visionRequiredPenalty: visionRequiredPenalty || 0,
       emptySemanticPenalty: emptySemanticPenalty || 0,
       unsupportedLanguagePenalty: unsupportedLanguagePenalty || 0,
+      timingWindowPenalty: timingWindowPenalty || 0,
       peakDecayPenalty: peakDecayPenalty || 0,
       unprovenWindowPenalty: unprovenWindowPenalty || 0
     });
@@ -2939,6 +2944,7 @@
       (visionRequiredPenalty || 0) * 1.02 +
       (emptySemanticPenalty || 0) * 1.08 +
       (unsupportedLanguagePenalty || 0) * 0.95 +
+      (timingWindowPenalty || 0) * 0.74 +
       (peakDecayPenalty || 0) * 0.55,
       0,
       82
@@ -2990,7 +2996,7 @@
       .sort((a, b) => a.amount - b.amount);
 
     const highlights = buildHighlights(positiveBreakdown, negativeBreakdown);
-    const blockReason = computeBlockReason(mediaSemanticContext, understandingConfidence);
+    const blockReason = computeBlockReason(tweet, mediaSemanticContext, understandingConfidence);
 
     const tooltipLines = [
       `Score ${clampedScore} · ${tier}`,

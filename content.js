@@ -32,8 +32,15 @@
   const EXECUTOR_TARGET_TIMEOUT_MS = 20 * 1000;
   const EXECUTOR_NO_CANDIDATE_TIMEOUT_MS = 15 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_TTL_MS = 10 * 60 * 1000;
-  const EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES = 90;
-  const EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES = 180;
+  const EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES = 60;
+  const EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES = 120;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_VIEWS = 280;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_REPLIES = 6;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_VELOCITY_PER_HOUR = 220;
+  const EXECUTOR_MID_MIN_TRAFFIC_VIEWS = 1800;
+  const EXECUTOR_MID_MIN_TRAFFIC_REPLIES = 12;
+  const EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR = 900;
+  const EXECUTOR_MID_MAX_REPLY_FLOOR = 120;
   const EXECUTOR_MIN_TRAFFIC_VIEWS = 500;
   const EXECUTOR_MIN_TRAFFIC_REPLIES = 10;
   const EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR = 700;
@@ -1435,38 +1442,94 @@
     return normalized ? normalized : "";
   }
 
+  function getExecutorAgeMinutes(metrics = {}) {
+    const explicitAgeMinutes = Number(metrics?.ageMinutes);
+    if (Number.isFinite(explicitAgeMinutes) && explicitAgeMinutes >= 0) {
+      return explicitAgeMinutes;
+    }
+    const timestamp = Number(metrics?.timestamp || 0);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return null;
+    }
+    return Math.max(0, (Date.now() - timestamp) / 60000);
+  }
+
   function buildExecutorTrafficProfile(metrics = {}) {
     const views = Math.max(0, Number(metrics?.views) || 0);
     const replies = Math.max(0, Number(metrics?.replies) || 0);
     const velocityPerHour = Math.max(0, Number(metrics?.velocityPerHour) || 0);
     const phase = normalizeTrafficPhaseKey(metrics?.phase);
+    const ageMinutes = getExecutorAgeMinutes(metrics);
     const trendingLike = phase === "trending" || phase === "viral";
     const risingLike = phase === "rising";
+    const earlyWindow = ageMinutes != null && ageMinutes <= EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES;
+    const midWindow = ageMinutes != null && ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES && ageMinutes <= EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES;
+    let windowKey = "unknown";
+    let minViews = EXECUTOR_MIN_TRAFFIC_VIEWS;
+    let minReplies = EXECUTOR_MIN_TRAFFIC_REPLIES;
+    let minVelocityPerHour = EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR;
+    let maxReplyFloor = Number.POSITIVE_INFINITY;
+
+    if (earlyWindow) {
+      windowKey = "early";
+      minViews = EXECUTOR_EARLY_MIN_TRAFFIC_VIEWS;
+      minReplies = EXECUTOR_EARLY_MIN_TRAFFIC_REPLIES;
+      minVelocityPerHour = EXECUTOR_EARLY_MIN_TRAFFIC_VELOCITY_PER_HOUR;
+      maxReplyFloor = 180;
+    } else if (midWindow) {
+      windowKey = "mid";
+      minViews = EXECUTOR_MID_MIN_TRAFFIC_VIEWS;
+      minReplies = EXECUTOR_MID_MIN_TRAFFIC_REPLIES;
+      minVelocityPerHour = EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR;
+      maxReplyFloor = EXECUTOR_MID_MAX_REPLY_FLOOR;
+    } else if (ageMinutes != null) {
+      windowKey = "late";
+      minViews = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VIEWS, 4000);
+      minReplies = Math.max(EXECUTOR_MID_MIN_TRAFFIC_REPLIES, 16);
+      minVelocityPerHour = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR, 1200);
+      maxReplyFloor = 96;
+    }
+
+    const baseQualified = (
+      views >= minViews ||
+      replies >= minReplies ||
+      velocityPerHour >= minVelocityPerHour
+    );
+    const phaseQualified = (
+      (trendingLike && views >= (earlyWindow ? 180 : Math.max(minViews, 3000))) ||
+      (risingLike && views >= (earlyWindow ? 220 : Math.max(minViews, 2200)) && velocityPerHour >= (earlyWindow ? 180 : 760))
+    );
+    const crowdQualified = replies <= maxReplyFloor;
     const qualified = (
-      views >= EXECUTOR_MIN_TRAFFIC_VIEWS ||
-      replies >= EXECUTOR_MIN_TRAFFIC_REPLIES ||
-      velocityPerHour >= EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR ||
-      (trendingLike && views >= EXECUTOR_TRENDING_MIN_TRAFFIC_VIEWS) ||
-      (risingLike &&
-        views >= EXECUTOR_RISING_MIN_TRAFFIC_VIEWS &&
-        velocityPerHour >= EXECUTOR_RISING_MIN_TRAFFIC_VELOCITY_PER_HOUR)
+      (baseQualified || phaseQualified) &&
+      crowdQualified &&
+      (ageMinutes == null || ageMinutes <= EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES)
     );
     const phaseRank = phase === "viral" ? 4 : phase === "trending" ? 3 : phase === "rising" ? 2 : phase === "normal" ? 1 : 0;
+    const freshnessRank = earlyWindow ? 3 : (midWindow ? 2 : 0);
+    const replyRoom = Math.max(0, Math.round((Math.min(maxReplyFloor, 220) - Math.min(replies, Math.min(maxReplyFloor, 220))) * 1000));
     const priority = (
       (qualified ? 1_000_000_000 : 0) +
+      (freshnessRank * 300_000_000) +
       (phaseRank * 100_000_000) +
-      (Math.min(views, 250000) * 100) +
-      (Math.min(replies, 5000) * 1000) +
-      Math.min(Math.round(velocityPerHour), 100000)
+      (Math.min(Math.round(velocityPerHour), 100000) * 300) +
+      (Math.min(views, 250000) * 60) +
+      replyRoom
     );
     return {
       views,
       replies,
       velocityPerHour,
       phase,
+      ageMinutes,
       qualified,
       phaseRank,
-      priority
+      priority,
+      windowKey,
+      minViews,
+      minReplies,
+      minVelocityPerHour,
+      maxReplyFloor
     };
   }
 
@@ -1495,7 +1558,8 @@
           views: candidate?.views,
           replies: candidate?.replies,
           velocityPerHour: candidate?.trafficVelocityPerHour,
-          phase: candidate?.trafficPhase
+          phase: candidate?.trafficPhase,
+          timestamp: candidate?.timestamp
         })
       }))
       .sort((left, right) => (
@@ -1976,7 +2040,9 @@
       views: candidate?.views,
       replies: candidate?.replies,
       velocityPerHour: candidate?.trafficVelocityPerHour,
-      phase: candidate?.trafficPhase
+      phase: candidate?.trafficPhase,
+      ageMinutes,
+      timestamp
     });
     const mediaKind = String(candidate?.mediaKind || "").trim();
     const mediaPresent = hasVisualMediaKind(mediaKind);
@@ -2019,6 +2085,7 @@
         name: String(candidate?.authorName || "").trim(),
         verified: Boolean(candidate?.authorVerified),
         verificationType: String(candidate?.authorVerificationType || "").trim(),
+        blueCheckEligible: isBlueCheckEligibleAuthor(candidate?.authorVerified, candidate?.authorVerificationType),
         relationshipStatus: String(candidate?.relationshipStatus || "").trim()
       },
       post: {
@@ -2259,6 +2326,9 @@
     if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
       return false;
     }
+    if (!isBlueCheckEligibleAuthor(context.author?.verified, context.author?.verificationType)) {
+      return false;
+    }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
@@ -2266,7 +2336,8 @@
       views: context.post?.views,
       replies: context.post?.replies,
       velocityPerHour: context.post?.traffic?.velocityPerHour,
-      phase: context.post?.traffic?.phase
+      phase: context.post?.traffic?.phase,
+      ageMinutes
     });
     if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
       return false;
@@ -2401,13 +2472,17 @@
       views: context.post?.views,
       replies: context.post?.replies,
       velocityPerHour: context.post?.traffic?.velocityPerHour,
-      phase: context.post?.traffic?.phase
+      phase: context.post?.traffic?.phase,
+      ageMinutes
     });
     if (recommendedDecision && recommendedDecision !== "reply-now") {
       reasons.push(`decision-${recommendedDecision}`);
     }
     if (context.recheck?.skipRecommended) {
       reasons.push("skip-recommended");
+    }
+    if (!isBlueCheckEligibleAuthor(context.author?.verified, context.author?.verificationType)) {
+      reasons.push("blue-check-required-auto-block");
     }
     if (score < displayThreshold) {
       reasons.push("below-display-floor");
@@ -2523,7 +2598,8 @@
       views: context.post?.views,
       replies: context.post?.replies,
       velocityPerHour: context.post?.traffic?.velocityPerHour,
-      phase: context.post?.traffic?.phase
+      phase: context.post?.traffic?.phase,
+      ageMinutes: Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 0)
     });
     return {
       tweetId: String(context.tweetId || "").trim(),
@@ -3367,7 +3443,7 @@
     if (!candidate?.url) {
       throw new Error("candidate-not-found");
     }
-    if (candidate.blockReason) {
+    if (candidate.blockReason && String(candidate.blockReason).trim() !== "blue-check-required-auto-block") {
       throw new Error(String(candidate.blockReason));
     }
 
@@ -5524,9 +5600,57 @@
     return "";
   }
 
+  function isBlueCheckEligibleAuthor(authorVerified, authorVerificationType) {
+    if (!authorVerified && !authorVerificationType) {
+      return false;
+    }
+    return normalizeVerificationType(authorVerificationType) === "blue";
+  }
+
+  function findVerificationIconNode(scope) {
+    const root = scope instanceof Element ? scope : null;
+    if (!(root instanceof Element)) {
+      return null;
+    }
+
+    const userName = root.matches?.('[data-testid="User-Name"]')
+      ? root
+      : (root.querySelector('[data-testid="User-Name"]') || root);
+    const directMatch = userName.querySelector('[data-testid="icon-verified"]');
+    if (directMatch instanceof Element) {
+      return directMatch;
+    }
+
+    const labeledMatch = userName.querySelector([
+      '[aria-label*="Verified"]',
+      '[aria-label*="verified"]',
+      '[aria-label*="已认证"]',
+      '[aria-label*="已認證"]',
+      '[aria-label*="蓝"]',
+      '[aria-label*="藍"]',
+      '[aria-label*="金"]',
+      '[aria-label*="政府"]',
+      '[title*="Verified"]',
+      '[title*="verified"]'
+    ].join(", "));
+    if (labeledMatch instanceof Element) {
+      return labeledMatch;
+    }
+
+    const candidates = Array.from(userName.querySelectorAll("svg, span, a, div")).slice(0, 80);
+    return candidates.find((node) => {
+      const signals = [
+        node.getAttribute?.("aria-label"),
+        node.getAttribute?.("title"),
+        node.getAttribute?.("data-testid"),
+        node.textContent
+      ].filter(Boolean).join(" | ");
+      return Boolean(normalizeVerificationType(signals) || readVerificationColorHint(node));
+    }) || null;
+  }
+
   function collectVerificationSignals(article) {
-    const userName = article.querySelector('[data-testid="User-Name"]') || article;
-    const icon = userName.querySelector('[data-testid="icon-verified"]');
+    const icon = findVerificationIconNode(article);
     if (!(icon instanceof Element)) {
       return "";
     }
@@ -5609,8 +5733,7 @@
   }
 
   function readVerificationType(article) {
-    const userName = article.querySelector('[data-testid="User-Name"]') || article;
-    const icon = userName.querySelector('[data-testid="icon-verified"]');
+    const icon = findVerificationIconNode(article);
     if (!(icon instanceof Element)) {
       return "";
     }
@@ -5631,7 +5754,7 @@
   function readVerified(article) {
     return Boolean(
       readVerificationType(article) ||
-      article.querySelector('[data-testid="icon-verified"]') ||
+      findVerificationIconNode(article) ||
       article.querySelector('[aria-label*="Verified"]') ||
       article.querySelector('[aria-label*="已认证"]')
     );
@@ -6183,13 +6306,13 @@
       Math.max(0, Math.min(1, (Math.log10(velocityPerHour + 1) - 1.9) / 1.7)),
       Math.max(0, Math.min(1, (reachLikelihood - 42) / 28))
     );
-    const reliefFactor = 0.22 + (trafficFit * 0.34);
+    const reliefFactor = 0.3 + (trafficFit * 0.42);
     let amount = Math.round(restorablePenalty * reliefFactor);
     if ((verificationType === "blue" || tweet?.authorVerified) && trafficFit >= 0.45) {
-      amount += 6;
+      amount += 8;
     }
-    amount = Math.max(0, Math.min(40, amount));
-    if (amount < 4) {
+    amount = Math.max(0, Math.min(46, amount));
+    if (amount < 3) {
       return null;
     }
 
@@ -6234,14 +6357,12 @@
     const pileOnRisk = (
       hasAnalysisPenaltyKey(analysis, "crowding") ||
       hasAnalysisPenaltyKey(analysis, "verifiedOrganization") ||
-      hasAnalysisPenaltyKey(analysis, "verifiedPileOn") ||
-      hasAnalysisPenaltyKey(analysis, "politicalFigure") ||
-      hasAnalysisPenaltyKey(analysis, "broadcastAccount")
+      hasAnalysisPenaltyKey(analysis, "verifiedPileOn")
     );
 
     switch (status) {
       case "mutual": {
-        let amount = strongMemory ? 18 : 12;
+        let amount = strongMemory ? 22 : 16;
         if (!strongMemory) {
           if (verificationType === "government" || verificationType === "gold") {
             amount -= 6;
@@ -6256,10 +6377,10 @@
             amount -= 2;
           }
           if (!crowded && !broadcastHeavy && conversationRatio >= 0.0035 && conversationRatio <= 0.026) {
-            amount += 2;
+            amount += 3;
           }
         }
-        amount = Math.max(0, Math.min(22, Math.round(amount)));
+        amount = Math.max(0, Math.min(24, Math.round(amount)));
         if (amount < 2) {
           return null;
         }
@@ -6274,7 +6395,7 @@
         if (followTrainRisk && !strongMemory) {
           return null;
         }
-        let amount = someMemory ? 10 : 8;
+        let amount = someMemory ? 12 : 10;
         if (!strongMemory) {
           if (verificationType === "government" || verificationType === "gold") {
             amount -= 4;
@@ -6291,7 +6412,7 @@
             amount -= 3;
           }
         }
-        amount = Math.max(0, Math.min(12, Math.round(amount)));
+        amount = Math.max(0, Math.min(14, Math.round(amount)));
         if (amount < 2) {
           return null;
         }
@@ -6306,7 +6427,7 @@
         if (followTrainRisk && !strongMemory) {
           return null;
         }
-        let amount = someMemory ? 8 : 6;
+        let amount = someMemory ? 10 : 8;
         if (!strongMemory && (crowded || broadcastHeavy)) {
           amount -= 2;
         }
@@ -6316,7 +6437,7 @@
         if (verificationType === "government" || verificationType === "gold") {
           amount -= 2;
         }
-        amount = Math.max(0, Math.min(10, Math.round(amount)));
+        amount = Math.max(0, Math.min(12, Math.round(amount)));
         if (amount < 2) {
           return null;
         }
@@ -6591,7 +6712,8 @@
           views: candidate?.views,
           replies: candidate?.replies,
           velocityPerHour: candidate?.trafficVelocityPerHour,
-          phase: candidate?.trafficPhase
+          phase: candidate?.trafficPhase,
+          timestamp: candidate?.timestamp
         });
         return (
           recommendedDecision === "reply-now" &&

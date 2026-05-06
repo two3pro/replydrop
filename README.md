@@ -6,9 +6,9 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.249`
+当前重置基线版本：`0.2.250`
 
-当前 Chrome / Brave 公开包已同步 Safari `0.2.248` 的评分与共享 runtime 基线，版本号提升为 `0.2.249`。
+当前 Chrome / Brave 公开包已同步 Safari `0.2.249` 的 traffic-first 评分与共享 runtime 基线，版本号提升为 `0.2.250`。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -227,16 +227,16 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.249.zip](./downloads/replydrop-p2.249.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.250.zip](./downloads/replydrop-p2.250.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.248.zip](./downloads/replydrop-safari-open-source-0.2.248.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.249`
-  - Safari 当前走单独版本线 `0.2.248`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.250`
+  - Safari 当前走单独版本线 `0.2.249`
 
 ## 本地安装
 
@@ -306,7 +306,7 @@ npm run export:oss
 bash scripts/package-release.sh
 ```
 
-当前会生成 `replydrop-p2.249.zip` 这样的安装包。
+当前会生成 `replydrop-p2.250.zip` 这样的安装包。
 
 ## 文档导航
 

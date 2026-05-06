@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.250
+
+- Chrome / Brave 评分切到 `traffic first, topic neutral`：`0-60` 分钟的起速帖更容易进自动池，`60-120` 分钟需要更强流量和更薄回复层，`120+` 的陈旧或拥挤帖子会更快掉出窗口
+- `politicalFigure` / `broadcastAccount` 不再按题材或账号类别单独压分，政治、媒体、官方账号改由时机、速度、拥挤度和回复空间决定
+- 自动池继续保留清晰蓝勾门槛；互关 / follow-up / remembered relationship 的机会加权明显抬高；`background.js` 改成逐核心脚本加载并逐项报错
+- Safari 源码公开包同步到 `0.2.249`，共享 `scorer.js` / `content.js` / `background.js` 的 traffic-first 逻辑
+
 ## 0.2.249
 
 - Chrome / Brave 同步当前 Safari `0.2.248` 评分与共享 runtime 基线，水滴打分、候选路由、队列和执行诊断口径保持一致

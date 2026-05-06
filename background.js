@@ -1,9 +1,15 @@
 if (typeof importScripts === "function") {
-  try {
-    importScripts("replydrop-pickup-core.js", "replydrop-workflow-core.js", "replydrop-attribution-core.js");
-  } catch (_error) {
-    // Ignore local core loading failures in non-extension runtimes.
-  }
+  [
+    "replydrop-pickup-core.js",
+    "replydrop-workflow-core.js",
+    "replydrop-attribution-core.js"
+  ].forEach((scriptName) => {
+    try {
+      importScripts(scriptName);
+    } catch (error) {
+      console.warn(`[ReplyDrop] Failed to import ${scriptName}`, error);
+    }
+  });
 }
 
 const PickupCore = globalThis.ReplyDropPickupCore || null;

@@ -9,6 +9,10 @@ function loadScorer() {
   return globalThis.XReplyScorer;
 }
 
+function hasBreakdownKey(analysis, keys) {
+  return keys.some((key) => analysis.breakdown.some((item) => item.key === key));
+}
+
 test("scorer favors fresh accelerating posts over late crowded peaks", () => {
   const scorer = loadScorer();
   const now = Date.now();
@@ -75,7 +79,7 @@ test("scorer penalizes fresh posts that have not proven reach yet", () => {
   });
 
   assert.ok(proven.score > unproven.score);
-  assert.ok(unproven.breakdown.some((item) => item.key === "unprovenWindow"));
+  assert.ok(hasBreakdownKey(unproven, ["unprovenWindow", "timingWindow"]));
   assert.ok(proven.breakdown.some((item) => item.key === "accelerationWindow"));
 });
 
@@ -114,7 +118,7 @@ test("scorer prefers conversational mid-size threads over broadcast-heavy giants
   assert.ok(broadcast.breakdown.some((item) => item.key === "crowding"));
 });
 
-test("scorer penalizes verified official broadcasters when the thread is one-way", () => {
+test("scorer keeps official broadcasters topic-neutral but still blocks weak reply windows", () => {
   const scorer = loadScorer();
   const now = Date.now();
 
@@ -149,7 +153,8 @@ test("scorer penalizes verified official broadcasters when the thread is one-way
   });
 
   assert.ok(interactive.score > broadcaster.score);
-  assert.ok(broadcaster.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.equal(broadcaster.blockReason, "blue-check-required-auto-block");
+  assert.ok(hasBreakdownKey(broadcaster, ["crowding", "trafficMismatch", "verifiedPileOn"]));
 });
 
 test("scorer pushes gold verified org posts below interactive people when reply room is weak", () => {
@@ -556,15 +561,17 @@ test("scorer demotes p2.193 multilingual growth and broadcast leaks", () => {
 
   assert.ok(koreanGrowth.breakdown.some((item) => item.key === "followTrainBait"));
   assert.ok(japaneseFollowCta.breakdown.some((item) => item.key === "followTrainBait"));
-  assert.ok(officialService.breakdown.some((item) => item.key === "broadcastAccount"));
-  assert.ok(gameBrandAward.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.equal(officialService.blockReason, "blue-check-required-auto-block");
+  assert.ok(hasBreakdownKey(officialService, ["verifiedOrganization", "crowding", "trafficMismatch"]));
+  assert.equal(gameBrandAward.blockReason, "blue-check-required-auto-block");
+  assert.ok(hasBreakdownKey(gameBrandAward, ["verifiedOrganization", "crowding", "trafficMismatch"]));
   assert.ok(koreanGrowth.score < 54);
   assert.ok(japaneseFollowCta.score < 54);
   assert.ok(officialService.score < 54);
   assert.ok(gameBrandAward.score < 54);
 });
 
-test("scorer demotes p2.193 unsupported language, political news, and web3 event leaks", () => {
+test("scorer demotes p2.193 unsupported language, flow bait, and weak geo-news lanes", () => {
   const scorer = loadScorer();
   const now = Date.now();
 
@@ -633,7 +640,8 @@ test("scorer demotes p2.193 unsupported language, political news, and web3 event
   });
 
   assert.ok(turkishUnsupported.breakdown.some((item) => item.key === "unsupportedLanguage"));
-  assert.ok(bricsBroadcast.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.equal(bricsBroadcast.blockReason, "blue-check-required-auto-block");
+  assert.ok(hasBreakdownKey(bricsBroadcast, ["verifiedOrganization", "crowding", "trafficMismatch", "protocolPromo"]));
   assert.ok(web3Networking.breakdown.some((item) => item.key === "protocolPromo"));
   assert.ok(salaciousPrompt.breakdown.some((item) => item.key === "riskyContent"));
   assert.ok(turkishUnsupported.score < 54);
@@ -667,7 +675,7 @@ test("scorer demotes empty text candidates before recommendation", () => {
   assert.equal(emptyCandidate.matchedLanguages.length, 0);
 });
 
-test("scorer penalizes political figure accounts that are risky and low-interaction", () => {
+test("scorer treats political figure accounts as topic-neutral and still demotes crowded one-way threads", () => {
   const scorer = loadScorer();
   const now = Date.now();
 
@@ -704,10 +712,11 @@ test("scorer penalizes political figure accounts that are risky and low-interact
   });
 
   assert.ok(interactive.score > politician.score);
-  assert.ok(politician.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.ok(!politician.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.ok(hasBreakdownKey(politician, ["crowding", "trafficMismatch", "broadcastFormat", "verifiedPileOn"]));
 });
 
-test("scorer demotes official brand and known political-account leaks", () => {
+test("scorer demotes official brand and political-account leaks without category-only penalties", () => {
   const scorer = loadScorer();
   const now = Date.now();
 
@@ -776,11 +785,13 @@ test("scorer demotes official brand and known political-account leaks", () => {
   });
 
   assert.ok(officialBrand.breakdown.some((item) => item.key === "verifiedOrganization"));
-  assert.ok(officialBrand.breakdown.some((item) => item.key === "broadcastAccount"));
-  assert.ok(knownPolitician.breakdown.some((item) => item.key === "politicalFigure"));
-  assert.ok(politicalVideo.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.equal(officialBrand.blockReason, "blue-check-required-auto-block");
+  assert.ok(!knownPolitician.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.ok(!politicalVideo.breakdown.some((item) => item.key === "politicalFigure"));
+  assert.ok(hasBreakdownKey(knownPolitician, ["crowding", "trafficMismatch", "verifiedOrganization", "verifiedPileOn"]));
+  assert.ok(hasBreakdownKey(politicalVideo, ["visionRequired", "crowding", "trafficMismatch", "verifiedPileOn"]));
   assert.ok(sportsBrand.breakdown.some((item) => item.key === "verifiedOrganization"));
-  assert.ok(sportsBrand.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.equal(sportsBrand.blockReason, "blue-check-required-auto-block");
   assert.ok(officialBrand.score < 54);
   assert.ok(knownPolitician.score < 54);
   assert.ok(politicalVideo.score < 54);
@@ -913,8 +924,8 @@ test("scorer demotes p2.195 broadcast, product CTA, crypto hype, and event-drama
     langs: ["en"]
   });
 
-  assert.ok(whaleBroadcast.breakdown.some((item) => item.key === "broadcastAccount"));
-  assert.ok(factsAggregator.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.ok(hasBreakdownKey(whaleBroadcast, ["protocolPromo", "broadcastFormat", "crowding", "trafficMismatch"]));
+  assert.ok(hasBreakdownKey(factsAggregator, ["crowding", "trafficMismatch", "verifiedPileOn"]));
   assert.ok(productCta.breakdown.some((item) => item.key === "protocolPromo"));
   assert.ok(cryptoHype.breakdown.some((item) => item.key === "protocolPromo"));
   assert.ok(eventDrama.breakdown.some((item) => item.key === "riskyContent"));
@@ -1551,7 +1562,7 @@ test("scorer hard-caps directional crypto wealth narratives", () => {
   assert.ok(directional.breakdown.some((item) => item.key === "protocolPromo"));
 });
 
-test("scorer hard-caps official political and broadcast accounts", () => {
+test("scorer still crushes official political and broadcast traffic when crowding and reply ratio are bad", () => {
   const scorer = loadScorer();
   const now = Date.now();
 
@@ -1597,8 +1608,10 @@ test("scorer hard-caps official political and broadcast accounts", () => {
 
   assert.ok(political.score <= 47);
   assert.ok(broadcaster.score <= 50);
-  assert.ok(political.breakdown.some((item) => item.key === "politicalFigure" || item.key === "broadcastAccount"));
-  assert.ok(broadcaster.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.ok(!political.breakdown.some((item) => item.key === "politicalFigure" || item.key === "broadcastAccount"));
+  assert.ok(!broadcaster.breakdown.some((item) => item.key === "broadcastAccount"));
+  assert.ok(hasBreakdownKey(political, ["crowding", "trafficMismatch", "broadcastFormat", "verifiedPileOn"]));
+  assert.ok(hasBreakdownKey(broadcaster, ["crowding", "trafficMismatch", "verifiedPileOn"]));
 });
 
 test("scorer does not hard-cap substantial technical reports", () => {
@@ -1798,7 +1811,7 @@ test("scorer demotes p2.206 crypto wealth and investment leaks", () => {
   }
 });
 
-test("scorer demotes p2.206 payout, follow-growth, political, and low-info leaks", () => {
+test("scorer demotes p2.206 payout and low-info leaks while keeping political topics topic-neutral", () => {
   const scorer = loadScorer();
   const now = Date.now();
   const common = {
@@ -1853,10 +1866,11 @@ test("scorer demotes p2.206 payout, follow-growth, political, and low-info leaks
     const analysis = scorer.analyzeTweet({ ...common, text: item.text });
     if (item.key === "politicalFigure") {
       assert.ok(analysis.score >= 54, `${item.text} scored ${analysis.score}`);
+      assert.ok(!analysis.breakdown.some((entry) => entry.key === "politicalFigure"), item.key);
     } else {
       assert.ok(analysis.score < 54, `${item.text} scored ${analysis.score}`);
+      assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
     }
-    assert.ok(analysis.breakdown.some((entry) => entry.key === item.key), item.key);
   }
 });
 
