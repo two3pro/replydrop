@@ -1595,73 +1595,94 @@
     return penalty >= 2 ? penalty : null;
   }
 
-  function computeTimingWindowPenalty(tweet, weight = 18) {
-    const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
-    const views = Number.isFinite(tweet.views) ? tweet.views : 0;
-    const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
-    const velocityPerHour = getTrafficVelocityPerHour(tweet);
-    const replyRatio = replies / Math.max(views, 1);
-    if (ageMinutes == null) {
+function computeTimingWindowPenalty(tweet, weight = 18) {
+  const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
+  const views = Number.isFinite(tweet.views) ? tweet.views : 0;
+  const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
+  const velocityPerHour = getTrafficVelocityPerHour(tweet);
+  const replyRatio = replies / Math.max(views, 1);
+  if (ageMinutes == null) {
+    return null;
+  }
+
+  let penalty = 0;
+  if (ageMinutes <= 60) {
+    if (ageMinutes <= 10) {
       return null;
     }
+    const lateFirstHourFit = clamp((ageMinutes - 18) / 42, 0, 1);
+    const minViews = 500 + (lateFirstHourFit * 950);
+    const minVelocity = 450 + (lateFirstHourFit * 1050);
+    const minReplies = 6 + (lateFirstHourFit * 4);
+    const minReplyRatio = 0.004 + (lateFirstHourFit * 0.0004);
 
-    let penalty = 0;
-    if (ageMinutes <= 60) {
-      if (ageMinutes <= 45) {
-        return null;
-      }
-      if (views < 1800) {
-        penalty += clamp((1800 - views) / 1800, 0, 1) * weight * 0.4;
-      }
-      if (velocityPerHour < 1800) {
-        penalty += clamp((1800 - velocityPerHour) / 1800, 0, 1) * weight * 0.3;
-      }
-      if (replies < 10) {
-        penalty += clamp((10 - replies) / 10, 0, 1) * weight * 0.22;
-      }
-      if (views >= 1200 && replyRatio > 0 && replyRatio < 0.0045) {
-        penalty += clamp((0.0045 - replyRatio) / 0.0045, 0, 1) * weight * 0.18;
-      }
-      return penalty >= 2 ? penalty : null;
+    if (views < minViews) {
+      penalty += clamp((minViews - views) / minViews, 0, 1) * weight * 0.44;
     }
-
-    if (ageMinutes <= 120) {
-      if (views < 3600) {
-        penalty += clamp((3600 - views) / 3600, 0, 1) * weight * 0.42;
-      }
-      if (velocityPerHour < 1600) {
-        penalty += clamp((1600 - velocityPerHour) / 1600, 0, 1) * weight * 0.3;
-      }
-      if (replies > 84) {
-        penalty += clamp((replies - 84) / 120, 0, 1) * weight * 0.2;
-      }
-      if (replies > 56 && views < 9000) {
-        penalty += clamp((replies - 56) / 80, 0, 1) * weight * 0.12;
-      }
-      if (views >= 3000 && replyRatio > 0 && replyRatio < 0.0032) {
-        penalty += clamp((0.0032 - replyRatio) / 0.0032, 0, 1) * weight * 0.2;
-      }
-      return penalty >= 2 ? penalty : null;
+    if (velocityPerHour < minVelocity) {
+      penalty += clamp((minVelocity - velocityPerHour) / minVelocity, 0, 1) * weight * 0.28;
     }
-
-    const staleFit = clamp((ageMinutes - 120) / 90, 0, 1);
-    if (velocityPerHour < 1200) {
-      penalty += clamp((1200 - velocityPerHour) / 1200, 0, 1) * weight * 0.34;
+    if (replies < minReplies) {
+      penalty += clamp((minReplies - replies) / minReplies, 0, 1) * weight * 0.18;
     }
-    if (views < 15000) {
-      penalty += clamp((15000 - views) / 15000, 0, 1) * weight * 0.26;
+    if (ageMinutes >= 25 && views >= Math.max(900, minViews * 0.72) && replyRatio > 0 && replyRatio < minReplyRatio) {
+      penalty += clamp((minReplyRatio - replyRatio) / minReplyRatio, 0, 1) * weight * 0.1;
     }
-    if (replies > 72) {
-      penalty += clamp((replies - 72) / 120, 0, 1) * weight * 0.26;
-    }
-    if (views >= 12000 && replyRatio > 0 && replyRatio < 0.003) {
-      penalty += clamp((0.003 - replyRatio) / 0.003, 0, 1) * weight * 0.22;
-    }
-    penalty += clamp((ageMinutes - 120) / 30, 0.2, 1) * weight * 0.22;
-
-    penalty *= 0.92 + (staleFit * 0.68);
+    penalty *= 1 + (lateFirstHourFit * 0.22);
     return penalty >= 2 ? penalty : null;
   }
+
+  if (ageMinutes <= 120) {
+    const midWindowFit = clamp((ageMinutes - 60) / 60, 0, 1);
+    const minViews = 3000 + (midWindowFit * 1400);
+    const minVelocity = 1200 + (midWindowFit * 700);
+    const minReplies = 12 + (midWindowFit * 2);
+    const minReplyRatio = 0.0034 + (midWindowFit * 0.0002);
+
+    if (views < minViews) {
+      penalty += clamp((minViews - views) / minViews, 0, 1) * weight * 0.46;
+    }
+    if (velocityPerHour < minVelocity) {
+      penalty += clamp((minVelocity - velocityPerHour) / minVelocity, 0, 1) * weight * 0.3;
+    }
+    if (replies < minReplies) {
+      penalty += clamp((minReplies - replies) / minReplies, 0, 1) * weight * 0.12;
+    }
+    if (replies > 54) {
+      penalty += clamp((replies - 54) / 72, 0, 1) * weight * 0.22;
+    }
+    if (replies > 76) {
+      penalty += clamp((replies - 76) / 72, 0, 1) * weight * 0.12;
+    }
+    if (views >= minViews && replyRatio > 0 && replyRatio < minReplyRatio) {
+      penalty += clamp((minReplyRatio - replyRatio) / minReplyRatio, 0, 1) * weight * 0.1;
+    }
+    penalty += midWindowFit * weight * 0.12;
+    penalty *= 1 + (midWindowFit * 0.2);
+    return penalty >= 2 ? penalty : null;
+  }
+
+  const staleFit = clamp((ageMinutes - 120) / 90, 0, 1);
+  if (velocityPerHour < 1500) {
+    penalty += clamp((1500 - velocityPerHour) / 1500, 0, 1) * weight * 0.28;
+  }
+  if (views < 12000) {
+    penalty += clamp((12000 - views) / 12000, 0, 1) * weight * 0.32;
+  }
+  if (replies > 80) {
+    penalty += clamp((replies - 80) / 120, 0, 1) * weight * 0.28;
+  }
+  if (replies > 110) {
+    penalty += clamp((replies - 110) / 120, 0, 1) * weight * 0.14;
+  }
+  if (views >= 12000 && replyRatio > 0 && replyRatio < 0.0028) {
+    penalty += clamp((0.0028 - replyRatio) / 0.0028, 0, 1) * weight * 0.18;
+  }
+  penalty += clamp((ageMinutes - 120) / 24, 0.35, 1) * weight * 0.28;
+
+  penalty *= 0.95 + (staleFit * 0.75);
+  return penalty >= 2 ? penalty : null;
+}
 
   function computePeakDecayPenalty(tweet, weight = 16) {
     const ageMinutes = getTweetAgeMinutes(tweet.timestamp);
@@ -2829,18 +2850,14 @@
       });
     }
 
-    let broadcastAccountPenalty = applyDeveloperUpdateRelief(
-      computeBroadcastAccountPenalty(tweet, 40),
-      developerUpdateSignal,
-      0.22
-    );
-    if (broadcastAccountPenalty != null) {
-      score -= broadcastAccountPenalty;
+    const broadcastAccountSignal = computeBroadcastAccountPenalty(tweet, 40);
+    const broadcastAccountPenalty = null;
+    if (broadcastAccountSignal != null) {
       breakdown.push({
         key: "broadcastAccount",
         label: "Broadcast account",
-        amount: -broadcastAccountPenalty,
-        kind: "penalty"
+        amount: 0,
+        kind: "risk"
       });
     }
 

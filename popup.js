@@ -1136,6 +1136,7 @@ const els = {
   replyFeedbackTitle: document.getElementById("replyFeedbackTitle"),
   candidateDeskMeta: document.getElementById("candidateDeskMeta"),
   replyFeedbackMeta: document.getElementById("replyFeedbackMeta"),
+  exportReplyPerformanceButton: document.getElementById("exportReplyPerformanceButton"),
   deskBoostSummary: document.getElementById("deskBoostSummary"),
   scoreGuideGrid: document.getElementById("scoreGuideGrid"),
   scoreGuideNotes: document.getElementById("scoreGuideNotes"),
@@ -2183,6 +2184,13 @@ function renderTexts() {
   setText(els.scoreGuideTitle, t.scoreGuideTitle);
   setText(els.candidateDeskTitle, t.candidateDeskTitle);
   setText(els.replyFeedbackTitle, t.replyFeedbackTitle);
+  setText(els.exportReplyPerformanceButton, localize({
+    "zh-Hans": "导出表现",
+    "zh-Hant": "匯出表現",
+    en: "Export report",
+    ja: "レポート書き出し",
+    ko: "리포트 내보내기"
+  }));
   setText(els.restoreDismissedButton, t.restoreDismissedLabel);
   setText(els.uiLanguageTitle, t.uiLanguageTitle);
   setText(els.controlDeckTitle, t.controlDeckTitle);
@@ -9361,6 +9369,9 @@ function renderDeskPanel() {
   }
 
   els.replyFeedbackList.innerHTML = '';
+  if (els.exportReplyPerformanceButton instanceof HTMLButtonElement) {
+    els.exportReplyPerformanceButton.disabled = !todayReplyEntries.length;
+  }
   if (!todayReplyEntries.length) {
     const empty = document.createElement('p');
     empty.className = 'emptyState';
@@ -9864,6 +9875,57 @@ async function copyTextToClipboard(text) {
   const copied = document.execCommand("copy");
   textarea.remove();
   return copied;
+}
+
+function buildExportDateStamp(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return `${year}${month}${day}-${hours}${minutes}`;
+}
+
+function triggerDownload(filename, content, mimeType = "application/json;charset=utf-8") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function exportReplyPerformanceReport() {
+  const response = await sendMessage({
+    type: "X_REPLY_SCORER_EXPORT_REPLY_PERFORMANCE_REPORT",
+    options: { todayOnly: true, limit: 500 }
+  });
+  const report = response?.report || null;
+  if (!report || !Array.isArray(report.replies) || !report.replies.length) {
+    flashStatus(localize({
+      "zh-Hans": "今天还没有可导出的回复表现",
+      "zh-Hant": "今天還沒有可匯出的回覆表現",
+      en: "No shipped reply performance to export yet",
+      ja: "まだ出力できる返信実績がありません",
+      ko: "아직 내보낼 답글 성과가 없습니다"
+    }));
+    return;
+  }
+  triggerDownload(
+    `replydrop-performance-${buildExportDateStamp()}.json`,
+    JSON.stringify(report, null, 2)
+  );
+  flashStatus(localize({
+    "zh-Hans": "已导出回复表现",
+    "zh-Hant": "已匯出回覆表現",
+    en: "Reply performance exported",
+    ja: "返信実績を出力しました",
+    ko: "답글 성과를 내보냈습니다"
+  }));
 }
 
 function normalizeDeskUrl(url) {
@@ -10904,6 +10966,11 @@ function bindBaseEvents() {
     }).catch(() => {
       uiState.entryStatus = "unavailable";
       renderControlDeck();
+    });
+  });
+  els.exportReplyPerformanceButton?.addEventListener("click", () => {
+    exportReplyPerformanceReport().catch(() => {
+      setStatusTextValue(getTexts().statusError);
     });
   });
   els.openOptionsButton?.addEventListener("click", () => sendMessage({ type: "X_REPLY_SCORER_OPEN_OPTIONS" }));

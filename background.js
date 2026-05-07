@@ -2377,6 +2377,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "X_REPLY_SCORER_EXPORT_REPLY_PERFORMANCE_REPORT") {
+    Promise.resolve().then(() => {
+      sendResponse({ ok: true, report: getReplyPerformanceReport(message.options || {}) });
+    }).catch((error) => {
+      sendResponse({ error: String(error?.message || error) });
+    });
+    return true;
+  }
+
   if (message.type === "X_REPLY_SCORER_API_CALL") {
     handleReplyDropApiCall(message, sender).then((result) => {
       sendResponse({ ok: true, result });

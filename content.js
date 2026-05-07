@@ -34,13 +34,13 @@
   const EXECUTOR_TARGET_TIMEOUT_TTL_MS = 10 * 60 * 1000;
   const EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES = 60;
   const EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES = 120;
-  const EXECUTOR_EARLY_MIN_TRAFFIC_VIEWS = 280;
-  const EXECUTOR_EARLY_MIN_TRAFFIC_REPLIES = 6;
-  const EXECUTOR_EARLY_MIN_TRAFFIC_VELOCITY_PER_HOUR = 220;
-  const EXECUTOR_MID_MIN_TRAFFIC_VIEWS = 1800;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_VIEWS = 500;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_REPLIES = 8;
+  const EXECUTOR_EARLY_MIN_TRAFFIC_VELOCITY_PER_HOUR = 450;
+  const EXECUTOR_MID_MIN_TRAFFIC_VIEWS = 3000;
   const EXECUTOR_MID_MIN_TRAFFIC_REPLIES = 12;
-  const EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR = 900;
-  const EXECUTOR_MID_MAX_REPLY_FLOOR = 120;
+  const EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR = 1200;
+  const EXECUTOR_MID_MAX_REPLY_FLOOR = 60;
   const EXECUTOR_MIN_TRAFFIC_VIEWS = 500;
   const EXECUTOR_MIN_TRAFFIC_REPLIES = 10;
   const EXECUTOR_MIN_TRAFFIC_VELOCITY_PER_HOUR = 700;
@@ -1579,7 +1579,7 @@
       minViews = EXECUTOR_EARLY_MIN_TRAFFIC_VIEWS;
       minReplies = EXECUTOR_EARLY_MIN_TRAFFIC_REPLIES;
       minVelocityPerHour = EXECUTOR_EARLY_MIN_TRAFFIC_VELOCITY_PER_HOUR;
-      maxReplyFloor = 180;
+      maxReplyFloor = 90;
     } else if (midWindow) {
       windowKey = "mid";
       minViews = EXECUTOR_MID_MIN_TRAFFIC_VIEWS;
@@ -1588,20 +1588,36 @@
       maxReplyFloor = EXECUTOR_MID_MAX_REPLY_FLOOR;
     } else if (ageMinutes != null) {
       windowKey = "late";
-      minViews = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VIEWS, 4000);
+      minViews = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VIEWS, 12000);
       minReplies = Math.max(EXECUTOR_MID_MIN_TRAFFIC_REPLIES, 16);
-      minVelocityPerHour = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR, 1200);
-      maxReplyFloor = 96;
+      minVelocityPerHour = Math.max(EXECUTOR_MID_MIN_TRAFFIC_VELOCITY_PER_HOUR, 1500);
+      maxReplyFloor = 40;
     }
 
-    const baseQualified = (
-      views >= minViews ||
-      replies >= minReplies ||
-      velocityPerHour >= minVelocityPerHour
-    );
+    let baseQualified = false;
+    if (earlyWindow) {
+      baseQualified = (
+        (views >= minViews && (replies >= minReplies || velocityPerHour >= minVelocityPerHour)) ||
+        (views >= 900 && replies >= 6) ||
+        (views >= 700 && velocityPerHour >= 700)
+      );
+    } else if (midWindow) {
+      baseQualified = (
+        views >= minViews &&
+        replies >= minReplies &&
+        velocityPerHour >= minVelocityPerHour
+      );
+    } else if (ageMinutes != null) {
+      baseQualified = (
+        views >= minViews &&
+        replies >= minReplies &&
+        velocityPerHour >= minVelocityPerHour
+      );
+    }
     const phaseQualified = (
-      (trendingLike && views >= (earlyWindow ? 180 : Math.max(minViews, 3000))) ||
-      (risingLike && views >= (earlyWindow ? 220 : Math.max(minViews, 2200)) && velocityPerHour >= (earlyWindow ? 180 : 760))
+      (earlyWindow && trendingLike && views >= 420 && velocityPerHour >= 320) ||
+      (earlyWindow && risingLike && views >= 500 && velocityPerHour >= 450) ||
+      (midWindow && trendingLike && views >= 4200 && replies >= 10 && velocityPerHour >= 1100)
     );
     const crowdQualified = replies <= maxReplyFloor;
     const qualified = (

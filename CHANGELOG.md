@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.253
+
+- 保留 `0.2.252` 新上的 reply ledger / pickup performance 跟踪链，但把 homepage traffic gating 重新收紧到人工实盘口径：`0-60` 分钟和 `60-120` 分钟都要求更高流量证明
+- `computeTimingWindowPenalty` 提前生效且惩罚更重，`120+` 分钟窗口继续收紧，老帖和弱流量帖会更早掉出主回复窗口
+- `broadcastAccount` 仍可作为零权重风险标记显示出来，但不再直接扣分；政治/媒体/广播类帖子继续主要看 timing、velocity、拥挤度和回复空间
+- `background.js` / popup 新增 `getReplyPerformanceReport({ todayOnly: true, limit: 500 })` 导出入口，方便当天 round 表现快速拉出复盘
+
 ## 0.2.252
 
 - 补齐 Chrome 导出版的 reply ledger 链路：`markShipped` 现在会稳定透传 `ledgerId / roundId / sessionId / replyUrl / replyTweetId / sendResult` 等字段，不再只靠同一父帖 URL 粗糙覆盖

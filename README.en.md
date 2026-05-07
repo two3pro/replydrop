@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.252`
+Current version: `0.2.253`
 
-This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, and `0.2.252` completes the reply ledger plus pickup-performance tracking path for stable export and review.
+This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, and `0.2.253` tightens homepage traffic gating again while adding a lightweight `getReplyPerformanceReport({ todayOnly: true })` export path.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,13 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.253` keeps the new reply ledger/performance pipeline from `0.2.252`, but pulls homepage traffic gating back toward the live manual workflow:
+
+- The `0-60` minute and `60-120` minute homepage traffic thresholds are higher again, so weak early traffic does not drift into `reply-now`.
+- `computeTimingWindowPenalty` now bites earlier and harder, especially once a post moves past the first clean acceleration window.
+- Live `broadcastAccount` detection can still surface as a zero-weight risk marker, but it no longer deducts score by itself.
+- The popup now exposes a simple export action for `getReplyPerformanceReport({ todayOnly: true, limit: 500 })`.
 
 Version `0.2.252` completes the Chrome / Brave reply ledger and performance tracking path:
 
@@ -147,7 +154,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.252.zip](./downloads/replydrop-p2.252.zip)
+- Chrome / Brave runtime package: [replydrop-p2.253.zip](./downloads/replydrop-p2.253.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
 - Safari for macOS source package: [replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
@@ -155,7 +162,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.252` public baseline in this repo.
+  - Chrome / Brave now uses the `0.2.253` public baseline in this repo.
   - Safari currently follows its own `0.2.249` release line.
 
 ## Local Install

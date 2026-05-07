@@ -13,6 +13,10 @@ function hasBreakdownKey(analysis, keys) {
   return keys.some((key) => analysis.breakdown.some((item) => item.key === key));
 }
 
+function getBreakdownItem(analysis, key) {
+  return analysis.breakdown.find((item) => item.key === key) || null;
+}
+
 test("scorer favors fresh accelerating posts over late crowded peaks", () => {
   const scorer = loadScorer();
   const now = Date.now();
@@ -1748,8 +1752,21 @@ test("scorer still crushes official political and broadcast traffic when crowdin
 
   assert.ok(political.score <= 47);
   assert.ok(broadcaster.score <= 50);
-  assert.ok(!political.breakdown.some((item) => item.key === "politicalFigure" || item.key === "broadcastAccount"));
-  assert.ok(!broadcaster.breakdown.some((item) => item.key === "broadcastAccount"));
+  const politicalFigureMarker = getBreakdownItem(political, "politicalFigure");
+  if (politicalFigureMarker) {
+    assert.equal(politicalFigureMarker.amount, 0);
+    assert.equal(politicalFigureMarker.kind, "risk");
+  }
+  const politicalBroadcastMarker = getBreakdownItem(political, "broadcastAccount");
+  if (politicalBroadcastMarker) {
+    assert.equal(politicalBroadcastMarker.amount, 0);
+    assert.equal(politicalBroadcastMarker.kind, "risk");
+  }
+  const broadcasterMarker = getBreakdownItem(broadcaster, "broadcastAccount");
+  if (broadcasterMarker) {
+    assert.equal(broadcasterMarker.amount, 0);
+    assert.equal(broadcasterMarker.kind, "risk");
+  }
   assert.ok(hasBreakdownKey(political, ["crowding", "trafficMismatch", "broadcastFormat", "verifiedPileOn"]));
   assert.ok(hasBreakdownKey(broadcaster, ["crowding", "trafficMismatch", "verifiedPileOn"]));
 });
