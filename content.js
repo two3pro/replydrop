@@ -472,6 +472,18 @@
       understandingConfidence: Number(candidate.understandingConfidence || 0),
       authorFit: Number(candidate.authorFit || 0),
       finalScore: Number(candidate.finalScore || candidate.score || 0),
+      recommendedSlot: String(candidate.recommendedSlot || "").trim(),
+      recommendedDecision: String(candidate.recommendedDecision || "").trim(),
+      trafficQualified: Boolean(candidate.trafficQualified),
+      replyWorthinessState: String(candidate.replyWorthinessState || candidate.sendabilityState || "").trim(),
+      executionRoute: String(candidate.executionRoute || "").trim(),
+      executionRouteLabel: String(candidate.executionRouteLabel || "").trim(),
+      isImmediateWorkable: Boolean(candidate.isImmediateWorkable),
+      isDetailInspectionRequired: Boolean(candidate.isDetailInspectionRequired),
+      sendabilityState: String(candidate.sendabilityState || "").trim(),
+      sendabilityUiColor: String(candidate.sendabilityUiColor || "").trim(),
+      sendabilityUiLabel: String(candidate.sendabilityUiLabel || "").trim(),
+      isImmediateSendable: Boolean(candidate.isImmediateSendable),
       peakFinalScore: Number(candidate.peakFinalScore || candidate.finalScore || candidate.score || 0),
       peakSourceSurface: String(candidate.peakSourceSurface || candidate.sourceSurface || "").trim(),
       peakObservedAt: Number(candidate.peakObservedAt || candidate.timestamp || 0),
@@ -705,6 +717,18 @@
       mediaSummaryAvailable: Boolean(candidate?.mediaSummaryAvailable),
       timelineInlineReplyEligible: Boolean(candidate?.timelineInlineReplyEligible),
       preferredOpenMode: String(candidate?.preferredOpenMode || "detail-page").trim().slice(0, 24),
+      recommendedSlot: String(candidate?.recommendedSlot || "").trim().slice(0, 24),
+      recommendedDecision: String(candidate?.recommendedDecision || "").trim().slice(0, 24),
+      trafficQualified: Boolean(candidate?.trafficQualified),
+      replyWorthinessState: String(candidate?.replyWorthinessState || candidate?.sendabilityState || "").trim().slice(0, 24),
+      executionRoute: String(candidate?.executionRoute || "").trim().slice(0, 32),
+      executionRouteLabel: sanitizeSnippet(candidate?.executionRouteLabel, 48),
+      isImmediateWorkable: Boolean(candidate?.isImmediateWorkable),
+      isDetailInspectionRequired: Boolean(candidate?.isDetailInspectionRequired),
+      sendabilityState: String(candidate?.sendabilityState || "").trim().slice(0, 24),
+      sendabilityUiColor: String(candidate?.sendabilityUiColor || "").trim().slice(0, 24),
+      sendabilityUiLabel: sanitizeSnippet(candidate?.sendabilityUiLabel, 48),
+      isImmediateSendable: Boolean(candidate?.isImmediateSendable),
       draft: sanitizeSnippet(candidate?.draft, 560),
       replyText: sanitizeSnippet(candidate?.replyText, 560)
     };
@@ -1017,6 +1041,7 @@
 
   function collectDomCandidateSnapshot() {
     const byUrl = new Map();
+    const opportunityContext = buildOpportunityContext();
 
     getTweetNodes().forEach((article) => {
       let candidate = readStoredCandidate(article);
@@ -1031,16 +1056,19 @@
           const tweet = getTweetData(article);
           if (tweet?.url && !tweet.promoted && !tweet.isOwnTweet) {
             const baseAnalysis = global.XReplyScorer.analyzeTweet(tweet, state.settings);
-            const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, buildOpportunityContext());
+            const analysis = applyOpportunityAdjustments(tweet, baseAnalysis, state.settings, opportunityContext);
             const mediaSummary = getMediaSummaryFromState(state, extractTweetIdFromUrl(tweet.url));
             const draftCandidate = buildCandidatePayload(tweet, analysis, String(analysis.tier || tier || "low-outline"));
-            candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
+            candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary, {
+              attributionModel: opportunityContext.attributionModel,
+              uiLanguage: state.uiLanguage
+            });
             storeCandidatePayload(article, candidate);
           }
         } catch (_error) {}
       }
       const url = normalizeTweetUrl(candidate?.url);
-      const candidateTier = String(candidate?.tier || tier || "").trim();
+      const candidateTier = String(candidate?.tier || badge?.getAttribute("data-tier") || tier || "").trim();
       if (!url || !candidateTier || candidateTier === "hidden" || candidateTier === "replied") {
         return;
       }
@@ -1168,6 +1196,7 @@
   async function getApiRuntimeStateSnapshot() {
     const runtimeState = await getRuntimeStateSnapshot();
     const runtimeCandidates = Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates : [];
+    const runtimeAttributionModel = buildApiAttributionModel(runtimeState);
     let domCandidates = collectDomCandidateSnapshot();
 
     if (shouldRefreshApiCandidateView(runtimeCandidates, domCandidates)) {
@@ -1196,7 +1225,10 @@
       const tweetId = extractTweetIdFromUrl(url);
       const liveArticle = tweetId ? findTweetArticleByTweetId(tweetId, url) : findReplyArticle(url);
       const mediaSummary = tweetId ? getMediaSummaryFromState(runtimeState || {}, tweetId) : null;
-      return attachCandidateExecutionMeta(candidate, liveArticle, mediaSummary);
+      return attachCandidateExecutionMeta(candidate, liveArticle, mediaSummary, {
+        attributionModel: runtimeAttributionModel,
+        uiLanguage: runtimeState?.uiLanguage || state.uiLanguage
+      });
     });
     return {
       ...(runtimeState && typeof runtimeState === "object" ? runtimeState : {}),
@@ -1426,6 +1458,214 @@
     return Math.max(getConfiguredDisplayThreshold(settings), DEFAULT_EXECUTOR_SEND_FLOOR);
   }
 
+  function getReplyDropSendabilityUiLabel(stateKey = "") {
+    switch (String(stateKey || "").trim()) {
+      case "send_now":
+        return "现在可做";
+      case "watch_later":
+        return "先观察";
+      case "skip":
+      default:
+        return "跳过";
+    }
+  }
+
+  function getReplyDropSendabilityRank(stateKey = "") {
+    switch (String(stateKey || "").trim()) {
+      case "send_now":
+        return 3;
+      case "watch_later":
+        return 2;
+      case "skip":
+      default:
+        return 1;
+    }
+  }
+
+  function isReplyDropRouteOnlyFlag(flag = "") {
+    switch (String(flag || "").trim()) {
+      case "media_post":
+      case "media_context_missing":
+      case "media_not_inspected_text_sufficient":
+      case "needs_detail_context":
+      case "vision_required_but_missing":
+      case "quote_context_possible":
+      case "show_more_possible":
+      case "not-timeline-inline-eligible":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  function isReplyDropHardBlockReason(reason = "") {
+    return String(reason || "").trim() === "blue-check-required-auto-block";
+  }
+
+  function getReplyDropExecutionRouteUiLabel(routeKey = "") {
+    switch (String(routeKey || "").trim()) {
+      case "timeline_inline":
+        return "卡片快回";
+      case "detail_inspect_then_reply":
+        return "详情看图后回";
+      case "detail_open_only":
+      default:
+        return "详情打开后回";
+    }
+  }
+
+  function getReplyDropExecutionRouteTone(routeKey = "") {
+    switch (String(routeKey || "").trim()) {
+      case "timeline_inline":
+        return "inline";
+      case "detail_inspect_then_reply":
+        return "inspect";
+      case "detail_open_only":
+      default:
+        return "detail";
+    }
+  }
+
+  function buildReplyDropExecutionRouteMeta(input = {}) {
+    const timelineInlineReplyEligible = Boolean(input?.timelineInlineReplyEligible);
+    const mediaContextMissing = Boolean(input?.mediaContextMissing);
+    const needsDetailContext = Boolean(input?.needsDetailContext);
+    const needsVision = Boolean(input?.needsVision);
+    const detailInspectionRequired = Boolean(
+      mediaContextMissing ||
+      needsDetailContext ||
+      needsVision
+    );
+    const executionRoute = timelineInlineReplyEligible && !detailInspectionRequired
+      ? "timeline_inline"
+      : (detailInspectionRequired ? "detail_inspect_then_reply" : "detail_open_only");
+    const preferredOpenMode = executionRoute === "timeline_inline" ? "timeline-inline" : "detail-page";
+    const preferredAction = executionRoute === "timeline_inline"
+      ? "replyFromTimeline"
+      : (executionRoute === "detail_inspect_then_reply" ? "inspectThenReply" : "openComposer");
+    const instruction = executionRoute === "timeline_inline"
+      ? "首页预览正文已足够定稿，优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在当前时间线原地打开并提交，不要先进详情页。"
+      : (executionRoute === "detail_inspect_then_reply"
+        ? "这条值得立即处理，但需要先开详情页抓 media bundle，做 OCR/vision 并 setMediaSummary，再重读 context 后生成草稿并发送。不要因为媒体未检查而跳过。"
+        : "这条值得立即处理，但需要先打开详情页后再回复。");
+    return {
+      executionRoute,
+      routeLabel: getReplyDropExecutionRouteUiLabel(executionRoute),
+      routeTone: getReplyDropExecutionRouteTone(executionRoute),
+      preferredOpenMode,
+      preferredAction,
+      isDetailInspectionRequired: executionRoute === "detail_inspect_then_reply",
+      isImmediateWorkable: false,
+      instruction
+    };
+  }
+
+  function buildReplyDropSendabilityMeta(input = {}) {
+    const recommendedDecision = String(input?.recommendedDecision || "").trim();
+    const predictedCommentExposure = Math.max(0, Math.min(100, Math.round(Number(input?.predictedCommentExposure || 0))));
+    const executionScore = Math.max(0, Math.min(100, Math.round(Number(input?.executionScore || 0))));
+    const skipRecommended = Boolean(input?.skipRecommended);
+    const sendFloor = Math.max(0, Math.min(100, Math.round(Number(input?.sendFloor || getConfiguredExecutorSendFloor(state.settings)))));
+    const ageMinutes = Math.max(0, Math.round(Number(input?.ageMinutes || 0)));
+    const hardBlocked = Boolean(input?.hardBlocked);
+    const flags = Array.from(new Set([
+      ...(Array.isArray(input?.contextFlags) ? input.contextFlags : []),
+      ...(Array.isArray(input?.recheckFlags) ? input.recheckFlags : []),
+      ...(Array.isArray(input?.riskFlags) ? input.riskFlags : [])
+    ].map((flag) => String(flag || "").trim()).filter(Boolean)));
+    const replyWindowExpired = (
+      flags.includes("older-than-auto-window") ||
+      flags.includes("older-than-reply-window") ||
+      ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES
+    );
+    const executionRouteMeta = buildReplyDropExecutionRouteMeta({
+      timelineInlineReplyEligible: Boolean(input?.timelineInlineReplyEligible),
+      mediaContextMissing: Boolean(input?.mediaContextMissing || flags.includes("media_context_missing")),
+      needsDetailContext: Boolean(
+        input?.needsDetailContext ||
+        flags.includes("needs_detail_context") ||
+        flags.includes("quote_context_possible") ||
+        flags.includes("show_more_possible")
+      ),
+      needsVision: Boolean(input?.needsVision || flags.includes("vision_required_but_missing"))
+    });
+
+    let replyWorthinessState = "watch_later";
+    if (
+      hardBlocked ||
+      skipRecommended ||
+      recommendedDecision === "skip" ||
+      replyWindowExpired
+    ) {
+      replyWorthinessState = "skip";
+    } else if (recommendedDecision !== "reply-now") {
+      replyWorthinessState = "watch_later";
+    } else if (predictedCommentExposure < sendFloor || executionScore < sendFloor) {
+      replyWorthinessState = "watch_later";
+    } else {
+      replyWorthinessState = "send_now";
+    }
+
+    return {
+      replyWorthinessState,
+      executionRoute: executionRouteMeta.executionRoute,
+      routeLabel: executionRouteMeta.routeLabel,
+      routeTone: executionRouteMeta.routeTone,
+      sendabilityState: replyWorthinessState,
+      uiColor: replyWorthinessState,
+      uiLabel: getReplyDropSendabilityUiLabel(replyWorthinessState),
+      isImmediateSendable: replyWorthinessState === "send_now",
+      isImmediateWorkable: replyWorthinessState === "send_now",
+      isDetailInspectionRequired: executionRouteMeta.isDetailInspectionRequired,
+      preferredOpenMode: executionRouteMeta.preferredOpenMode,
+      preferredAction: executionRouteMeta.preferredAction,
+      instruction: executionRouteMeta.instruction
+    };
+  }
+
+  function resolveReplyDropContextSendability(context = {}) {
+    const autoSafetyTier = String(context?.autoSafety?.tier || "").trim();
+    const meta = buildReplyDropSendabilityMeta({
+      recommendedDecision: String(context?.routing?.recommendedDecision || "").trim(),
+      timelineInlineReplyEligible: Boolean(context?.execution?.timelineInlineReplyEligible),
+      predictedCommentExposure: Number(context?.scoring?.predictedCommentExposure || context?.scoring?.replyPickupScore || context?.scoring?.reachLikelihood || 0),
+      executionScore: Number(context?.scoring?.executionScore || context?.scoring?.understandingConfidence || 0),
+      skipRecommended: Boolean(context?.recheck?.skipRecommended),
+      contextFlags: Array.isArray(context?.contextCompleteness?.flags) ? context.contextCompleteness.flags : [],
+      recheckFlags: Array.isArray(context?.recheck?.flags) ? context.recheck.flags : [],
+      riskFlags: Array.isArray(context?.aiHints?.riskFlags) ? context.aiHints.riskFlags : [],
+      sendFloor: Number(context?.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings)),
+      ageMinutes: Number(context?.recheck?.liveAgeMinutes || context?.post?.ageMinutes || 0),
+      mediaContextMissing: Boolean(context?.contextCompleteness?.mediaContextMissing),
+      needsDetailContext: Boolean(context?.contextCompleteness?.needsDetailContext),
+      needsVision: Boolean(context?.media?.needsVision),
+      hardBlocked: (
+        autoSafetyTier === "blocked" ||
+        isReplyDropHardBlockReason(context?.scoring?.blockReason) ||
+        !isBlueCheckEligibleAuthor(context?.author?.verified, context?.author?.verificationType)
+      )
+    });
+
+    return meta;
+  }
+
+  function buildReplyDropBadgeTooltip(baseTooltip = "", sendability = {}) {
+    const lines = String(baseTooltip || "")
+      .split(/\n+/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean)
+      .filter((line) => !/^State:/i.test(line));
+    const stateKey = String(sendability?.replyWorthinessState || sendability?.sendabilityState || "").trim();
+    if (stateKey) {
+      lines.splice(Math.min(2, lines.length), 0, `State: ${stateKey}`);
+    }
+    const routeKey = String(sendability?.executionRoute || "").trim();
+    if (routeKey) {
+      lines.splice(Math.min(3, lines.length), 0, `Route: ${routeKey}`);
+    }
+    return lines.join("\n");
+  }
+
   function getCandidateReferenceScore(candidate = {}) {
     const peakScore = Number(candidate?.peakFinalScore);
     if (Number.isFinite(peakScore) && peakScore > 0) {
@@ -1471,28 +1711,13 @@
   }
 
   function computeCandidateExecutionScore(candidate = {}, contextCompleteness = {}, timelineInlineReplyEligible = false) {
+    void contextCompleteness;
+    void timelineInlineReplyEligible;
     let score = Number(candidate?.executionScore ?? candidate?.understandingConfidence ?? 58);
     if (!Number.isFinite(score)) {
       score = 58;
     }
-    if (timelineInlineReplyEligible) {
-      score += 12;
-    } else {
-      score -= 10;
-    }
-    if (contextCompleteness?.quickDraftAllowed) {
-      score += 6;
-    }
-    if (contextCompleteness?.needsDetailContext) {
-      score -= 16;
-    }
-    if (contextCompleteness?.mediaContextMissing) {
-      score -= 18;
-    }
-    if (candidate?.lowSemanticConfidence) {
-      score -= 10;
-    }
-    if (String(candidate?.blockReason || "").trim()) {
+    if (isReplyDropHardBlockReason(candidate?.blockReason)) {
       score -= 18;
     }
     return Math.max(0, Math.min(100, Math.round(score)));
@@ -1810,6 +2035,7 @@
       .map((candidate, index) => ({
         candidate,
         index,
+        sendabilityRank: getReplyDropSendabilityRank(candidate?.sendabilityState),
         postBlastScore: getCandidatePostBlastScore(candidate),
         replyPickupScore: getCandidateReplyPickupScore(candidate),
         executionScore: Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0)))),
@@ -1823,7 +2049,7 @@
         })
       }))
       .sort((left, right) => (
-        Number(Boolean(right.candidate?.timelineInlineReplyEligible)) - Number(Boolean(left.candidate?.timelineInlineReplyEligible)) ||
+        right.sendabilityRank - left.sendabilityRank ||
         getFreshnessBucket(right.candidate) - getFreshnessBucket(left.candidate) ||
         right.predictedCommentExposure - left.predictedCommentExposure ||
         right.replyPickupScore - left.replyPickupScore ||
@@ -2065,7 +2291,7 @@
         mode: "preview-first",
         preferredMethod: "runExecutorAction",
         preferredAction: "reply-from-timeline",
-        instruction: "候选返回 execution.timelineInlineReplyEligible=true 时，agent 必须优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在首页预览卡片原地打开并提交；不要先打开详情页。只有 needsDetailContext/mediaContextMissing/quote/show-more 等上下文不完整时才走详情页 openComposer。"
+        instruction: "绿色候选表示值得现在处理，不等于必须首页原地回。execution.executionRoute=timeline_inline 时，agent 必须优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在首页预览卡片原地打开并提交；execution.executionRoute=detail_inspect_then_reply 时，先 getMediaBundle + OCR/vision + setMediaSummary，再重读 context 生成草稿并调用 runExecutorAction({ action:'inspect-then-reply', tweetId, draft }) 走详情页发送；不要因为媒体未检查而降级成人工复核。"
       },
       externalDraftPolicy: {
         mode: "human-draft",
@@ -2083,6 +2309,7 @@
         getExecutorSchema: "getReplySchema",
         runExecutorAction: [
           "reply-auto",
+          "inspect-then-reply",
           "addToQueue",
           "openComposer",
           "submitReply",
@@ -2131,6 +2358,18 @@
           },
           useWhen: "candidate.execution.timelineInlineReplyEligible === true",
           fallback: "openComposer detail page path"
+        },
+        inspectThenReply: {
+          type: "write",
+          accepts: {
+            url: "string",
+            tweetId: "string",
+            draft: "string",
+            targetStartedAt: "number",
+            targetDeadlineAt: "number"
+          },
+          useWhen: "candidate.execution.executionRoute === 'detail_inspect_then_reply'",
+          workflow: "open detail page after OCR/vision and submit"
         },
         submitReply: {
           type: "write",
@@ -2466,6 +2705,17 @@
       },
       executionPolicy: buildReplyDropExecutionPolicy(options?.targetStartedAt || options?.generatedAt || Date.now())
     };
+    context.sendability = resolveReplyDropContextSendability(context);
+    context.replyWorthinessState = context.sendability.replyWorthinessState;
+    context.executionRoute = context.sendability.executionRoute;
+    context.execution.preferredOpenMode = context.sendability.preferredOpenMode;
+    context.execution.preferredAction = context.sendability.preferredAction;
+    context.execution.executionRoute = context.sendability.executionRoute;
+    context.execution.routeLabel = context.sendability.routeLabel;
+    context.execution.routeTone = context.sendability.routeTone;
+    context.execution.isImmediateWorkable = context.sendability.isImmediateWorkable;
+    context.execution.isDetailInspectionRequired = context.sendability.isDetailInspectionRequired;
+    context.execution.instruction = context.sendability.instruction;
     context.aiHints.draftAngleHints = buildExternalDraftAngleHints(context);
 
     if (options?.includeMedia && mediaPresent) {
@@ -2605,44 +2855,10 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    if (String(context.routing?.recommendedDecision || "").trim() !== "reply-now") {
-      return false;
-    }
-    if (context.recheck?.skipRecommended) {
-      return false;
-    }
-    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
-      return false;
-    }
-    if (!isBlueCheckEligibleAuthor(context.author?.verified, context.author?.verificationType)) {
-      return false;
-    }
-    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
-    const predictedCommentExposure = Number(context.scoring?.predictedCommentExposure || context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0);
-    const executionScore = Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0);
-    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
-    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
-    const trafficProfile = buildExecutorTrafficProfile({
-      views: context.post?.views,
-      replies: context.post?.replies,
-      velocityPerHour: context.post?.traffic?.velocityPerHour,
-      phase: context.post?.traffic?.phase,
-      ageMinutes
-    });
-    if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
-      return false;
-    }
-    if (!context.execution?.timelineInlineReplyEligible) {
-      return false;
-    }
-    if (!trafficProfile.qualified) {
-      return false;
-    }
-    return (
-      score >= executorSendFloor &&
-      predictedCommentExposure >= Math.max(48, executorSendFloor - 4) &&
-      executionScore >= 54
-    );
+    const sendability = context.sendability && typeof context.sendability === "object"
+      ? context.sendability
+      : resolveReplyDropContextSendability(context);
+    return Boolean(sendability?.isImmediateSendable);
   }
 
   function normalizeExecutorPolicyText(value = "") {
@@ -2724,39 +2940,16 @@
     if (!context || typeof context !== "object") {
       return false;
     }
-    if (String(context.routing?.recommendedDecision || "").trim() !== "reply-now") {
+    const sendability = context.sendability && typeof context.sendability === "object"
+      ? context.sendability
+      : resolveReplyDropContextSendability(context);
+    if (String(sendability?.replyWorthinessState || sendability?.sendabilityState || "").trim() !== "send_now") {
       return false;
     }
-    if (context.recheck?.skipRecommended) {
+    if (String(sendability?.executionRoute || "").trim() === "timeline_inline") {
       return false;
     }
-    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
-      return false;
-    }
-    if (Boolean(context.contextCompleteness?.mediaContextMissing)) {
-      return false;
-    }
-    const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
-    const predictedCommentExposure = Number(context.scoring?.predictedCommentExposure || context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0);
-    const executionScore = Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0);
-    const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
-    const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
-    if (
-      score < executorSendFloor ||
-      predictedCommentExposure < Math.max(48, executorSendFloor - 6) ||
-      executionScore < 46 ||
-      ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES
-    ) {
-      return false;
-    }
-    if (context.execution?.timelineInlineReplyEligible) {
-      return false;
-    }
-    const reasons = getReplyDropContextFilterReasons(context);
-    return reasons.every((reason) => (
-      reason === "not-timeline-inline-eligible" ||
-      reason === "older-than-auto-window"
-    ));
+    return false;
   }
 
   function getReplyDropContextFilterReasons(context = {}) {
@@ -2805,16 +2998,13 @@
     if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
       reasons.push(ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES ? "older-than-reply-window" : "older-than-auto-window");
     }
-    if (!context.execution?.timelineInlineReplyEligible) {
-      reasons.push("not-timeline-inline-eligible");
-    }
-    if (String(context.scoring?.blockReason || "").trim()) {
+    if (String(context.scoring?.blockReason || "").trim() && !isReplyDropRouteOnlyFlag(context.scoring.blockReason)) {
       reasons.push(String(context.scoring.blockReason).trim());
     }
     if (Array.isArray(context.recheck?.flags)) {
       context.recheck.flags.forEach((flag) => {
         const normalized = String(flag || "").trim();
-        if (normalized) {
+        if (normalized && !isReplyDropRouteOnlyFlag(normalized)) {
           reasons.push(normalized);
         }
       });
@@ -2822,7 +3012,7 @@
     if (Array.isArray(context.aiHints?.riskFlags)) {
       context.aiHints.riskFlags.forEach((flag) => {
         const normalized = String(flag || "").trim();
-        if (normalized) {
+        if (normalized && !isReplyDropRouteOnlyFlag(normalized)) {
           reasons.push(normalized);
         }
       });
@@ -2855,6 +3045,11 @@
       executionScore: Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0),
       predictedCommentExposure: Number(context.scoring?.predictedCommentExposure || context.scoring?.reachLikelihood || 0),
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
+      replyWorthinessState: String((context.sendability || resolveReplyDropContextSendability(context))?.replyWorthinessState || "").trim(),
+      executionRoute: String((context.sendability || resolveReplyDropContextSendability(context))?.executionRoute || "").trim(),
+      sendabilityState: String((context.sendability || resolveReplyDropContextSendability(context))?.sendabilityState || "").trim(),
+      sendabilityUiLabel: String((context.sendability || resolveReplyDropContextSendability(context))?.uiLabel || "").trim(),
+      executionRouteLabel: String((context.sendability || resolveReplyDropContextSendability(context))?.routeLabel || "").trim(),
       laneKey: String(context.routing?.laneKey || "").trim(),
       laneLabel: String(context.routing?.laneLabel || "").trim(),
       timelineInlineReplyEligible: Boolean(context.execution?.timelineInlineReplyEligible),
@@ -2928,6 +3123,11 @@
       trafficPhase: trafficProfile.phase,
       trafficQualified: trafficProfile.qualified,
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
+      replyWorthinessState: String((context.sendability || resolveReplyDropContextSendability(context))?.replyWorthinessState || "").trim(),
+      executionRoute: String((context.sendability || resolveReplyDropContextSendability(context))?.executionRoute || "").trim(),
+      sendabilityState: String((context.sendability || resolveReplyDropContextSendability(context))?.sendabilityState || "").trim(),
+      sendabilityUiLabel: String((context.sendability || resolveReplyDropContextSendability(context))?.uiLabel || "").trim(),
+      executionRouteLabel: String((context.sendability || resolveReplyDropContextSendability(context))?.routeLabel || "").trim(),
       autoSafetyTier: String(context.autoSafety?.tier || "").trim(),
       timelineInlineReplyEligible: Boolean(context.execution?.timelineInlineReplyEligible),
       preferredAction: String(context.execution?.preferredAction || "").trim(),
@@ -2943,9 +3143,7 @@
 
   function buildEmptyInboxRecovery(contexts = [], generatedAt = Date.now()) {
     const actionableCount = contexts.filter((context) => (
-      context?.autoSafety?.tier
-        ? (context.autoSafety.tier === "auto_safe" || context.autoSafety.tier === "auto_fallback")
-        : isReplyDropContextActionable(context)
+      (context?.sendability || resolveReplyDropContextSendability(context))?.isImmediateSendable
     )).length;
     return {
       actionableCount,
@@ -2989,9 +3187,6 @@
       return false;
     }
     if (context.recheck?.skipRecommended) {
-      return false;
-    }
-    if (Array.isArray(context.aiHints?.riskFlags) && context.aiHints.riskFlags.includes("vision_required_but_missing")) {
       return false;
     }
     return true;
@@ -3163,6 +3358,7 @@
     const selectedAuthorCounts = new Map();
     contexts.forEach((context) => {
       context.autoSafety = getReplyDropAutoSafety(context, runtimeState, selectedAuthorCounts);
+      context.sendability = resolveReplyDropContextSendability(context);
       if (context.autoSafety.tier === "auto_safe") {
         const handle = normalizeHandle(context.author?.handle || "");
         if (handle) {
@@ -3266,6 +3462,21 @@
   function getReplyDropDraftLaneKey(context = {}, minScore = 54) {
     if (!context || typeof context !== "object") {
       return "do_not_reply";
+    }
+    const sendability = context.sendability && typeof context.sendability === "object"
+      ? context.sendability
+      : resolveReplyDropContextSendability(context);
+    switch (String(sendability?.sendabilityState || "").trim()) {
+      case "send_now":
+        return "ready_now";
+      case "review_needed":
+        return Boolean(context.contextCompleteness?.mediaContextMissing) ? "needs_media_summary" : "needs_detail_context";
+      case "watch_later":
+        return "watch_later";
+      case "skip":
+        return "do_not_reply";
+      default:
+        break;
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
     const decision = String(context.routing?.recommendedDecision || "").trim();
@@ -3429,7 +3640,10 @@
             if (analysis && effectiveTier && effectiveTier !== "hidden" && effectiveTier !== "replied") {
               const mediaSummary = getMediaSummaryFromState(runtimeState || {}, extractTweetIdFromUrl(tweet.url));
               const draftCandidate = buildCandidatePayload(tweet, analysis, effectiveTier);
-              candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
+              candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary, {
+                attributionModel: opportunityContext.attributionModel,
+                uiLanguage: runtimeState?.uiLanguage || state.uiLanguage
+              });
               storeCandidatePayload(article, candidate);
             }
           }
@@ -4023,6 +4237,10 @@
       case "reply-from-timeline":
       case "timeline-open-composer":
         return "reply-from-timeline";
+      case "inspect-then-reply":
+      case "inspectthenreply":
+      case "detail-inspect-then-reply":
+        return "reply";
       case "refresh":
       case "refresh-recommendations":
       case "rescan":
@@ -4081,9 +4299,11 @@
       if (!resolvedTargetUrl) {
         resolvedTargetUrl = normalizeTweetUrl(candidateRecord?.url || "");
       }
-      action = candidateRecord?.timelineInlineReplyEligible ? "reply-from-timeline" : "reply";
+      action = String(candidateRecord?.executionRoute || "").trim() === "timeline_inline"
+        ? "reply-from-timeline"
+        : "reply";
     }
-    if (["open-composer", "reply-from-timeline", "submit-reply", "reply"].includes(action)) {
+    if (["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
       const timeoutFailure = beginReplyTargetAttempt(targetForDeadline, {
         ...normalizedPayload,
@@ -4166,6 +4386,7 @@
           targetUrl: String(submitResult?.targetUrl || submitResult?.href || openResult?.targetUrl || openResult?.href || "").trim()
         };
       }
+      case "inspect-then-reply":
       case "submit-reply": {
         const submitOptions = normalizedPayload.options && typeof normalizedPayload.options === "object"
           ? normalizedPayload.options
@@ -4484,6 +4705,11 @@
           ...(args[0] || {}),
           timelineFirst: true
         });
+      case "inspectThenReply":
+        return runReplyDropExecutorAction({
+          ...(args[0] || {}),
+          action: "inspect-then-reply"
+        });
       case "submitReply":
         return submitReplyDropComposer(args[0] || {});
       case "runExecutorAction":
@@ -4757,6 +4983,9 @@
         fill: var(--badge-highlight-tip);
         opacity: var(--badge-highlight-tip-opacity);
       }
+      .${BADGE_CLASS}::after {
+        content: "";
+      }
       .${BADGE_LABEL_CLASS} {
         position: relative;
         z-index: 1;
@@ -4842,6 +5071,68 @@
         --badge-core-opacity: 0.78;
         --badge-highlight-main-opacity: 0.2;
         --badge-highlight-tip-opacity: 0.24;
+      }
+      .${BADGE_CLASS}[data-sendability="send_now"] {
+        --badge-shell: #38d39f;
+        --badge-core: #ddfff0;
+        --badge-rim: rgba(180, 255, 220, 0.96);
+        --badge-aura: rgba(52, 211, 153, 0.34);
+        --badge-text: #042f1a;
+      }
+      .${BADGE_CLASS}[data-sendability="review_needed"] {
+        --badge-shell: #f2cb57;
+        --badge-core: #fff7d9;
+        --badge-rim: rgba(255, 240, 179, 0.96);
+        --badge-aura: rgba(250, 204, 21, 0.32);
+        --badge-text: #422006;
+      }
+      .${BADGE_CLASS}[data-sendability="watch_later"] {
+        --badge-shell: #c9d7e8;
+        --badge-core: #f6fbff;
+        --badge-rim: rgba(239, 246, 255, 0.94);
+        --badge-aura: rgba(148, 163, 184, 0.2);
+        --badge-text: #0f172a;
+      }
+      .${BADGE_CLASS}[data-sendability="skip"] {
+        --badge-shell: #e2e8f0;
+        --badge-core: #f8fafc;
+        --badge-rim: rgba(226, 232, 240, 0.96);
+        --badge-aura: rgba(148, 163, 184, 0.12);
+        --badge-text: #475569;
+      }
+      .${BADGE_CLASS}[data-sendability="send_now"][data-route="detail_inspect_then_reply"]::after {
+        content: "◉";
+        position: absolute;
+        right: -2px;
+        top: -3px;
+        z-index: 2;
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: 800 8px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #14532d;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.32);
+      }
+      .${BADGE_CLASS}[data-sendability="send_now"][data-route="detail_open_only"]::after {
+        content: "+";
+        position: absolute;
+        right: -2px;
+        top: -3px;
+        z-index: 2;
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: 900 9px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #14532d;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.32);
       }
       .${BADGE_CLASS}[data-tier="replied"] {
         --badge-shell: #67e8f9;
@@ -6323,11 +6614,13 @@
     return badge;
   }
 
-  function renderBadge(article, labelText, tier, titleText = "") {
+  function renderBadge(article, labelText, tier, titleText = "", options = {}) {
     const badge = ensureBadge(article);
     const label = badge.querySelector(`.${BADGE_LABEL_CLASS}`);
     if (!state.settings.enabled || tier === "hidden") {
       badge.setAttribute("data-tier", "hidden");
+      badge.removeAttribute("data-sendability");
+      badge.removeAttribute("data-route");
       badge.removeAttribute("title");
       if (label) {
         label.textContent = "";
@@ -6336,6 +6629,18 @@
     }
 
     badge.setAttribute("data-tier", tier);
+    const sendabilityColor = String(options?.sendabilityColor || "").trim();
+    if (sendabilityColor) {
+      badge.setAttribute("data-sendability", sendabilityColor);
+    } else {
+      badge.removeAttribute("data-sendability");
+    }
+    const executionRoute = String(options?.executionRoute || "").trim();
+    if (executionRoute) {
+      badge.setAttribute("data-route", executionRoute);
+    } else {
+      badge.removeAttribute("data-route");
+    }
     if (titleText) {
       badge.title = titleText;
     } else {
@@ -6344,6 +6649,17 @@
     if (label) {
       label.textContent = labelText;
     }
+  }
+
+  function getReplyDropCandidateBadgePresentation(candidate = {}, baseTooltip = "") {
+    const sendabilityState = String(candidate?.sendabilityState || candidate?.replyWorthinessState || "").trim();
+    const visualTier = String(candidate?.tier || candidate?.baseTier || "low-outline").trim() || "low-outline";
+    return {
+      visualTier,
+      sendabilityColor: sendabilityState || "watch_later",
+      executionRoute: String(candidate?.executionRoute || "").trim(),
+      titleText: buildReplyDropBadgeTooltip(baseTooltip, candidate)
+    };
   }
 
   function buildCandidateSemanticText(tweet, maxLength = 220) {
@@ -6429,11 +6745,23 @@
       quickDraftAllowed: false,
       mediaSummaryAvailable: false,
       timelineInlineReplyEligible: false,
-      preferredOpenMode: "detail-page"
+      preferredOpenMode: "detail-page",
+      recommendedSlot: "",
+      recommendedDecision: "",
+      trafficQualified: false,
+      replyWorthinessState: "skip",
+      executionRoute: "detail_open_only",
+      executionRouteLabel: getReplyDropExecutionRouteUiLabel("detail_open_only"),
+      isImmediateWorkable: false,
+      isDetailInspectionRequired: false,
+      sendabilityState: "skip",
+      sendabilityUiColor: "skip",
+      sendabilityUiLabel: getReplyDropSendabilityUiLabel("skip"),
+      isImmediateSendable: false
     };
   }
 
-  function attachCandidateExecutionMeta(candidate = {}, article = null, mediaSummary = null) {
+  function attachCandidateExecutionMeta(candidate = {}, article = null, mediaSummary = null, options = {}) {
     const normalizedCandidate = candidate && typeof candidate === "object" ? { ...candidate } : {};
     const contextCompleteness = buildDraftContextCompleteness(normalizedCandidate, article, false, mediaSummary);
     const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, article);
@@ -6446,6 +6774,52 @@
       normalizedCandidate,
       executionScore
     );
+    const ageMinutes = getReplyDropAgeMinutes(normalizedCandidate?.timestamp || 0);
+    const trafficProfile = buildExecutorTrafficProfile({
+      views: normalizedCandidate?.views,
+      replies: normalizedCandidate?.replies,
+      velocityPerHour: normalizedCandidate?.trafficVelocityPerHour,
+      phase: normalizedCandidate?.trafficPhase,
+      ageMinutes,
+      timestamp: normalizedCandidate?.timestamp
+    });
+    const attributionSummary = (
+      options?.attributionModel &&
+      typeof global.ReplyDropAttributionCore?.summarizeCandidateAttribution === "function"
+    )
+      ? global.ReplyDropAttributionCore.summarizeCandidateAttribution(normalizedCandidate, options.attributionModel)
+      : null;
+    const computedRecommendedSlot = getRecommendedQueueSlot(
+      normalizedCandidate,
+      { uiLanguage: String(options?.uiLanguage || state.uiLanguage || "zh-Hans").trim() || "zh-Hans" },
+      attributionSummary
+    );
+    const recommendedSlot = String(normalizedCandidate?.recommendedSlot || "").trim() || computedRecommendedSlot;
+    const hardBlocked = (
+      isReplyDropHardBlockReason(normalizedCandidate?.blockReason) ||
+      !isBlueCheckEligibleAuthor(normalizedCandidate?.authorVerified, normalizedCandidate?.authorVerificationType)
+    );
+    const recommendedDecision = (!trafficProfile.qualified || hardBlocked)
+      ? "skip"
+      : (String(normalizedCandidate?.recommendedDecision || "").trim() || mapQueueSlotToDecision(recommendedSlot));
+    const needsVision = Boolean(
+      normalizedCandidate?.lowSemanticConfidence &&
+      hasVisualMediaKind(normalizedCandidate?.mediaKind)
+    );
+    const sendability = buildReplyDropSendabilityMeta({
+      recommendedDecision,
+      timelineInlineReplyEligible,
+      predictedCommentExposure,
+      executionScore,
+      skipRecommended: false,
+      contextFlags: contextCompleteness.flags,
+      sendFloor: getConfiguredExecutorSendFloor(state.settings),
+      ageMinutes,
+      mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
+      needsVision,
+      hardBlocked
+    });
     return {
       ...normalizedCandidate,
       needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
@@ -6455,7 +6829,19 @@
       executionScore,
       predictedCommentExposure,
       timelineInlineReplyEligible,
-      preferredOpenMode: timelineInlineReplyEligible ? "timeline-inline" : "detail-page"
+      preferredOpenMode: sendability.preferredOpenMode,
+      recommendedSlot,
+      recommendedDecision,
+      trafficQualified: Boolean(trafficProfile.qualified),
+      replyWorthinessState: sendability.replyWorthinessState,
+      executionRoute: sendability.executionRoute,
+      executionRouteLabel: sendability.routeLabel,
+      isImmediateWorkable: sendability.isImmediateWorkable,
+      isDetailInspectionRequired: sendability.isDetailInspectionRequired,
+      sendabilityState: sendability.sendabilityState,
+      sendabilityUiColor: sendability.uiColor,
+      sendabilityUiLabel: sendability.uiLabel,
+      isImmediateSendable: sendability.isImmediateSendable
     };
   }
 
@@ -7071,6 +7457,8 @@
   function hideAllBadges() {
     document.querySelectorAll(`.${BADGE_CLASS}`).forEach((badge) => {
       badge.setAttribute("data-tier", "hidden");
+      badge.removeAttribute("data-sendability");
+      badge.removeAttribute("data-route");
       badge.removeAttribute("title");
       const label = badge.querySelector(`.${BADGE_LABEL_CLASS}`);
       if (label) {
@@ -7084,39 +7472,34 @@
   }
 
   function getFloatingPanelRecommendedCandidates(candidates = state.recentCandidates) {
-    const displayThreshold = getConfiguredDisplayThreshold(state.settings);
     return sortApiAgentCandidates(Array.isArray(candidates) ? candidates : [])
       .filter((candidate) => {
         const url = normalizeTweetUrl(candidate?.url);
         if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
           return false;
         }
-        const recommendedDecision = String(candidate?.recommendedDecision || candidate?.routing?.recommendedDecision || "").trim();
-        const trafficProfile = buildExecutorTrafficProfile({
-          views: candidate?.views,
-          replies: candidate?.replies,
-          velocityPerHour: candidate?.trafficVelocityPerHour,
-          phase: candidate?.trafficPhase,
-          timestamp: candidate?.timestamp
-        });
-        const predictedCommentExposure = getCandidatePredictedCommentExposure(candidate);
-        const executionScore = Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0))));
-        return (
-          recommendedDecision === "reply-now" &&
-          getCandidateCurrentScore(candidate) >= displayThreshold &&
-          predictedCommentExposure >= Math.max(44, displayThreshold - 6) &&
-          executionScore >= 54 &&
-          trafficProfile.qualified
-        );
+        return Boolean(candidate?.isImmediateSendable || String(candidate?.sendabilityState || "").trim() === "send_now");
       });
   }
 
+  function getFloatingPanelDisplayCandidates(limit = FLOATING_PANEL_LIMIT, candidates = state.recentCandidates) {
+    return sortApiAgentCandidates(Array.isArray(candidates) ? candidates : [])
+      .filter((candidate) => {
+        const url = normalizeTweetUrl(candidate?.url);
+        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
+          return false;
+        }
+        return true;
+      })
+      .slice(0, Math.max(0, Math.floor(Number(limit) || 0)));
+  }
+
   function getFloatingPanelCandidates(limit = FLOATING_PANEL_LIMIT, candidates = state.recentCandidates) {
-    return getFloatingPanelRecommendedCandidates(candidates).slice(0, Math.max(0, Math.floor(Number(limit) || 0)));
+    return getFloatingPanelDisplayCandidates(limit, candidates);
   }
 
   function getFloatingPanelHighScoreCount(candidates = state.recentCandidates, limit = FLOATING_PANEL_LIMIT) {
-    return getFloatingPanelCandidates(limit, candidates).length;
+    return getFloatingPanelRecommendedCandidates(candidates).slice(0, Math.max(0, Math.floor(Number(limit) || 0))).length;
   }
 
   function inferFloatingDraftLanguage(candidate = {}) {
@@ -7172,16 +7555,19 @@
     }
     setFloatingPanelOpen(false);
     const draft = resolveFloatingCandidateDraft(candidate);
-    const action = draft
-      ? (candidate?.timelineInlineReplyEligible ? "reply-from-timeline" : "reply")
+    const sendabilityState = String(candidate?.sendabilityState || "").trim();
+    const executionRoute = String(candidate?.executionRoute || "").trim();
+    const immediateSendable = Boolean(candidate?.isImmediateSendable || sendabilityState === "send_now");
+    const action = immediateSendable && draft
+      ? (executionRoute === "timeline_inline" ? "reply-from-timeline" : "reply")
       : "open-composer";
     return runReplyDropExecutorAction({
       action,
       url,
       tweetId: extractTweetIdFromUrl(url),
       draft,
-      timelineFirst: Boolean(candidate?.timelineInlineReplyEligible),
-      preferDetailPage: !candidate?.timelineInlineReplyEligible
+      timelineFirst: Boolean(immediateSendable && executionRoute === "timeline_inline"),
+      preferDetailPage: !immediateSendable || executionRoute !== "timeline_inline"
     });
   }
 
@@ -7204,11 +7590,34 @@
   }
 
   function getFloatingCandidateModeLabel(candidate = {}) {
+    const routeLabel = String(candidate?.executionRouteLabel || "").trim();
+    if (routeLabel) {
+      return routeLabel;
+    }
+    const sendabilityState = String(candidate?.sendabilityState || "").trim();
+    if (sendabilityState) {
+      return String(candidate?.sendabilityUiLabel || getReplyDropSendabilityUiLabel(sendabilityState)).trim();
+    }
     return candidate?.timelineInlineReplyEligible ? "卡片快回" : "详情复核";
   }
 
   function getFloatingCandidateModeTone(candidate = {}) {
-    return candidate?.timelineInlineReplyEligible ? "inline" : "detail";
+    switch (String(candidate?.executionRoute || "").trim()) {
+      case "timeline_inline":
+        return "inline";
+      case "detail_inspect_then_reply":
+        return "inspect";
+      case "detail_open_only":
+        return "detail";
+      default:
+        break;
+    }
+    switch (String(candidate?.sendabilityState || "").trim()) {
+      case "watch_later":
+        return "soft";
+      default:
+        return candidate?.timelineInlineReplyEligible ? "inline" : "detail";
+    }
   }
 
   function openFloatingCandidateByIndex(index = 0) {
@@ -7665,11 +8074,11 @@
           const existingCandidate = readStoredCandidate(article);
           if (existingTier && existingTier !== "hidden" && existingTier !== "replied") {
             visibleCount += 1;
-            if (existingCandidate) {
-              recentCandidates.push(existingCandidate);
-            }
           }
-          if (existingTier === "high" || existingTier === "good") {
+          if (existingCandidate && existingCandidate.tier && existingCandidate.tier !== "hidden" && existingCandidate.tier !== "replied") {
+            recentCandidates.push(existingCandidate);
+          }
+          if (existingCandidate?.isImmediateSendable) {
             highScoreCount += 1;
           }
           continue;
@@ -7708,13 +8117,32 @@
           (tweet.text || tweet.hasMedia)
         ) ? "low-outline" : analysis.tier;
 
-        renderBadge(article, String(analysis.score), effectiveTier, analysis.tooltip || `Reply score ${analysis.score}`);
+        const mediaSummary = tweet.url ? getMediaSummaryFromState(state, extractTweetIdFromUrl(tweet.url)) : null;
+        const draftCandidate = buildCandidatePayload(tweet, analysis, effectiveTier);
+        const candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary, {
+          attributionModel: opportunityContext.attributionModel,
+          uiLanguage: state.uiLanguage
+        });
+        const badgePresentation = getReplyDropCandidateBadgePresentation(
+          candidate,
+          analysis.tooltip || `Reply score ${analysis.score}`
+        );
+
+        renderBadge(
+          article,
+          String(analysis.score),
+          badgePresentation.visualTier,
+          badgePresentation.titleText,
+          {
+            sendabilityColor: badgePresentation.sendabilityColor,
+            executionRoute: badgePresentation.executionRoute
+          }
+        );
 
         if (effectiveTier !== "hidden") {
-          visibleCount += 1;
-          const mediaSummary = getMediaSummaryFromState(state, extractTweetIdFromUrl(tweet.url));
-          const draftCandidate = buildCandidatePayload(tweet, analysis, effectiveTier);
-          const candidate = attachCandidateExecutionMeta(draftCandidate, article, mediaSummary);
+          if (badgePresentation.visualTier !== "hidden") {
+            visibleCount += 1;
+          }
           storeCandidatePayload(article, candidate);
           recentCandidates.push(candidate);
           renderStoredDraftPreview(article);
@@ -7722,7 +8150,7 @@
           delete article.dataset.xrsCandidate;
           removeDraftPreview(article);
         }
-        if (effectiveTier === "high" || effectiveTier === "good") {
+        if (candidate.isImmediateSendable) {
           highScoreCount += 1;
         }
       } catch (error) {

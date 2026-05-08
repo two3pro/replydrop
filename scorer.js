@@ -1066,8 +1066,6 @@
     riskyContentPenalty = 0,
     protocolPromoPenalty = 0,
     thinGenericPostPenalty = 0,
-    visionRequiredPenalty = 0,
-    emptySemanticPenalty = 0,
     unsupportedLanguagePenalty = 0,
     timingWindowPenalty = 0,
     peakDecayPenalty = 0,
@@ -1094,8 +1092,6 @@
       clamp(riskyContentPenalty / 24, 0, 1) * 0.26 -
       clamp(protocolPromoPenalty / 26, 0, 1) * 0.28 -
       clamp(thinGenericPostPenalty / 28, 0, 1) * 0.24 -
-      clamp(visionRequiredPenalty / 36, 0, 1) * 0.3 -
-      clamp(emptySemanticPenalty / 32, 0, 1) * 0.34 -
       clamp(unsupportedLanguagePenalty / 34, 0, 1) * 0.24 -
       clamp(timingWindowPenalty / 18, 0, 1) * 0.18 -
       clamp(peakDecayPenalty / 16, 0, 1) * 0.18 -
@@ -1109,8 +1105,6 @@
   function computeExecutionScore({
     understandingConfidence = 0,
     sourceSurfaceBonus = 0,
-    visionRequiredPenalty = 0,
-    emptySemanticPenalty = 0,
     unsupportedLanguagePenalty = 0,
     timingWindowPenalty = 0,
     peakDecayPenalty = 0,
@@ -1121,8 +1115,6 @@
       0.18 +
       clamp(understandingConfidence / 100, 0, 1) * 0.62 +
       clamp(sourceSurfaceBonus / 12, 0, 1) * 0.08 -
-      clamp(visionRequiredPenalty / 36, 0, 1) * 0.24 -
-      clamp(emptySemanticPenalty / 40, 0, 1) * 0.28 -
       clamp(unsupportedLanguagePenalty / 34, 0, 1) * 0.18 -
       clamp(timingWindowPenalty / 18, 0, 1) * 0.1 -
       clamp(peakDecayPenalty / 16, 0, 1) * 0.08 -
@@ -1184,14 +1176,6 @@
   function computeBlockReason(tweet, mediaSemanticContext, understandingConfidence) {
     if (!isBlueCheckEligible(tweet)) {
       return "blue-check-required-auto-block";
-    }
-    if (
-      mediaSemanticContext?.hasMedia &&
-      mediaSemanticContext.lowConfidence &&
-      Number(mediaSemanticContext.pureMediaFit || 0) >= 0.45 &&
-      understandingConfidence < 45
-    ) {
-      return "vision_required_but_missing";
     }
     return "";
   }
@@ -2985,23 +2969,21 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
 
     const visionRequiredPenalty = computeVisionRequiredPenalty(tweet, mediaSemanticContext, 42);
     if (visionRequiredPenalty != null) {
-      score -= visionRequiredPenalty;
       breakdown.push({
         key: "visionRequired",
         label: "Needs vision context",
-        amount: -visionRequiredPenalty,
-        kind: "penalty"
+        amount: 0,
+        kind: "route"
       });
     }
 
     const emptySemanticPenalty = computeEmptySemanticPenalty(tweet, mediaSemanticContext, 64);
     if (emptySemanticPenalty != null) {
-      score -= emptySemanticPenalty;
       breakdown.push({
         key: "emptySemanticText",
         label: "Empty candidate text",
-        amount: -emptySemanticPenalty,
-        kind: "penalty"
+        amount: 0,
+        kind: "route"
       });
     }
 
@@ -3097,8 +3079,6 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       riskyContentPenalty: riskyContentPenalty || 0,
       protocolPromoPenalty: protocolPromoPenalty || 0,
       thinGenericPostPenalty: thinGenericPostPenalty || 0,
-      visionRequiredPenalty: visionRequiredPenalty || 0,
-      emptySemanticPenalty: emptySemanticPenalty || 0,
       unsupportedLanguagePenalty: unsupportedLanguagePenalty || 0,
       timingWindowPenalty: timingWindowPenalty || 0,
       peakDecayPenalty: peakDecayPenalty || 0,
@@ -3122,8 +3102,6 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
     const executionScore = computeExecutionScore({
       understandingConfidence,
       sourceSurfaceBonus: sourceSurfaceSignal.amount || 0,
-      visionRequiredPenalty: visionRequiredPenalty || 0,
-      emptySemanticPenalty: emptySemanticPenalty || 0,
       unsupportedLanguagePenalty: unsupportedLanguagePenalty || 0,
       timingWindowPenalty: timingWindowPenalty || 0,
       peakDecayPenalty: peakDecayPenalty || 0,
@@ -3157,8 +3135,6 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       (riskyContentPenalty || 0) * 0.9 +
       (protocolPromoPenalty || 0) * 0.92 +
       (thinGenericPostPenalty || 0) * 0.78 +
-      (visionRequiredPenalty || 0) * 1.02 +
-      (emptySemanticPenalty || 0) * 1.08 +
       (unsupportedLanguagePenalty || 0) * 0.95 +
       (timingWindowPenalty || 0) * 0.74 +
       (peakDecayPenalty || 0) * 0.55,
@@ -3201,7 +3177,11 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
     const scoredBreakdown = breakdown
       .filter((item) => (
         Number.isFinite(item.amount) &&
-        (Math.abs(item.amount) > 0 || String(item.kind || "") === "risk")
+        (
+          Math.abs(item.amount) > 0 ||
+          String(item.kind || "") === "risk" ||
+          String(item.kind || "") === "route"
+        )
       ));
     const sortedBreakdown = scoredBreakdown
       .slice()

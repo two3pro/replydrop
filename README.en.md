@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.254`
+Current version: `0.2.255`
 
-This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, and `0.2.254` finally separates post heat from reply-slot pickup quality so hot parent posts with weak reply visibility stop drifting to the top.
+This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, and `0.2.255` now separates reply worthiness from execution route so high-value media posts stay green even when they need detail inspection first.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.255` keeps media posts in sampling and routes them to detail inspection instead of downgrading:
+
+- `scorer.js` no longer pushes media posts down just because OCR or vision context is still missing.
+- `content.js` now separates `replyWorthinessState` from `executionRoute`, so media flags only decide the route and no longer force `review_needed` or `skip`.
+- Green waterdrops now mean "worth immediate handling", while timeline, panel, and executor routing all share the same sendability semantics.
 
 Version `0.2.254` splits post heat from reply pickup scoring:
 
@@ -160,7 +166,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.254.zip](./downloads/replydrop-p2.254.zip)
+- Chrome / Brave runtime package: [replydrop-p2.255.zip](./downloads/replydrop-p2.255.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
 - Safari for macOS source package: [replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
@@ -168,7 +174,7 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.254` public baseline in this repo.
+  - Chrome / Brave now uses the `0.2.255` public baseline in this repo.
   - Safari currently follows its own `0.2.249` release line.
 
 ## Local Install

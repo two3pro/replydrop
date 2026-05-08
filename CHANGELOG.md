@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.255
+
+- keep media posts in sampling and route them to detail inspection instead of downgrading：媒体帖继续留在采样池，`scorer.js` 不再因为 `vision / OCR` 缺失直接压低 `replyPickup / execution / finalScore`
+- `content.js` 把“值不值得现在处理”和“怎么处理”彻底拆开，新增 `replyWorthinessState` 与 `executionRoute`，媒体相关 flag 只决定 route，不再把高分视频/图片帖打成 `review_needed / skip`
+- 绿色水滴语义改成“值得立即处理”，并统一 timeline badge、floating panel、executor routing；需要看图的绿色帖会自动走详情检查链，而不是停在人工复核
+
 ## 0.2.254
 
 - split post heat from reply pickup scoring：`scorer.js` 拆出 `postBlastScore`、`replyPickupScore`、`executionScore`、`predictedCommentExposure`

@@ -12262,3 +12262,43 @@ body:not(.options-page) .footerEdgeNotchLeft,
 body:not(.options-page) .footerEdgeNotchRight {
   box-shadow: none !important;
 }
+
+.deskScore[data-tier="send_now"] {
+  background: rgba(16, 185, 129, 0.16);
+  color: #065f46;
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.deskScore[data-tier="review_needed"] {
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.deskScore[data-tier="watch_later"] {
+  background: rgba(148, 163, 184, 0.16);
+  color: #334155;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.deskScore[data-tier="skip"] {
+  background: rgba(226, 232, 240, 0.16);
+  color: #64748b;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.deskScore[data-tier="send_now"]::before {
+  background: linear-gradient(135deg, #34d399, #10b981);
+}
+
+.deskScore[data-tier="review_needed"]::before {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.deskScore[data-tier="watch_later"]::before {
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+}
+
+.deskScore[data-tier="skip"]::before {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+}

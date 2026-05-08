@@ -1736,6 +1736,18 @@ function normalizeState(state) {
         likes: Number(item.likes || 0),
         replies: Number(item.replies || 0),
         views: Number(item.views || 0),
+        recommendedSlot: String(item.recommendedSlot || "").trim().slice(0, 24),
+        recommendedDecision: String(item.recommendedDecision || "").trim().slice(0, 24),
+        trafficQualified: Boolean(item.trafficQualified),
+        replyWorthinessState: String(item.replyWorthinessState || item.sendabilityState || "").trim().slice(0, 24),
+        executionRoute: String(item.executionRoute || "").trim().slice(0, 32),
+        executionRouteLabel: String(item.executionRouteLabel || item.routeLabel || "").trim().slice(0, 48),
+        isImmediateWorkable: Boolean(item.isImmediateWorkable),
+        isDetailInspectionRequired: Boolean(item.isDetailInspectionRequired),
+        sendabilityState: String(item.sendabilityState || "").trim().slice(0, 24),
+        sendabilityUiColor: String(item.sendabilityUiColor || "").trim().slice(0, 24),
+        sendabilityUiLabel: String(item.sendabilityUiLabel || "").trim().slice(0, 48),
+        isImmediateSendable: Boolean(item.isImmediateSendable),
         keywordMatched: Boolean(item.keywordMatched),
         matchedTopics: uniqueList(item.matchedTopics).slice(0, 4),
         matchedLanguages: uniqueList(item.matchedLanguages).slice(0, 4),
@@ -2769,6 +2781,10 @@ function getLaneDefaultQueueSlot(candidate) {
 }
 
 function getDefaultQueueSlot(candidate) {
+  const preferredSlot = String(candidate?.recommendedSlot || "").trim();
+  if (preferredSlot) {
+    return preferredSlot;
+  }
   const laneDefault = getLaneDefaultQueueSlot(candidate);
   if (typeof AttributionCore?.getDefaultQueueSlot !== "function" || typeof AttributionCore?.summarizeCandidateAttribution !== "function") {
     return laneDefault;
@@ -2793,16 +2809,84 @@ function getDismissedUrlSet() {
   return new Set(Object.keys(currentState.dismissedTweets || {}));
 }
 
+function getCandidateSendabilityState(candidate = {}) {
+  return String(candidate?.replyWorthinessState || candidate?.sendabilityState || "").trim();
+}
+
+function getCandidateSendabilityLabel(candidate = {}) {
+  const stateKey = getCandidateSendabilityState(candidate);
+  if (candidate?.sendabilityUiLabel) {
+    return String(candidate.sendabilityUiLabel).trim();
+  }
+  switch (stateKey) {
+    case "send_now":
+      return localize({ "zh-Hans": "现在可做", "zh-Hant": "現在可做", en: "Handle now", ja: "今すぐ対応", ko: "지금 처리" });
+    case "review_needed":
+      return localize({ "zh-Hans": "值得复核", "zh-Hant": "值得複核", en: "Review needed", ja: "要確認", ko: "검토 필요" });
+    case "watch_later":
+      return localize({ "zh-Hans": "先观察", "zh-Hant": "先觀察", en: "Watch later", ja: "様子見", ko: "지켜보기" });
+    case "skip":
+      return localize({ "zh-Hans": "跳过", "zh-Hant": "跳過", en: "Skip", ja: "見送り", ko: "건너뛰기" });
+    default:
+      return "";
+  }
+}
+
+function getCandidateExecutionRoute(candidate = {}) {
+  return String(candidate?.executionRoute || "").trim();
+}
+
+function getCandidateExecutionRouteLabel(candidate = {}) {
+  if (candidate?.executionRouteLabel) {
+    return String(candidate.executionRouteLabel).trim();
+  }
+  switch (getCandidateExecutionRoute(candidate)) {
+    case "timeline_inline":
+      return localize({ "zh-Hans": "卡片快回", "zh-Hant": "卡片快回", en: "Inline reply", ja: "カード即返し", ko: "카드 즉답" });
+    case "detail_inspect_then_reply":
+      return localize({ "zh-Hans": "详情看图后回", "zh-Hant": "詳情看圖後回", en: "Inspect media then reply", ja: "詳細で見てから返信", ko: "상세 확인 후 답글" });
+    case "detail_open_only":
+      return localize({ "zh-Hans": "详情打开后回", "zh-Hant": "詳情打開後回", en: "Open detail then reply", ja: "詳細を開いて返信", ko: "상세 열고 답글" });
+    default:
+      return "";
+  }
+}
+
+function getCandidateExecutionRouteTone(candidate = {}) {
+  switch (getCandidateExecutionRoute(candidate)) {
+    case "timeline_inline":
+      return "accent";
+    case "detail_inspect_then_reply":
+      return "warning";
+    case "detail_open_only":
+      return "soft";
+    default:
+      return "soft";
+  }
+}
+
+function getCandidateDeskTier(candidate = {}) {
+  return String(candidate?.sendabilityUiColor || candidate?.replyWorthinessState || candidate?.sendabilityState || candidate?.tier || "hidden").trim() || "hidden";
+}
+
 function getVisibleDeskCandidates() {
   const dismissed = getDismissedUrlSet();
   return (Array.isArray(currentState.recentCandidates) ? currentState.recentCandidates : [])
-    .filter((candidate) => candidate && candidate.url && !dismissed.has(candidate.url));
+    .filter((candidate) => (
+      candidate &&
+      candidate.url &&
+      !dismissed.has(candidate.url)
+    ));
 }
 
 function getActionableDeskCandidates(candidates = getVisibleDeskCandidates()) {
   return candidates.filter((candidate) => {
     const relationship = getRelationshipState(candidate.authorHandle);
-    return !candidate?.blockReason && !(relationship?.status === "snoozed" && relationship.snoozeUntil > Date.now());
+    return (
+      getCandidateSendabilityState(candidate) !== "skip" &&
+      !candidate?.blockReason &&
+      !(relationship?.status === "snoozed" && relationship.snoozeUntil > Date.now())
+    );
   });
 }
 
@@ -2911,6 +2995,19 @@ function getLaneText(key) {
 }
 
 function getCandidateLane(candidate) {
+  const sendabilityState = getCandidateSendabilityState(candidate);
+  if (sendabilityState === "send_now") {
+    return { key: "now", label: getCandidateSendabilityLabel(candidate) || getLaneText("now"), tone: "success", priority: 4 };
+  }
+  if (sendabilityState === "review_needed") {
+    return { key: "watch", label: getCandidateSendabilityLabel(candidate) || getLaneText("watch"), tone: "warning", priority: 3 };
+  }
+  if (sendabilityState === "watch_later") {
+    return { key: "watch", label: getCandidateSendabilityLabel(candidate) || getLaneText("watch"), tone: "accent", priority: 2 };
+  }
+  if (sendabilityState === "skip") {
+    return { key: "backlog", label: getCandidateSendabilityLabel(candidate) || getLaneText("backlog"), tone: "soft", priority: 1 };
+  }
   const score = Number(candidate?.score) || 0;
   const opportunityBoost = Number(candidate?.opportunityBoost) || 0;
   const relationshipStatus = String(candidate?.relationshipStatus || getRelationshipState(candidate?.authorHandle)?.status || "").trim();
@@ -3216,6 +3313,10 @@ function appendDeskSignalRows(container, candidate, lane) {
   const signalRow = document.createElement("div");
   signalRow.className = "deskSignalRow";
   signalRow.appendChild(createSummaryChip(lane.label, lane.tone));
+  const routeLabel = getCandidateExecutionRouteLabel(candidate);
+  if (routeLabel) {
+    signalRow.appendChild(createSummaryChip(routeLabel, getCandidateExecutionRouteTone(candidate)));
+  }
   const opportunityChip = getCandidateOpportunityChip(candidate);
   if (opportunityChip) {
     signalRow.appendChild(createSummaryChip(opportunityChip.text, opportunityChip.tone));
@@ -3378,7 +3479,7 @@ function buildDeskCandidateItem(candidate, index, options = {}) {
     stubValue: String(candidate.score ?? 0),
     stubMeta: lane.label,
     stubSerial: options.focus ? "最佳候选" : `候选 ${String(index + 1).padStart(3, "0")}`,
-    tier: candidate.tier || "hidden"
+    tier: getCandidateDeskTier(candidate)
   });
 
   const main = item.querySelector(".deskMain");

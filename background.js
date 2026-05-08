@@ -1212,6 +1212,18 @@ function normalizeRecentCandidates(value, fallback = []) {
         trafficReplyRatio: clampNumber(item.trafficReplyRatio, 0),
         trafficPhase: String(item.trafficPhase || "").trim().slice(0, 16),
         trafficSource: String(item.trafficSource || "").trim().slice(0, 24),
+        recommendedSlot: String(item.recommendedSlot || "").trim().slice(0, 24),
+        recommendedDecision: String(item.recommendedDecision || "").trim().slice(0, 24),
+        trafficQualified: Boolean(item.trafficQualified),
+        replyWorthinessState: String(item.replyWorthinessState || item.sendabilityState || "").trim().slice(0, 24),
+        executionRoute: String(item.executionRoute || "").trim().slice(0, 32),
+        executionRouteLabel: String(item.executionRouteLabel || item.routeLabel || "").trim().slice(0, 48),
+        isImmediateWorkable: Boolean(item.isImmediateWorkable),
+        isDetailInspectionRequired: Boolean(item.isDetailInspectionRequired),
+        sendabilityState: String(item.sendabilityState || "").trim().slice(0, 24),
+        sendabilityUiColor: String(item.sendabilityUiColor || "").trim().slice(0, 24),
+        sendabilityUiLabel: String(item.sendabilityUiLabel || "").trim().slice(0, 48),
+        isImmediateSendable: Boolean(item.isImmediateSendable),
         breakdown: Array.isArray(item.breakdown)
           ? item.breakdown.slice(0, 8).map((entry) => ({
               key: String(entry?.key || "").trim().slice(0, 48),
@@ -1241,10 +1253,16 @@ function getCandidateDisplayScore(candidate = {}) {
   );
 }
 
+function isImmediateSendabilityCandidate(candidate = {}) {
+  return Boolean(
+    candidate?.isImmediateSendable ||
+    String(candidate?.replyWorthinessState || candidate?.sendabilityState || "").trim() === "send_now"
+  );
+}
+
 function countFloatingHighScoreCandidates(candidates = [], threshold = DEFAULT_STATE.threshold, limit = FLOATING_PANEL_LIMIT) {
-  const displayThreshold = Math.max(0, Math.min(100, Math.floor(clampNumber(threshold, DEFAULT_STATE.threshold))));
   return (Array.isArray(candidates) ? candidates : [])
-    .filter((candidate) => candidate?.url && candidate.tier !== "hidden" && getCandidateDisplayScore(candidate) >= displayThreshold)
+    .filter((candidate) => candidate?.url && candidate.tier !== "hidden" && isImmediateSendabilityCandidate(candidate))
     .slice(0, Math.max(0, Math.floor(clampNumber(limit, FLOATING_PANEL_LIMIT))))
     .length;
 }
