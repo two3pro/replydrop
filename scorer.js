@@ -1032,6 +1032,20 @@
     return Math.round(fit * 100);
   }
 
+  function harmonicMeanScores(values = []) {
+    const normalized = (Array.isArray(values) ? values : [])
+      .map((value) => Number(value || 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (!normalized.length) {
+      return 0;
+    }
+    const reciprocalSum = normalized.reduce((sum, value) => sum + (1 / Math.max(1, value)), 0);
+    if (reciprocalSum <= 0) {
+      return 0;
+    }
+    return (normalized.length / reciprocalSum);
+  }
+
   function computeReachLikelihood({
     replyOpportunityBonus = 0,
     conversationBonus = 0,
@@ -1060,36 +1074,111 @@
     unprovenWindowPenalty = 0
   }) {
     const fit = clamp(
-      0.18 +
-      clamp(replyOpportunityBonus / 14, 0, 1) * 0.29 +
-      clamp(conversationBonus / 10, 0, 1) * 0.15 +
-      clamp(midTrafficConversationBonus / 12, 0, 1) * 0.12 +
+      0.12 +
+      clamp(replyOpportunityBonus / 14, 0, 1) * 0.31 +
+      clamp(conversationBonus / 10, 0, 1) * 0.16 +
+      clamp(midTrafficConversationBonus / 12, 0, 1) * 0.14 +
       clamp(personalExpressionBonus / 12, 0, 1) * 0.08 +
-      clamp(trafficMomentumBonus / 14, 0, 1) * 0.13 +
-      clamp(sourceSurfaceBonus / 12, 0, 1) * 0.2 -
-      clamp(crowdingPenalty / 22, 0, 1) * 0.24 -
-      clamp(trafficMismatchPenalty / 18, 0, 1) * 0.18 -
-      clamp(broadcastFormatPenalty / 24, 0, 1) * 0.19 -
-      clamp(followTrainBaitPenalty / 24, 0, 1) * 0.34 -
-      clamp(socialGrowthFlexPenalty / 32, 0, 1) * 0.26 -
-      clamp(verifiedOrganizationPenalty / 20, 0, 1) * 0.21 -
-      clamp(verifiedPileOnPenalty / 18, 0, 1) * 0.14 -
+      clamp(trafficMomentumBonus / 14, 0, 1) * 0.08 +
+      clamp(sourceSurfaceBonus / 12, 0, 1) * 0.11 -
+      clamp(crowdingPenalty / 22, 0, 1) * 0.27 -
+      clamp(trafficMismatchPenalty / 18, 0, 1) * 0.24 -
+      clamp(broadcastFormatPenalty / 24, 0, 1) * 0.28 -
+      clamp(followTrainBaitPenalty / 24, 0, 1) * 0.36 -
+      clamp(socialGrowthFlexPenalty / 32, 0, 1) * 0.28 -
+      clamp(verifiedOrganizationPenalty / 20, 0, 1) * 0.24 -
+      clamp(verifiedPileOnPenalty / 18, 0, 1) * 0.18 -
       clamp(politicalFigurePenalty / 22, 0, 1) * 0.21 -
-      clamp(broadcastAccountPenalty / 20, 0, 1) * 0.24 -
+      clamp(broadcastAccountPenalty / 20, 0, 1) * 0.26 -
       clamp(birthdayGreetingPenalty / 14, 0, 1) * 0.12 -
-      clamp(riskyContentPenalty / 24, 0, 1) * 0.25 -
-      clamp(protocolPromoPenalty / 26, 0, 1) * 0.25 -
-      clamp(thinGenericPostPenalty / 28, 0, 1) * 0.22 -
-      clamp(visionRequiredPenalty / 36, 0, 1) * 0.28 -
-      clamp(emptySemanticPenalty / 32, 0, 1) * 0.32 -
+      clamp(riskyContentPenalty / 24, 0, 1) * 0.26 -
+      clamp(protocolPromoPenalty / 26, 0, 1) * 0.28 -
+      clamp(thinGenericPostPenalty / 28, 0, 1) * 0.24 -
+      clamp(visionRequiredPenalty / 36, 0, 1) * 0.3 -
+      clamp(emptySemanticPenalty / 32, 0, 1) * 0.34 -
       clamp(unsupportedLanguagePenalty / 34, 0, 1) * 0.24 -
       clamp(timingWindowPenalty / 18, 0, 1) * 0.18 -
-      clamp(peakDecayPenalty / 16, 0, 1) * 0.16 -
-      clamp(unprovenWindowPenalty / 8, 0, 1) * 0.08,
+      clamp(peakDecayPenalty / 16, 0, 1) * 0.18 -
+      clamp(unprovenWindowPenalty / 8, 0, 1) * 0.1,
       0,
       1
     );
     return Math.round(fit * 100);
+  }
+
+  function computeExecutionScore({
+    understandingConfidence = 0,
+    sourceSurfaceBonus = 0,
+    visionRequiredPenalty = 0,
+    emptySemanticPenalty = 0,
+    unsupportedLanguagePenalty = 0,
+    timingWindowPenalty = 0,
+    peakDecayPenalty = 0,
+    unprovenWindowPenalty = 0,
+    blockReason = ""
+  }) {
+    const fit = clamp(
+      0.18 +
+      clamp(understandingConfidence / 100, 0, 1) * 0.62 +
+      clamp(sourceSurfaceBonus / 12, 0, 1) * 0.08 -
+      clamp(visionRequiredPenalty / 36, 0, 1) * 0.24 -
+      clamp(emptySemanticPenalty / 40, 0, 1) * 0.28 -
+      clamp(unsupportedLanguagePenalty / 34, 0, 1) * 0.18 -
+      clamp(timingWindowPenalty / 18, 0, 1) * 0.1 -
+      clamp(peakDecayPenalty / 16, 0, 1) * 0.08 -
+      clamp(unprovenWindowPenalty / 8, 0, 1) * 0.06 -
+      (String(blockReason || "").trim() ? 0.18 : 0),
+      0,
+      1
+    );
+    return Math.round(fit * 100);
+  }
+
+  function computeHeatReplyGapPenalty(postBlastScore = 0, replyPickupScore = 0) {
+    const gap = Number(postBlastScore || 0) - Number(replyPickupScore || 0);
+    if (!Number.isFinite(gap) || gap < 16) {
+      return null;
+    }
+    let amount = 4 + Math.round((gap - 16) * 0.42);
+    if (replyPickupScore < 46) {
+      amount += 4;
+    }
+    amount = Math.max(0, Math.min(18, amount));
+    return amount >= 4 ? amount : null;
+  }
+
+  function computePredictedCommentExposure({
+    postBlastScore = 0,
+    replyPickupScore = 0,
+    executionScore = 0,
+    trafficMismatchPenalty = 0,
+    broadcastFormatPenalty = 0,
+    verifiedPileOnPenalty = 0,
+    crowdingPenalty = 0,
+    followTrainBaitPenalty = 0,
+    protocolPromoPenalty = 0
+  }) {
+    const harmonicBase = harmonicMeanScores([
+      postBlastScore,
+      replyPickupScore,
+      executionScore
+    ]);
+    let exposure = (
+      harmonicBase * 0.74 +
+      clamp(replyPickupScore, 0, 100) * 0.18 +
+      clamp(executionScore, 0, 100) * 0.08
+    );
+    const mismatch = Math.max(0, Number(postBlastScore || 0) - Number(replyPickupScore || 0));
+    if (mismatch >= 12) exposure -= 4;
+    if (mismatch >= 20) exposure -= 5;
+    if (mismatch >= 30) exposure -= 7;
+    exposure -= clamp(trafficMismatchPenalty / 18, 0, 1) * 6;
+    exposure -= clamp(broadcastFormatPenalty / 24, 0, 1) * 8;
+    exposure -= clamp(verifiedPileOnPenalty / 18, 0, 1) * 4;
+    exposure -= clamp(crowdingPenalty / 22, 0, 1) * 5;
+    exposure -= clamp(followTrainBaitPenalty / 24, 0, 1) * 7;
+    exposure -= clamp(protocolPromoPenalty / 26, 0, 1) * 5;
+    return Math.round(clamp(exposure, 0, 100));
   }
 
   function computeBlockReason(tweet, mediaSemanticContext, understandingConfidence) {
@@ -1600,65 +1689,50 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
   const views = Number.isFinite(tweet.views) ? tweet.views : 0;
   const replies = Number.isFinite(tweet.replies) ? tweet.replies : 0;
   const velocityPerHour = getTrafficVelocityPerHour(tweet);
-  const replyRatio = replies / Math.max(views, 1);
-  if (ageMinutes == null) {
-    return null;
-  }
+    const replyRatio = replies / Math.max(views, 1);
+    if (ageMinutes == null) {
+      return null;
+    }
 
   let penalty = 0;
   if (ageMinutes <= 60) {
-    if (ageMinutes <= 10) {
+    if (ageMinutes <= 12) {
       return null;
     }
-    const lateFirstHourFit = clamp((ageMinutes - 18) / 42, 0, 1);
-    const minViews = 500 + (lateFirstHourFit * 950);
-    const minVelocity = 450 + (lateFirstHourFit * 1050);
-    const minReplies = 6 + (lateFirstHourFit * 4);
-    const minReplyRatio = 0.004 + (lateFirstHourFit * 0.0004);
-
-    if (views < minViews) {
-      penalty += clamp((minViews - views) / minViews, 0, 1) * weight * 0.44;
+    if (views < 500) {
+      penalty += clamp((500 - views) / 500, 0, 1) * weight * 0.42;
     }
-    if (velocityPerHour < minVelocity) {
-      penalty += clamp((minVelocity - velocityPerHour) / minVelocity, 0, 1) * weight * 0.28;
+    if (velocityPerHour < 450) {
+      penalty += clamp((450 - velocityPerHour) / 450, 0, 1) * weight * 0.3;
     }
-    if (replies < minReplies) {
-      penalty += clamp((minReplies - replies) / minReplies, 0, 1) * weight * 0.18;
+    if (replies < 8) {
+      penalty += clamp((8 - replies) / 8, 0, 1) * weight * 0.18;
     }
-    if (ageMinutes >= 25 && views >= Math.max(900, minViews * 0.72) && replyRatio > 0 && replyRatio < minReplyRatio) {
-      penalty += clamp((minReplyRatio - replyRatio) / minReplyRatio, 0, 1) * weight * 0.1;
+    if (ageMinutes >= 25 && views >= 900 && replyRatio > 0 && replyRatio < 0.004) {
+      penalty += clamp((0.004 - replyRatio) / 0.004, 0, 1) * weight * 0.1;
     }
-    penalty *= 1 + (lateFirstHourFit * 0.22);
     return penalty >= 2 ? penalty : null;
   }
 
   if (ageMinutes <= 120) {
-    const midWindowFit = clamp((ageMinutes - 60) / 60, 0, 1);
-    const minViews = 3000 + (midWindowFit * 1400);
-    const minVelocity = 1200 + (midWindowFit * 700);
-    const minReplies = 12 + (midWindowFit * 2);
-    const minReplyRatio = 0.0034 + (midWindowFit * 0.0002);
-
-    if (views < minViews) {
-      penalty += clamp((minViews - views) / minViews, 0, 1) * weight * 0.46;
+    if (views < 3000) {
+      penalty += clamp((3000 - views) / 3000, 0, 1) * weight * 0.44;
     }
-    if (velocityPerHour < minVelocity) {
-      penalty += clamp((minVelocity - velocityPerHour) / minVelocity, 0, 1) * weight * 0.3;
+    if (velocityPerHour < 1200) {
+      penalty += clamp((1200 - velocityPerHour) / 1200, 0, 1) * weight * 0.28;
     }
-    if (replies < minReplies) {
-      penalty += clamp((minReplies - replies) / minReplies, 0, 1) * weight * 0.12;
+    if (replies < 12) {
+      penalty += clamp((12 - replies) / 12, 0, 1) * weight * 0.12;
     }
-    if (replies > 54) {
-      penalty += clamp((replies - 54) / 72, 0, 1) * weight * 0.22;
+    if (replies > 60) {
+      penalty += clamp((replies - 60) / 80, 0, 1) * weight * 0.22;
     }
-    if (replies > 76) {
-      penalty += clamp((replies - 76) / 72, 0, 1) * weight * 0.12;
+    if (replies > 80) {
+      penalty += clamp((replies - 80) / 80, 0, 1) * weight * 0.12;
     }
-    if (views >= minViews && replyRatio > 0 && replyRatio < minReplyRatio) {
-      penalty += clamp((minReplyRatio - replyRatio) / minReplyRatio, 0, 1) * weight * 0.1;
+    if (views >= 3000 && replyRatio > 0 && replyRatio < 0.0034) {
+      penalty += clamp((0.0034 - replyRatio) / 0.0034, 0, 1) * weight * 0.1;
     }
-    penalty += midWindowFit * weight * 0.12;
-    penalty *= 1 + (midWindowFit * 0.2);
     return penalty >= 2 ? penalty : null;
   }
 
@@ -3032,10 +3106,46 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
     });
     const understandingConfidence = computeUnderstandingConfidence(tweet, mediaSemanticContext);
     const authorFit = computeAuthorFit(tweet, matchedTopics, matchedLanguages);
+    const postBlastScore = postScore;
+    const replyPickupScore = reachLikelihood;
+    const heatReplyGapPenalty = computeHeatReplyGapPenalty(postBlastScore, replyPickupScore);
+    if (heatReplyGapPenalty != null) {
+      score -= heatReplyGapPenalty;
+      breakdown.push({
+        key: "heatReplyGap",
+        label: "Hot post, weak reply slot",
+        amount: -heatReplyGapPenalty,
+        kind: "penalty"
+      });
+    }
+    const blockReason = computeBlockReason(tweet, mediaSemanticContext, understandingConfidence);
+    const executionScore = computeExecutionScore({
+      understandingConfidence,
+      sourceSurfaceBonus: sourceSurfaceSignal.amount || 0,
+      visionRequiredPenalty: visionRequiredPenalty || 0,
+      emptySemanticPenalty: emptySemanticPenalty || 0,
+      unsupportedLanguagePenalty: unsupportedLanguagePenalty || 0,
+      timingWindowPenalty: timingWindowPenalty || 0,
+      peakDecayPenalty: peakDecayPenalty || 0,
+      unprovenWindowPenalty: unprovenWindowPenalty || 0,
+      blockReason
+    });
+    const predictedCommentExposure = computePredictedCommentExposure({
+      postBlastScore,
+      replyPickupScore,
+      executionScore,
+      trafficMismatchPenalty: trafficMismatchPenalty || 0,
+      broadcastFormatPenalty: broadcastFormatPenalty || 0,
+      verifiedPileOnPenalty: verifiedPileOnPenalty || 0,
+      crowdingPenalty: crowdingPenalty || 0,
+      followTrainBaitPenalty: followTrainBaitPenalty || 0,
+      protocolPromoPenalty: protocolPromoPenalty || 0
+    });
     const penalties = Math.round(clamp(
       (unprovenWindowPenalty || 0) * 0.4 +
       (crowdingPenalty || 0) * 0.65 +
       (trafficMismatchPenalty || 0) * 0.58 +
+      (heatReplyGapPenalty || 0) * 0.84 +
       (broadcastFormatPenalty || 0) * 0.84 +
       (followTrainBaitPenalty || 0) * 1.18 +
       (socialGrowthFlexPenalty || 0) * 1.08 +
@@ -3056,11 +3166,13 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       82
     ));
     const weightedScore = (
-      postScore * 0.5 +
-      reachLikelihood * 0.2 +
-      understandingConfidence * 0.2 +
-      authorFit * 0.1 -
-      penalties
+      postBlastScore * 0.22 +
+      replyPickupScore * 0.28 +
+      predictedCommentExposure * 0.24 +
+      executionScore * 0.16 +
+      understandingConfidence * 0.06 +
+      authorFit * 0.04 -
+      penalties * 0.38
     );
     let clampedScore = Math.round(clamp((score * 0.35) + (weightedScore * 0.65), 0, 100));
     const executorHardCap = computeExecutorHardCap(tweet, {
@@ -3102,7 +3214,6 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       .sort((a, b) => a.amount - b.amount);
 
     const highlights = buildHighlights(positiveBreakdown, negativeBreakdown);
-    const blockReason = computeBlockReason(tweet, mediaSemanticContext, understandingConfidence);
 
     const tooltipLines = [
       `Score ${clampedScore} · ${tier}`,
@@ -3110,6 +3221,7 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       ...positiveBreakdown.slice(0, 4).map(formatBreakdownText),
       ...negativeBreakdown.slice(0, 2).map(formatBreakdownText)
     ];
+    tooltipLines[1] = `Blast ${postBlastScore} · Pickup ${replyPickupScore} · Exec ${executionScore} · Expo ${predictedCommentExposure}`;
 
     return {
       score: clampedScore,
@@ -3120,7 +3232,11 @@ function computeTimingWindowPenalty(tweet, weight = 18) {
       matchedTopics: matchedTopics.map((topic) => topic.key),
       sourceSurface: sourceSurfaceSignal.surface,
       postScore,
+      postBlastScore,
       reachLikelihood,
+      replyPickupScore,
+      executionScore,
+      predictedCommentExposure,
       understandingConfidence,
       authorFit,
       penalties,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.254
+
+- split post heat from reply pickup scoring：`scorer.js` 拆出 `postBlastScore`、`replyPickupScore`、`executionScore`、`predictedCommentExposure`
+- 新增 `heatReplyGapPenalty`，专门惩罚“主帖热但回复位弱”的假高分机会
+- `content.js` 把新分值接进 candidate payload、API summary、context scoring、`attachCandidateExecutionMeta()`、`reply-now / auto-safe / fallback` 判定和 recent / floating 排序，优先看评论位曝光而不是只看主帖热度
+
 ## 0.2.253
 
 - 保留 `0.2.252` 新上的 reply ledger / pickup performance 跟踪链，但把 homepage traffic gating 重新收紧到人工实盘口径：`0-60` 分钟和 `60-120` 分钟都要求更高流量证明

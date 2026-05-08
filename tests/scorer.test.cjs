@@ -128,7 +128,8 @@ test("scorer tightens late first-hour posts that still have not stood up", () =>
   });
 
   assert.ok(softLateHour.score < provenLateHour.score);
-  assert.ok(softLateHour.score < 54, `soft late first-hour post scored ${softLateHour.score}`);
+  assert.ok(softLateHour.predictedCommentExposure < 48, `soft late first-hour post exposure scored ${softLateHour.predictedCommentExposure}`);
+  assert.ok(softLateHour.replyPickupScore < provenLateHour.replyPickupScore);
   assert.ok(hasBreakdownKey(softLateHour, ["timingWindow", "unprovenWindow"]));
   assert.ok(hasBreakdownKey(provenLateHour, ["accelerationWindow", "trafficMomentum"]));
 });
@@ -174,7 +175,8 @@ test("scorer restores the original 60-120 minute traffic-first gate", () => {
   });
 
   assert.ok(strongMidWindow.score > weakMidWindow.score);
-  assert.ok(weakMidWindow.score <= 54, `weak 60-120 minute post scored ${weakMidWindow.score}`);
+  assert.ok(weakMidWindow.predictedCommentExposure < 52, `weak 60-120 minute post exposure scored ${weakMidWindow.predictedCommentExposure}`);
+  assert.ok(weakMidWindow.replyPickupScore < strongMidWindow.replyPickupScore);
   assert.ok(hasBreakdownKey(weakMidWindow, ["timingWindow", "unprovenWindow"]));
   assert.ok(hasBreakdownKey(strongMidWindow, ["accelerationWindow", "trafficMomentum"]));
 });
@@ -788,10 +790,12 @@ test("scorer demotes p2.193 unsupported language, flow bait, and weak geo-news l
   assert.ok(hasBreakdownKey(bricsBroadcast, ["verifiedOrganization", "crowding", "trafficMismatch", "protocolPromo"]));
   assert.ok(web3Networking.breakdown.some((item) => item.key === "protocolPromo"));
   assert.ok(salaciousPrompt.breakdown.some((item) => item.key === "riskyContent"));
+  assert.ok(salaciousPrompt.breakdown.some((item) => item.key === "heatReplyGap"));
   assert.ok(turkishUnsupported.score < 54);
   assert.ok(bricsBroadcast.score < 54);
   assert.ok(web3Networking.score < 54);
-  assert.ok(salaciousPrompt.score >= 54);
+  assert.ok(salaciousPrompt.predictedCommentExposure < 24);
+  assert.ok(salaciousPrompt.score < 54);
 });
 
 test("scorer demotes empty text candidates before recommendation", () => {
@@ -1201,6 +1205,10 @@ test("scorer returns multidimensional fields for downstream ranking", () => {
 
   assert.equal(typeof analysis.postScore, "number");
   assert.equal(typeof analysis.reachLikelihood, "number");
+  assert.equal(typeof analysis.postBlastScore, "number");
+  assert.equal(typeof analysis.replyPickupScore, "number");
+  assert.equal(typeof analysis.executionScore, "number");
+  assert.equal(typeof analysis.predictedCommentExposure, "number");
   assert.equal(typeof analysis.understandingConfidence, "number");
   assert.equal(typeof analysis.authorFit, "number");
   assert.equal(typeof analysis.finalScore, "number");

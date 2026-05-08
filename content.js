@@ -464,7 +464,11 @@
       mediaKind: String(candidate.mediaKind || "").trim(),
       sourceSurface: String(candidate.sourceSurface || "").trim(),
       postScore: Number(candidate.postScore || candidate.score || 0),
+      postBlastScore: Number(candidate.postBlastScore || candidate.postScore || candidate.score || 0),
       reachLikelihood: Number(candidate.reachLikelihood || 0),
+      replyPickupScore: Number(candidate.replyPickupScore || candidate.reachLikelihood || 0),
+      executionScore: Number(candidate.executionScore || candidate.understandingConfidence || 0),
+      predictedCommentExposure: Number(candidate.predictedCommentExposure || candidate.reachLikelihood || 0),
       understandingConfidence: Number(candidate.understandingConfidence || 0),
       authorFit: Number(candidate.authorFit || 0),
       finalScore: Number(candidate.finalScore || candidate.score || 0),
@@ -512,7 +516,11 @@
       attributionKind: String(item.attributionKind || "").trim(),
       sourceSurface: String(item.sourceSurface || "").trim(),
       postScore: Number(item.postScore || item.score || 0),
+      postBlastScore: Number(item.postBlastScore || item.postScore || item.score || 0),
       reachLikelihood: Number(item.reachLikelihood || 0),
+      replyPickupScore: Number(item.replyPickupScore || item.reachLikelihood || 0),
+      executionScore: Number(item.executionScore || item.understandingConfidence || 0),
+      predictedCommentExposure: Number(item.predictedCommentExposure || item.reachLikelihood || 0),
       understandingConfidence: Number(item.understandingConfidence || 0),
       authorFit: Number(item.authorFit || 0),
       finalScore: Number(item.finalScore || item.score || 0),
@@ -651,7 +659,11 @@
       mediaAltText: sanitizeSnippet(candidate?.mediaAltText, 220),
       sourceSurface: String(candidate?.sourceSurface || "").trim().slice(0, 24),
       postScore: Number(candidate?.postScore || candidate?.score || 0),
+      postBlastScore: Number(candidate?.postBlastScore || candidate?.postScore || candidate?.score || 0),
       reachLikelihood: Number(candidate?.reachLikelihood || 0),
+      replyPickupScore: Number(candidate?.replyPickupScore || candidate?.reachLikelihood || 0),
+      executionScore: Number(candidate?.executionScore || candidate?.understandingConfidence || 0),
+      predictedCommentExposure: Number(candidate?.predictedCommentExposure || candidate?.reachLikelihood || 0),
       understandingConfidence: Number(candidate?.understandingConfidence || 0),
       authorFit: Number(candidate?.authorFit || 0),
       finalScore: Number(candidate?.finalScore || candidate?.score || 0),
@@ -1057,7 +1069,11 @@
       "score",
       "baseScore",
       "postScore",
+      "postBlastScore",
       "reachLikelihood",
+      "replyPickupScore",
+      "executionScore",
+      "predictedCommentExposure",
       "understandingConfidence",
       "authorFit",
       "finalScore"
@@ -1206,6 +1222,10 @@
   function getCandidateLaneDescriptor(candidate = {}, uiLanguage = "zh-Hans") {
     const score = Number(candidate?.score) || 0;
     const opportunityBoost = Number(candidate?.opportunityBoost) || 0;
+    const postBlastScore = getCandidatePostBlastScore(candidate);
+    const replyPickupScore = getCandidateReplyPickupScore(candidate);
+    const executionScore = Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0))));
+    const predictedCommentExposure = getCandidatePredictedCommentExposure(candidate);
     const relationshipStatus = String(candidate?.relationshipStatus || "").trim();
     const attributionKind = String(candidate?.attributionKind || "").trim();
     const replies = Number(candidate?.replies) || 0;
@@ -1258,17 +1278,34 @@
     };
 
     let key = "backlog";
-    if ((crowded || broadcastHeavy) && opportunityBoost < 10 && score < 84 && !validatedRelationshipHot && !memoryHot) {
+    const heatPickupGap = postBlastScore - replyPickupScore;
+    const lowPickupDespiteHeat = (
+      heatPickupGap >= 18 &&
+      predictedCommentExposure < 64 &&
+      !validatedRelationshipHot &&
+      !memoryHot
+    );
+    if ((crowded || broadcastHeavy) && replyPickupScore < 60 && predictedCommentExposure < 62 && !validatedRelationshipHot && !memoryHot) {
       key = "crowded";
     } else if (
-      (score >= 54 && ageMinutes <= 90) ||
-      (score >= 46 && ageMinutes <= 20 && replies >= 1) ||
-      (opportunityBoost >= 10 && ageMinutes <= 90) ||
-      ((validatedRelationshipHot || memoryHot) && ageMinutes <= 90 && score >= 52)
+      ageMinutes <= 90 &&
+      executionScore >= 60 &&
+      predictedCommentExposure >= 58 &&
+      !lowPickupDespiteHeat &&
+      (
+        (replyPickupScore >= 58 && postBlastScore >= 48) ||
+        (replyPickupScore >= 54 && postBlastScore >= 62) ||
+        (opportunityBoost >= 10 && predictedCommentExposure >= 56) ||
+        ((validatedRelationshipHot || memoryHot) && replyPickupScore >= 50) ||
+        (score >= 52 && ageMinutes <= 20 && replies >= 1 && predictedCommentExposure >= 56)
+      )
     ) {
       key = "now";
     } else if (
       ageMinutes <= 180 && (
+        predictedCommentExposure >= 46 ||
+        replyPickupScore >= 50 ||
+        postBlastScore >= 62 ||
         score >= 44 ||
         opportunityBoost >= 6 ||
         relationshipStatus === "follow-up" ||
@@ -1409,6 +1446,81 @@
     return Math.max(0, Math.min(100, Math.round(Number(candidate?.score || 0))));
   }
 
+  function getCandidatePostBlastScore(candidate = {}) {
+    const score = Number(candidate?.postBlastScore ?? candidate?.postScore ?? candidate?.score ?? 0);
+    return Math.max(0, Math.min(100, Math.round(score || 0)));
+  }
+
+  function getCandidateReplyPickupScore(candidate = {}) {
+    const score = Number(candidate?.replyPickupScore ?? candidate?.reachLikelihood ?? 0);
+    return Math.max(0, Math.min(100, Math.round(score || 0)));
+  }
+
+  function getReplyDropHarmonicMean(values = []) {
+    const normalized = (Array.isArray(values) ? values : [])
+      .map((value) => Number(value || 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (!normalized.length) {
+      return 0;
+    }
+    const reciprocalSum = normalized.reduce((sum, value) => sum + (1 / Math.max(1, value)), 0);
+    if (reciprocalSum <= 0) {
+      return 0;
+    }
+    return normalized.length / reciprocalSum;
+  }
+
+  function computeCandidateExecutionScore(candidate = {}, contextCompleteness = {}, timelineInlineReplyEligible = false) {
+    let score = Number(candidate?.executionScore ?? candidate?.understandingConfidence ?? 58);
+    if (!Number.isFinite(score)) {
+      score = 58;
+    }
+    if (timelineInlineReplyEligible) {
+      score += 12;
+    } else {
+      score -= 10;
+    }
+    if (contextCompleteness?.quickDraftAllowed) {
+      score += 6;
+    }
+    if (contextCompleteness?.needsDetailContext) {
+      score -= 16;
+    }
+    if (contextCompleteness?.mediaContextMissing) {
+      score -= 18;
+    }
+    if (candidate?.lowSemanticConfidence) {
+      score -= 10;
+    }
+    if (String(candidate?.blockReason || "").trim()) {
+      score -= 18;
+    }
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  function getCandidatePredictedCommentExposure(candidate = {}, executionScoreOverride = null) {
+    const explicit = executionScoreOverride == null ? Number(candidate?.predictedCommentExposure) : NaN;
+    if (Number.isFinite(explicit) && explicit > 0) {
+      return Math.max(0, Math.min(100, Math.round(explicit)));
+    }
+
+    const postBlastScore = getCandidatePostBlastScore(candidate);
+    const replyPickupScore = getCandidateReplyPickupScore(candidate);
+    const executionScore = Number.isFinite(Number(executionScoreOverride))
+      ? Math.max(0, Math.min(100, Math.round(Number(executionScoreOverride))))
+      : Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore ?? candidate?.understandingConfidence ?? 0))));
+    let exposure = (
+      getReplyDropHarmonicMean([postBlastScore, replyPickupScore, executionScore]) * 0.74 +
+      replyPickupScore * 0.18 +
+      executionScore * 0.08
+    );
+    const mismatch = Math.max(0, postBlastScore - replyPickupScore);
+    if (mismatch >= 12) exposure -= 4;
+    if (mismatch >= 20) exposure -= 5;
+    if (mismatch >= 30) exposure -= 7;
+    return Math.max(0, Math.min(100, Math.round(exposure)));
+  }
+
   function getReplyDropAgeMinutes(timestamp) {
     const normalized = Number(timestamp || 0);
     if (!Number.isFinite(normalized) || normalized <= 0) {
@@ -1438,6 +1550,11 @@
     const previewScore = getCandidateReferenceScore(candidate);
     const currentCandidateScore = getCandidateCurrentScore(candidate);
     const liveScore = Math.max(0, Math.min(100, Math.round(Number(liveAnalysis?.finalScore ?? liveAnalysis?.score ?? 0))));
+    const previewExposureScore = getCandidatePredictedCommentExposure(candidate);
+    const liveExposureScore = Math.max(
+      0,
+      Math.min(100, Math.round(Number(liveAnalysis?.predictedCommentExposure ?? liveAnalysis?.replyPickupScore ?? liveAnalysis?.reachLikelihood ?? 0)))
+    );
     const averageLineScore = getConfiguredAverageLine(state.settings);
     const executorSendFloor = getConfiguredExecutorSendFloor(state.settings);
     const displayThreshold = getConfiguredDisplayThreshold(state.settings);
@@ -1445,11 +1562,14 @@
     const previewSurface = String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim();
     const liveSurface = String(tweet?.sourceSurface || liveAnalysis?.sourceSurface || "").trim();
     const scoreDelta = liveScore - previewScore;
+    const exposureDelta = liveExposureScore - previewExposureScore;
     const currentDelta = liveScore - currentCandidateScore;
     const meaningfulDrop = scoreDelta <= -5;
+    const exposureWeakened = exposureDelta <= -6;
     const belowAverageLine = liveScore < averageLineScore;
     const belowExecutorSendFloor = liveScore < executorSendFloor;
     const belowDisplayThreshold = liveScore < displayThreshold;
+    const belowExposureFloor = liveExposureScore < Math.max(48, Math.min(64, executorSendFloor - 4));
     const olderThanAutoWindow = liveAgeMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES;
     const staleReplyWindow = liveAgeMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES;
     const surfaceChanged = Boolean(previewSurface && liveSurface && previewSurface !== liveSurface);
@@ -1461,6 +1581,9 @@
     if (meaningfulDrop) {
       flags.push("value-dropped-on-open");
     }
+    if (exposureWeakened) {
+      flags.push("reply-pickup-weakened");
+    }
     if (belowAverageLine) {
       flags.push("below-average-line");
     }
@@ -1470,6 +1593,9 @@
     if (belowDisplayThreshold) {
       flags.push("below-display-floor");
     }
+    if (belowExposureFloor) {
+      flags.push("low-comment-exposure");
+    }
     if (olderThanAutoWindow) {
       flags.push(staleReplyWindow ? "older-than-reply-window" : "older-than-auto-window");
     }
@@ -1477,7 +1603,12 @@
       flags.push(String(liveAnalysis.blockReason).trim());
     }
 
-    const skipRecommended = belowDisplayThreshold || belowExecutorSendFloor || olderThanAutoWindow;
+    const skipRecommended = (
+      belowDisplayThreshold ||
+      belowExecutorSendFloor ||
+      belowExposureFloor ||
+      olderThanAutoWindow
+    );
     if (skipRecommended) {
       flags.push("skip-recommended");
     }
@@ -1498,8 +1629,11 @@
       previewScore,
       currentCandidateScore,
       liveScore,
+      previewExposureScore,
+      liveExposureScore,
       liveAgeMinutes,
       scoreDelta,
+      exposureDelta,
       currentDelta,
       previewSurface,
       liveSurface,
@@ -1507,9 +1641,11 @@
       executorSendFloor,
       displayThreshold,
       meaningfulDrop,
+      exposureWeakened,
       belowAverageLine,
       belowExecutorSendFloor,
       belowDisplayThreshold,
+      belowExposureFloor,
       olderThanAutoWindow,
       staleReplyWindow,
       skipRecommended,
@@ -1674,6 +1810,10 @@
       .map((candidate, index) => ({
         candidate,
         index,
+        postBlastScore: getCandidatePostBlastScore(candidate),
+        replyPickupScore: getCandidateReplyPickupScore(candidate),
+        executionScore: Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0)))),
+        predictedCommentExposure: getCandidatePredictedCommentExposure(candidate),
         trafficProfile: buildExecutorTrafficProfile({
           views: candidate?.views,
           replies: candidate?.replies,
@@ -1685,10 +1825,13 @@
       .sort((left, right) => (
         Number(Boolean(right.candidate?.timelineInlineReplyEligible)) - Number(Boolean(left.candidate?.timelineInlineReplyEligible)) ||
         getFreshnessBucket(right.candidate) - getFreshnessBucket(left.candidate) ||
+        right.predictedCommentExposure - left.predictedCommentExposure ||
+        right.replyPickupScore - left.replyPickupScore ||
+        right.executionScore - left.executionScore ||
         right.trafficProfile.priority - left.trafficProfile.priority ||
         Number(right.candidate?.finalScore || right.candidate?.score || 0) - Number(left.candidate?.finalScore || left.candidate?.score || 0) ||
         Number(right.candidate?.opportunityBoost || 0) - Number(left.candidate?.opportunityBoost || 0) ||
-        Number(right.candidate?.postScore || 0) - Number(left.candidate?.postScore || 0) ||
+        right.postBlastScore - left.postBlastScore ||
         Number(right.candidate?.timestamp || 0) - Number(left.candidate?.timestamp || 0) ||
         left.index - right.index
       ))
@@ -2258,7 +2401,11 @@
         baseScore: Number(candidate?.baseScore || candidate?.score || 0),
         opportunityBoost: Number(candidate?.opportunityBoost || 0),
         postScore: Number(candidate?.postScore || candidate?.score || 0),
+        postBlastScore: Number(candidate?.postBlastScore || candidate?.postScore || candidate?.score || 0),
         reachLikelihood: Number(candidate?.reachLikelihood || 0),
+        replyPickupScore: Number(candidate?.replyPickupScore || candidate?.reachLikelihood || 0),
+        executionScore: Number(candidate?.executionScore || candidate?.understandingConfidence || 0),
+        predictedCommentExposure: Number(candidate?.predictedCommentExposure || candidate?.reachLikelihood || 0),
         understandingConfidence: Number(candidate?.understandingConfidence || 0),
         authorFit: Number(candidate?.authorFit || 0),
         finalScore: Number(candidate?.finalScore || candidate?.score || 0),
@@ -2471,6 +2618,8 @@
       return false;
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const predictedCommentExposure = Number(context.scoring?.predictedCommentExposure || context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0);
+    const executionScore = Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0);
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
     const trafficProfile = buildExecutorTrafficProfile({
@@ -2489,7 +2638,11 @@
     if (!trafficProfile.qualified) {
       return false;
     }
-    return score >= executorSendFloor;
+    return (
+      score >= executorSendFloor &&
+      predictedCommentExposure >= Math.max(48, executorSendFloor - 4) &&
+      executionScore >= 54
+    );
   }
 
   function normalizeExecutorPolicyText(value = "") {
@@ -2584,9 +2737,16 @@
       return false;
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const predictedCommentExposure = Number(context.scoring?.predictedCommentExposure || context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0);
+    const executionScore = Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0);
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
-    if (score < executorSendFloor || ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES) {
+    if (
+      score < executorSendFloor ||
+      predictedCommentExposure < Math.max(48, executorSendFloor - 6) ||
+      executionScore < 46 ||
+      ageMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES
+    ) {
       return false;
     }
     if (context.execution?.timelineInlineReplyEligible) {
@@ -2605,6 +2765,8 @@
       return ["invalid-context"];
     }
     const score = Number(context.scoring?.score || context.scoring?.finalScore || 0);
+    const predictedCommentExposure = Number(context.scoring?.predictedCommentExposure || context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0);
+    const executionScore = Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0);
     const displayThreshold = Number(context.recheck?.displayThreshold || getConfiguredDisplayThreshold(state.settings));
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
@@ -2630,6 +2792,12 @@
     }
     if (score < executorSendFloor) {
       reasons.push("below-executor-send-floor");
+    }
+    if (predictedCommentExposure < Math.max(46, displayThreshold - 4)) {
+      reasons.push("below-comment-exposure-floor");
+    }
+    if (executionScore < 54) {
+      reasons.push("low-execution-score");
     }
     if (!trafficProfile.qualified) {
       reasons.push("below-traffic-floor");
@@ -2682,6 +2850,10 @@
       textSummary: String(context.post?.text || "").trim().slice(0, 160),
       score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
       finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
+      postBlastScore: Number(context.scoring?.postBlastScore || context.scoring?.postScore || 0),
+      replyPickupScore: Number(context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0),
+      executionScore: Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0),
+      predictedCommentExposure: Number(context.scoring?.predictedCommentExposure || context.scoring?.reachLikelihood || 0),
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
       laneKey: String(context.routing?.laneKey || "").trim(),
       laneLabel: String(context.routing?.laneLabel || "").trim(),
@@ -2746,6 +2918,10 @@
       tweetId: String(context.tweetId || "").trim(),
       score: Number(context.scoring?.score || context.scoring?.finalScore || 0),
       finalScore: Number(context.scoring?.finalScore || context.scoring?.score || 0),
+      postBlastScore: Number(context.scoring?.postBlastScore || context.scoring?.postScore || 0),
+      replyPickupScore: Number(context.scoring?.replyPickupScore || context.scoring?.reachLikelihood || 0),
+      executionScore: Number(context.scoring?.executionScore || context.scoring?.understandingConfidence || 0),
+      predictedCommentExposure: Number(context.scoring?.predictedCommentExposure || context.scoring?.reachLikelihood || 0),
       views: trafficProfile.views,
       replies: trafficProfile.replies,
       trafficVelocityPerHour: trafficProfile.velocityPerHour,
@@ -6211,7 +6387,11 @@
       mediaAltText: sanitizeSnippet(tweet.mediaAltText, 220),
       sourceSurface: String(tweet.sourceSurface || analysis.sourceSurface || "").trim(),
       postScore: Number(analysis.postScore || analysis.score || 0),
+      postBlastScore: Number(analysis.postBlastScore || analysis.postScore || analysis.score || 0),
       reachLikelihood: Number(analysis.reachLikelihood || 0),
+      replyPickupScore: Number(analysis.replyPickupScore || analysis.reachLikelihood || 0),
+      executionScore: Number(analysis.executionScore || analysis.understandingConfidence || 0),
+      predictedCommentExposure: Number(analysis.predictedCommentExposure || analysis.reachLikelihood || 0),
       understandingConfidence: Number(analysis.understandingConfidence || 0),
       authorFit: Number(analysis.authorFit || 0),
       finalScore: Number(analysis.finalScore || analysis.score || 0),
@@ -6257,12 +6437,23 @@
     const normalizedCandidate = candidate && typeof candidate === "object" ? { ...candidate } : {};
     const contextCompleteness = buildDraftContextCompleteness(normalizedCandidate, article, false, mediaSummary);
     const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, article);
+    const executionScore = computeCandidateExecutionScore(
+      normalizedCandidate,
+      contextCompleteness,
+      timelineInlineReplyEligible
+    );
+    const predictedCommentExposure = getCandidatePredictedCommentExposure(
+      normalizedCandidate,
+      executionScore
+    );
     return {
       ...normalizedCandidate,
       needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
       mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
       quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
       mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
+      executionScore,
+      predictedCommentExposure,
       timelineInlineReplyEligible,
       preferredOpenMode: timelineInlineReplyEligible ? "timeline-inline" : "detail-page"
     };
@@ -6908,9 +7099,13 @@
           phase: candidate?.trafficPhase,
           timestamp: candidate?.timestamp
         });
+        const predictedCommentExposure = getCandidatePredictedCommentExposure(candidate);
+        const executionScore = Math.max(0, Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0))));
         return (
           recommendedDecision === "reply-now" &&
           getCandidateCurrentScore(candidate) >= displayThreshold &&
+          predictedCommentExposure >= Math.max(44, displayThreshold - 6) &&
+          executionScore >= 54 &&
           trafficProfile.qualified
         );
       });
@@ -7536,8 +7731,7 @@
       }
     }
 
-    const sortedRecentCandidates = recentCandidates
-      .sort((a, b) => b.score - a.score || b.timestamp - a.timestamp)
+    const sortedRecentCandidates = sortApiAgentCandidates(recentCandidates)
       .slice(0, EXECUTOR_SCAN_WINDOW_SIZE);
     highScoreCount = getFloatingPanelHighScoreCount(sortedRecentCandidates);
     const completedAt = Date.now();
