@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.258
+
+- rework executor candidate supply for throughput: `getExecutorInbox()` 新增默认开启的 `preservePool` / `autoResetIfStopped` 行为，优先连续消费 reply-now backlog，不再把“已展示过”候选直接打空
+- soften `stop-round` for supply recovery: `empty-scan-limit / round-idle-timeout` 这类 soft stop 现在可在 backlog 或新候选出现时自动解锁，`refreshRecommendations()` 也会顺手解除 soft stop
+- add throughput telemetry and inline fast-lane: roundState / pickDiagnostics 新增 backlog、scan/send、route rate 等吞吐指标；`quickDraftAllowed + mediaNotInspectedTextSufficient` 的媒体帖会优先走 timeline inline fast lane，不再无谓进 detail
+
+## 0.2.257
+
+- fix reply-auto execution routing: `timeline_inline` 继续走 `reply-from-timeline`，`detail_inspect_then_reply` 现在明确走 `inspect-then-reply`，不再误落到普通 `reply`
+- make `inspect-then-reply` a real detail-send path: 先按详情路线打开 composer，再提交草稿，不再是假动作式直接 `submit`
+- propagate `open-composer` failure reasons to the top-level executor result: `open.reasonCode / reason / reasonLabel` 会被抬到顶层，后续压测能直接看到真实发送卡点
+
+## 0.2.256
+
+- harden send execution path against begin-failed / UI automation drift：补上日文 `返信 / 返信先` composer 识别、日文发送成功/失败 toast 识别，以及状态页复核兜底，降低 `send-not-verified` 误报
+- detail reply 导航优先点击卡片内 status 链接而不是直接硬跳页，尽量保持 X 的页内路由，减少 detail handoff 把执行链打断的概率
+- `replydrop-api-bridge.js` 的 async ticket 改为落到 `sessionStorage`，切页后会恢复已完成票据，并把中断中的 pending ticket 明确标成 document reloaded，而不再直接掉成 `ticket-not-found`
+
 ## 0.2.255
 
 - keep media posts in sampling and route them to detail inspection instead of downgrading：媒体帖继续留在采样池，`scorer.js` 不再因为 `vision / OCR` 缺失直接压低 `replyPickup / execution / finalScore`

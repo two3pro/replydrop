@@ -6,9 +6,9 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.255`
+当前重置基线版本：`0.2.258`
 
-当前 Chrome / Brave 公开包继续沿用 Safari `0.2.249` 的共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，而 `0.2.255` 继续把“值不值得现在处理”和“怎么处理”拆开，高分媒体帖不再因为需要看图而失去绿色资格。
+当前 Chrome / Brave 公开包继续沿用 Safari `0.2.249` 的共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，而 `0.2.258` 继续收口候选供给与吞吐，把 backlog、soft unlock、inline fast lane 和 throughput telemetry 补进执行层。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -160,7 +160,7 @@ await window.ReplyDropExecutor.getDraftTargets({ limit: 6 })
 await window.ReplyDropExecutor.getDraftContext("2045354208548069468")
 await window.ReplyDropExecutor.setDraftPreview({ tweetId: "2045354208548069468", replyText: "your finished draft" })
 await window.ReplyDropExecutor.refreshRecommendations({ mode: "scroll", pages: 2 })
-await window.ReplyDropExecutor.getExecutorInbox({ limit: 6 })
+await window.ReplyDropExecutor.getExecutorInbox({ limit: 6, roundId: "round-20260509-am", sessionId: "ops-1" })
 await window.ReplyDropExecutor.getExecutorContext("2045354208548069468")
 await window.ReplyDropExecutor.getExecutorSchema()
 await window.ReplyDropExecutor.getState()
@@ -168,9 +168,9 @@ await window.ReplyDropExecutor.addToQueue("2045354208548069468")
 await window.ReplyDropExecutor.openComposer({ tweetId: "2045354208548069468", draft: "your reply text" })
 await window.ReplyDropExecutor.replyFromTimeline({ tweetId: "2045354208548069468", draft: "your reply text" })
 await window.ReplyDropExecutor.submitReply({ autoLikeIfChinese: true })
-await window.ReplyDropExecutor.runExecutorAction({ action: "reply", tweetId: "2045354208548069468", draft: "your reply text" })
-await window.ReplyDropExecutor.markShipped("2045354208548069468", "your reply text")
-await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
+await window.ReplyDropExecutor.runExecutorAction({ action: "reply", tweetId: "2045354208548069468", draft: "your reply text", roundId: "round-20260509-am", sessionId: "ops-1" })
+await window.ReplyDropExecutor.markShipped({ tweetId: "2045354208548069468", replyText: "your reply text", roundId: "round-20260509-am", sessionId: "ops-1" })
+await window.ReplyDropExecutor.skipCandidate({ tweetId: "2045354208548069468", roundId: "round-20260509-am", sessionId: "ops-1" })
 ```
 
 - 深入说明见 [AUTOMATION.md](./AUTOMATION.md)
@@ -180,6 +180,7 @@ await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
   - `autoLikeIfChinese` 这类 agent 专用发送选项
   - `refreshRecommendations()` / `emptyInboxRecovery` 空候选重扫规则
   - 90 秒正常目标与 120 秒硬截止执行策略
+  - `roundState` / `recommendedResult=stop-round` 这类轮次止损信号
   - 自动化限制与注意事项
 
 - 一个最短的 CDP evaluate 示例：
@@ -187,7 +188,14 @@ await window.ReplyDropExecutor.skipCandidate("2045354208548069468")
 ```js
 await page.evaluate(async () => {
   const executor = window.ReplyDropExecutor || window.ReplyDropAPI;
-  const inbox = await executor.getExecutorInbox({ limit: 6 });
+  const inbox = await executor.getExecutorInbox({
+    limit: 6,
+    roundId: "round-20260509-am",
+    sessionId: "ops-1"
+  });
+  if (inbox.roundState?.isStopped) {
+    return { stopReason: inbox.roundState.stopReason, roundState: inbox.roundState };
+  }
   if (!inbox.candidates.length) return null;
   const lead = inbox.candidates[0];
   return {
@@ -227,7 +235,7 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.255.zip](./downloads/replydrop-p2.255.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.258.zip](./downloads/replydrop-p2.258.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
 - Safari for macOS 源码包：[replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
@@ -235,7 +243,7 @@ await page.evaluate(async () => {
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.255`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.258`
   - Safari 当前走单独版本线 `0.2.249`
 
 ## 本地安装

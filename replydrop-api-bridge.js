@@ -303,6 +303,8 @@
   const pending = new Map();
   const asyncTickets = new Map();
   const MAX_ASYNC_TICKETS = 64;
+  const ASYNC_TICKET_STORAGE_KEY = "__ReplyDropAsyncTicketsV2";
+  const ASYNC_TICKET_MAX_AGE_MS = 30 * 60 * 1000;
   let sequence = 0;
   let asyncSequence = 0;
 
@@ -355,6 +357,122 @@
     }
   }
 
+  function getAsyncTicketStorage() {
+    try {
+      return global.sessionStorage || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeAsyncTicketEntry(entry = {}) {
+    const ticketId = String(entry?.ticketId || "").trim();
+    if (!ticketId) {
+      return null;
+    }
+    const startedAt = Number(entry?.startedAt || Date.now());
+    const updatedAt = Number(entry?.updatedAt || startedAt || Date.now());
+    return {
+      ticketId,
+      method: String(entry?.method || "").trim(),
+      mode: String(entry?.mode || "action").trim() || "action",
+      state: String(entry?.state || "pending").trim() || "pending",
+      done: Boolean(entry?.done),
+      startedAt,
+      updatedAt,
+      ok: Boolean(entry?.ok),
+      result: entry?.result ?? null,
+      error: String(entry?.error || "").trim()
+    };
+  }
+
+  function trimAsyncTickets() {
+    const now = Date.now();
+    Array.from(asyncTickets.entries()).forEach(([ticketId, entry]) => {
+      const updatedAt = Number(entry?.updatedAt || entry?.startedAt || 0);
+      if (updatedAt > 0 && now - updatedAt > ASYNC_TICKET_MAX_AGE_MS) {
+        asyncTickets.delete(ticketId);
+      }
+    });
+    while (asyncTickets.size > MAX_ASYNC_TICKETS) {
+      const oldestKey = asyncTickets.keys().next().value;
+      asyncTickets.delete(oldestKey);
+    }
+  }
+
+  function persistAsyncTickets() {
+    const storage = getAsyncTicketStorage();
+    if (!storage) {
+      return;
+    }
+    trimAsyncTickets();
+    const entries = Array.from(asyncTickets.values())
+      .map((entry) => normalizeAsyncTicketEntry(entry))
+      .filter(Boolean)
+      .sort((left, right) => (
+        Number(left.updatedAt || left.startedAt || 0) - Number(right.updatedAt || right.startedAt || 0)
+      ));
+    try {
+      if (!entries.length) {
+        storage.removeItem(ASYNC_TICKET_STORAGE_KEY);
+        return;
+      }
+      storage.setItem(ASYNC_TICKET_STORAGE_KEY, JSON.stringify(entries));
+    } catch {
+      // Best-effort persistence only.
+    }
+  }
+
+  function recoverPersistedAsyncTickets() {
+    const storage = getAsyncTicketStorage();
+    if (!storage) {
+      return;
+    }
+    let raw = "";
+    try {
+      raw = String(storage.getItem(ASYNC_TICKET_STORAGE_KEY) || "");
+    } catch {
+      raw = "";
+    }
+    if (!raw) {
+      return;
+    }
+
+    let parsed = [];
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = [];
+    }
+
+    const now = Date.now();
+    parsed.forEach((entry) => {
+      const normalized = normalizeAsyncTicketEntry(entry);
+      if (!normalized) {
+        return;
+      }
+      if (now - Number(normalized.updatedAt || normalized.startedAt || 0) > ASYNC_TICKET_MAX_AGE_MS) {
+        return;
+      }
+      if (!normalized.done) {
+        normalized.state = "rejected";
+        normalized.done = true;
+        normalized.ok = false;
+        normalized.updatedAt = now;
+        normalized.error = normalized.error || "replydrop-api-document-reloaded";
+        normalized.result = {
+          ok: false,
+          reason: "replydrop-api-document-reloaded",
+          reasonCode: "replydrop-api-document-reloaded",
+          method: normalized.method,
+          ticketId: normalized.ticketId
+        };
+      }
+      asyncTickets.set(normalized.ticketId, normalized);
+    });
+    persistAsyncTickets();
+  }
+
   function call(method, ...args) {
     return new Promise((resolve, reject) => {
       const id = `${Date.now()}:${++sequence}`;
@@ -383,10 +501,8 @@
   }
 
   function pruneAsyncTickets() {
-    while (asyncTickets.size > MAX_ASYNC_TICKETS) {
-      const oldestKey = asyncTickets.keys().next().value;
-      asyncTickets.delete(oldestKey);
-    }
+    trimAsyncTickets();
+    persistAsyncTickets();
   }
 
   function createAsyncTicket(method, mode = "call") {
@@ -419,7 +535,20 @@
       updatedAt: Date.now()
     };
     asyncTickets.set(ticketId, next);
+    persistAsyncTickets();
     return next;
+  }
+
+  function deleteAsyncTicket(ticketId) {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return false;
+    }
+    const deleted = asyncTickets.delete(normalizedTicketId);
+    if (deleted) {
+      persistAsyncTickets();
+    }
+    return deleted;
   }
 
   function beginAsyncAction(method, args = []) {
@@ -480,7 +609,7 @@
       };
     }
     if (options?.consume && entry.done) {
-      asyncTickets.delete(normalizedTicketId);
+      deleteAsyncTicket(normalizedTicketId);
     }
     return {
       ok: true,
@@ -495,6 +624,8 @@
       error: entry.error || ""
     };
   }
+
+  recoverPersistedAsyncTickets();
 
   const api = Object.freeze({
     getCapabilities() {

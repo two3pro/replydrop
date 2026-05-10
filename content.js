@@ -14,8 +14,8 @@
   const API_BRIDGE_CHANNEL = "replydrop-api-v1";
   const TRAFFIC_CHANNEL = "replydrop-traffic-v1";
   const ARTICLE_SELECTOR = '[data-testid="tweet"]';
-  const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复"];
-  const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复"];
+  const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复", "返信", "リプライ"];
+  const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复", "返信先", "返信"];
   const DEFAULT_EXECUTOR_SEND_FLOOR = 45;
   const EXECUTOR_EMPTY_INBOX_MIN_RESCANS = 1;
   const EXECUTOR_ROUND_MAX_TARGETS = 10;
@@ -28,6 +28,11 @@
   const MAX_DRAFT_PREVIEWS = 48;
   const EXECUTOR_ROUND_BUDGET_MS = 12 * 60 * 1000;
   const EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT = 3;
+  const EXECUTOR_EMPTY_SCAN_LIMIT = 3;
+  const EXECUTOR_ROUND_IDLE_STOP_MS = 90 * 1000;
+  const EXECUTOR_ROUND_EXECUTION_FAULT_LIMIT = 3;
+  const EXECUTOR_ROUND_RUNTIME_TTL_MS = 6 * 60 * 60 * 1000;
+  const EXECUTOR_ROUND_HISTORY_LIMIT = 18;
   const EXECUTOR_TARGET_GOAL_MS = 20 * 1000;
   const EXECUTOR_TARGET_TIMEOUT_MS = 20 * 1000;
   const EXECUTOR_NO_CANDIDATE_TIMEOUT_MS = 15 * 1000;
@@ -47,12 +52,12 @@
   const EXECUTOR_TRENDING_MIN_TRAFFIC_VIEWS = 150;
   const EXECUTOR_RISING_MIN_TRAFFIC_VIEWS = 120;
   const EXECUTOR_RISING_MIN_TRAFFIC_VELOCITY_PER_HOUR = 400;
-  const EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS = 1800;
-  const EXECUTOR_TIMELINE_READY_TIMEOUT_MS = 1500;
-  const EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS = 3600;
-  const EXECUTOR_DETAIL_READY_TIMEOUT_MS = 1800;
-  const EXECUTOR_SETTLE_TIMEOUT_MS = 1600;
-  const EXECUTOR_POST_SEND_VERIFY_TIMEOUT_MS = 4200;
+  const EXECUTOR_TIMELINE_OPEN_TIMEOUT_MS = 2400;
+  const EXECUTOR_TIMELINE_READY_TIMEOUT_MS = 1900;
+  const EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS = 4200;
+  const EXECUTOR_DETAIL_READY_TIMEOUT_MS = 2200;
+  const EXECUTOR_SETTLE_TIMEOUT_MS = 2200;
+  const EXECUTOR_POST_SEND_VERIFY_TIMEOUT_MS = 5600;
   const PREPARED_REPLY_COMPOSER_TTL_MS = 6000;
   const HANDOFF_RETRY_DELAY_MS = 420;
   const REPLY_OPEN_FAILURE_TTL_MS = 15000;
@@ -61,6 +66,9 @@
     "your post was sent",
     "reply sent",
     "post sent",
+    "返信を送信しました",
+    "ポストを送信しました",
+    "送信しました",
     "回复已发送",
     "回覆已發送",
     "贴文已发送",
@@ -75,6 +83,10 @@
     "failed to send",
     "wasn't sent",
     "not sent",
+    "やりなおしてください",
+    "送信に失敗しました",
+    "送信できませんでした",
+    "問題が発生しました",
     "发送失败",
     "發送失敗",
     "发布失败",
@@ -95,8 +107,27 @@
     "draft-language-mismatch": "草稿与主帖语言不匹配，已拦截",
     "draft-topic-mismatch": "草稿与主帖主题不匹配，已拦截",
     "send-button-disabled-but-target-locked": "回复框已锁定但发送按钮仍不可用",
-    "target-timeout": "单条回复超过20秒"
+    "target-timeout": "单条回复超过20秒",
+    "round-stopped": "本轮已停止",
+    "target-denied-this-round": "该目标本轮已熔断"
   });
+  const EXECUTOR_ROUND_STOP_LABELS = Object.freeze({
+    "round-target-limit": "本轮达到目标上限",
+    "round-budget-exceeded": "本轮达到总时长上限",
+    "empty-scan-limit": "连续空扫达到上限",
+    "round-idle-timeout": "本轮长时间无新增成功",
+    "execution-fault-limit": "执行故障达到上限",
+    "round-stopped": "本轮已停止"
+  });
+  const EXECUTOR_FAULT_REASON_CODES = new Set([
+    "ticket-not-found",
+    "missing-ticket-id",
+    "replydrop-api-null-result",
+    "runtime-message-timeout",
+    "target-timeout",
+    "send-not-verified",
+    "begin-failed"
+  ]);
   const DROP_PATH = "M10 1.25C10 1.25 3 9.12 3 14.56C3 19.03 6.13 22.5 10 22.5C13.87 22.5 17 19.03 17 14.56C17 9.12 10 1.25 10 1.25Z";
   const DROP_SVG = `
     <svg class="xrs-drop-svg" viewBox="0 0 20 24" aria-hidden="true" focusable="false">
@@ -166,6 +197,7 @@
     executorHotQueue: [],
     executorHotQueueUpdatedAt: 0,
     executorNoCandidateStreak: 0,
+    executorRounds: {},
     observer: null,
     scanTimer: null,
     lazyRescanTimer: null,
@@ -195,6 +227,568 @@
     apiBridgeBound: false,
     trafficBridgeBound: false
   };
+
+  function getExecutorRoundStopLabel(reason = "") {
+    return EXECUTOR_ROUND_STOP_LABELS[String(reason || "").trim()] || EXECUTOR_ROUND_STOP_LABELS["round-stopped"];
+  }
+
+  function resolveExecutorRoundIdentity(payload = {}) {
+    const roundId = String(payload?.roundId || "").trim().slice(0, 80);
+    const sessionId = String(payload?.sessionId || "").trim().slice(0, 80);
+    const roundKey = roundId || sessionId || "__implicit__";
+    return {
+      roundId,
+      sessionId,
+      roundKey,
+      implicit: !roundId && !sessionId
+    };
+  }
+
+  function getExecutorRoundTargetIdentity(payload = {}) {
+    const url = normalizeTweetUrl(payload?.url || payload?.targetUrl || payload?.post?.url || "");
+    const tweetId = normalizeApiTweetId(
+      payload?.tweetId ||
+      payload?.targetTweetId ||
+      payload?.post?.tweetId ||
+      extractTweetIdFromUrl(url)
+    );
+    const keys = [];
+    if (tweetId) {
+      keys.push(`tweet:${tweetId}`);
+    }
+    if (url) {
+      keys.push(`url:${url}`);
+    }
+    return {
+      tweetId,
+      url,
+      keys,
+      primaryKey: keys[0] || ""
+    };
+  }
+
+  function createExecutorRoundRuntime(identity = {}, now = Date.now()) {
+    return {
+      roundKey: String(identity.roundKey || "__implicit__").trim(),
+      roundId: String(identity.roundId || "").trim(),
+      sessionId: String(identity.sessionId || "").trim(),
+      implicit: Boolean(identity.implicit),
+      roundStartAt: now,
+      roundDeadlineAt: now + EXECUTOR_ROUND_BUDGET_MS,
+      successCountThisRound: 0,
+      failCountThisRound: 0,
+      skipCountThisRound: 0,
+      executionFaultCount: 0,
+      emptyScanCount: 0,
+      repeatedTargetCount: 0,
+      surfacedTargetCount: 0,
+      attemptedTargetCount: 0,
+      denylistedTargetCount: 0,
+      lastSuccessAt: 0,
+      lastFailureAt: 0,
+      lastCandidateAt: 0,
+      lastUpdatedAt: now,
+      firstReplyNowAt: 0,
+      lastSendCompletedAt: 0,
+      lastSendTimeMs: 0,
+      sendTimeTotalMs: 0,
+      sendCount: 0,
+      lastScanTimeMs: 0,
+      scanTimeTotalMs: 0,
+      scanCount: 0,
+      lastTimeBetweenSuccessfulSendsMs: 0,
+      timeBetweenSuccessfulSendsMsTotal: 0,
+      timeBetweenSuccessfulSendsCount: 0,
+      inlineRouteSuccessCount: 0,
+      detailRouteSuccessCount: 0,
+      autoResetRecoverySuccessCount: 0,
+      lastAutoResetRecoveredAt: 0,
+      backlogServedCount: 0,
+      backlogRefillCount: 0,
+      lastCandidateBacklogSize: 0,
+      lastServedFromBacklog: false,
+      stopReason: "",
+      stopLabel: "",
+      stopDetails: null,
+      stoppedAt: 0,
+      lastFailureReasonCode: "",
+      denylistTargetKeys: new Set(),
+      surfacedTargetKeys: new Set(),
+      attemptedTargetKeys: new Set(),
+      failedTargetKeys: new Set(),
+      shippedTargetKeys: new Set(),
+      history: []
+    };
+  }
+
+  function isExecutorRoundHardStopReason(reason = "") {
+    return [
+      "round-target-limit",
+      "round-budget-exceeded",
+      "execution-fault-limit",
+      "round-stopped"
+    ].includes(String(reason || "").trim());
+  }
+
+  function isExecutorRoundSoftStopReason(reason = "") {
+    return [
+      "empty-scan-limit",
+      "round-idle-timeout"
+    ].includes(String(reason || "").trim());
+  }
+
+  function resumeExecutorRound(roundState, detail = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return false;
+    }
+    const previousStopReason = String(roundState.stopReason || "").trim();
+    if (!previousStopReason) {
+      return false;
+    }
+    const now = Date.now();
+    roundState.stopReason = "";
+    roundState.stopLabel = "";
+    roundState.stopDetails = null;
+    roundState.stoppedAt = 0;
+    roundState.emptyScanCount = 0;
+    roundState.lastUpdatedAt = now;
+    if (detail?.recoverySucceeded) {
+      roundState.autoResetRecoverySuccessCount = Math.max(0, Math.floor(Number(roundState.autoResetRecoverySuccessCount || 0))) + 1;
+      roundState.lastAutoResetRecoveredAt = now;
+    }
+    pushExecutorRoundHistory(roundState, {
+      type: "resume",
+      stopReason: previousStopReason,
+      note: String(detail?.note || detail?.source || "round-resumed").trim() || "round-resumed"
+    });
+    return true;
+  }
+
+  function pruneExecutorRoundRuntime() {
+    const now = Date.now();
+    Object.entries(state.executorRounds || {}).forEach(([roundKey, roundState]) => {
+      if (!roundState || typeof roundState !== "object") {
+        delete state.executorRounds[roundKey];
+        return;
+      }
+      const freshness = Math.max(
+        Number(roundState.lastUpdatedAt || 0),
+        Number(roundState.stoppedAt || 0),
+        Number(roundState.roundStartAt || 0)
+      );
+      if (!freshness || now - freshness > EXECUTOR_ROUND_RUNTIME_TTL_MS) {
+        delete state.executorRounds[roundKey];
+      }
+    });
+  }
+
+  function ensureExecutorRoundRuntime(payload = {}) {
+    pruneExecutorRoundRuntime();
+    const identity = resolveExecutorRoundIdentity(payload);
+    const existing = state.executorRounds?.[identity.roundKey];
+    if (payload?.resetRound || !(existing && typeof existing === "object")) {
+      const nextRound = createExecutorRoundRuntime(identity, Date.now());
+      state.executorRounds[identity.roundKey] = nextRound;
+      return nextRound;
+    }
+    if (!existing.roundKey) {
+      existing.roundKey = identity.roundKey;
+    }
+    if (!existing.roundId && identity.roundId) {
+      existing.roundId = identity.roundId;
+    }
+    if (!existing.sessionId && identity.sessionId) {
+      existing.sessionId = identity.sessionId;
+    }
+    existing.lastUpdatedAt = Date.now();
+    return existing;
+  }
+
+  function pushExecutorRoundHistory(roundState, event = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    const nextEvent = {
+      at: Date.now(),
+      type: String(event.type || "event").trim() || "event"
+    };
+    [
+      "tweetId",
+      "url",
+      "reason",
+      "reasonCode",
+      "action",
+      "note",
+      "stopReason"
+    ].forEach((key) => {
+      const value = event[key];
+      if (value != null && value !== "") {
+        nextEvent[key] = typeof value === "string" ? String(value).trim() : value;
+      }
+    });
+    roundState.history = [...(Array.isArray(roundState.history) ? roundState.history : []), nextEvent]
+      .slice(-EXECUTOR_ROUND_HISTORY_LIMIT);
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function stopExecutorRound(roundState, reason = "", detail = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return null;
+    }
+    const normalizedReason = String(reason || "").trim() || "round-stopped";
+    if (!roundState.stopReason) {
+      roundState.stopReason = normalizedReason;
+      roundState.stopLabel = getExecutorRoundStopLabel(normalizedReason);
+      roundState.stopDetails = detail && typeof detail === "object" ? { ...detail } : null;
+      roundState.stoppedAt = Date.now();
+      pushExecutorRoundHistory(roundState, {
+        type: "stop",
+        stopReason: normalizedReason,
+        note: roundState.stopLabel,
+        reasonCode: String(detail?.reasonCode || "").trim()
+      });
+    }
+    roundState.lastUpdatedAt = Date.now();
+    return roundState;
+  }
+
+  function evaluateExecutorRoundStop(roundState, options = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return null;
+    }
+    if (roundState.stopReason) {
+      return roundState;
+    }
+    const now = Date.now();
+    if (Number(roundState.successCountThisRound || 0) >= EXECUTOR_ROUND_MAX_TARGETS) {
+      return stopExecutorRound(roundState, "round-target-limit");
+    }
+    if (now >= Number(roundState.roundDeadlineAt || 0)) {
+      return stopExecutorRound(roundState, "round-budget-exceeded");
+    }
+    if (Number(roundState.executionFaultCount || 0) >= EXECUTOR_ROUND_EXECUTION_FAULT_LIMIT) {
+      return stopExecutorRound(roundState, "execution-fault-limit", {
+        reasonCode: String(roundState.lastFailureReasonCode || "").trim()
+      });
+    }
+    const candidateCount = Math.max(0, Math.floor(Number(options.candidateCount || 0)));
+    if (candidateCount === 0 && Number(roundState.emptyScanCount || 0) >= EXECUTOR_EMPTY_SCAN_LIMIT) {
+      return stopExecutorRound(roundState, "empty-scan-limit");
+    }
+    const idleAnchor = Number(roundState.lastSuccessAt || roundState.roundStartAt || 0);
+    if (candidateCount === 0 && idleAnchor > 0 && now - idleAnchor >= EXECUTOR_ROUND_IDLE_STOP_MS) {
+      return stopExecutorRound(roundState, "round-idle-timeout");
+    }
+    return roundState;
+  }
+
+  function buildExecutorRoundSnapshot(roundState = null) {
+    if (!roundState || typeof roundState !== "object") {
+      return null;
+    }
+    const now = Date.now();
+    const idleAnchor = Number(roundState.lastSuccessAt || roundState.roundStartAt || 0);
+    const successfulSendCount = Math.max(0, Math.floor(Number(roundState.inlineRouteSuccessCount || 0))) +
+      Math.max(0, Math.floor(Number(roundState.detailRouteSuccessCount || 0)));
+    const inlineRouteRate = successfulSendCount > 0
+      ? Number((Number(roundState.inlineRouteSuccessCount || 0) / successfulSendCount).toFixed(4))
+      : 0;
+    const detailRouteRate = successfulSendCount > 0
+      ? Number((Number(roundState.detailRouteSuccessCount || 0) / successfulSendCount).toFixed(4))
+      : 0;
+    const avgScanTimeMs = Number(roundState.scanCount || 0) > 0
+      ? Math.round(Number(roundState.scanTimeTotalMs || 0) / Math.max(1, Number(roundState.scanCount || 0)))
+      : 0;
+    const avgSendTimeMs = Number(roundState.sendCount || 0) > 0
+      ? Math.round(Number(roundState.sendTimeTotalMs || 0) / Math.max(1, Number(roundState.sendCount || 0)))
+      : 0;
+    const avgTimeBetweenSuccessfulSendsMs = Number(roundState.timeBetweenSuccessfulSendsCount || 0) > 0
+      ? Math.round(Number(roundState.timeBetweenSuccessfulSendsMsTotal || 0) / Math.max(1, Number(roundState.timeBetweenSuccessfulSendsCount || 0)))
+      : 0;
+    return {
+      roundKey: String(roundState.roundKey || "").trim(),
+      roundId: String(roundState.roundId || "").trim(),
+      sessionId: String(roundState.sessionId || "").trim(),
+      roundStartAt: Number(roundState.roundStartAt || 0),
+      roundDeadlineAt: Number(roundState.roundDeadlineAt || 0),
+      successCountThisRound: Math.max(0, Math.floor(Number(roundState.successCountThisRound || 0))),
+      failCountThisRound: Math.max(0, Math.floor(Number(roundState.failCountThisRound || 0))),
+      skipCountThisRound: Math.max(0, Math.floor(Number(roundState.skipCountThisRound || 0))),
+      executionFaultCount: Math.max(0, Math.floor(Number(roundState.executionFaultCount || 0))),
+      emptyScanCount: Math.max(0, Math.floor(Number(roundState.emptyScanCount || 0))),
+      repeatedTargetCount: Math.max(0, Math.floor(Number(roundState.repeatedTargetCount || 0))),
+      surfacedTargetCount: Math.max(0, Math.floor(Number(roundState.surfacedTargetCount || 0))),
+      attemptedTargetCount: Math.max(0, Math.floor(Number(roundState.attemptedTargetCount || 0))),
+      denylistedTargetCount: Math.max(0, Math.floor(Number(roundState.denylistedTargetCount || 0))),
+      uniqueDeniedTargets: roundState.denylistTargetKeys instanceof Set ? roundState.denylistTargetKeys.size : 0,
+      uniqueFailedTargets: roundState.failedTargetKeys instanceof Set ? roundState.failedTargetKeys.size : 0,
+      uniqueShippedTargets: roundState.shippedTargetKeys instanceof Set ? roundState.shippedTargetKeys.size : 0,
+      uniqueSurfacedTargets: roundState.surfacedTargetKeys instanceof Set ? roundState.surfacedTargetKeys.size : 0,
+      stopReason: String(roundState.stopReason || "").trim(),
+      stopLabel: String(roundState.stopLabel || "").trim(),
+      stoppedAt: Number(roundState.stoppedAt || 0),
+      isStopped: Boolean(roundState.stopReason),
+      deadlineRemainingMs: Math.max(0, Number(roundState.roundDeadlineAt || 0) - now),
+      idleMs: idleAnchor > 0 ? Math.max(0, now - idleAnchor) : 0,
+      lastSuccessAt: Number(roundState.lastSuccessAt || 0),
+      lastFailureAt: Number(roundState.lastFailureAt || 0),
+      lastCandidateAt: Number(roundState.lastCandidateAt || 0),
+      lastUpdatedAt: Number(roundState.lastUpdatedAt || 0),
+      lastFailureReasonCode: String(roundState.lastFailureReasonCode || "").trim(),
+      history: (Array.isArray(roundState.history) ? roundState.history : []).slice(-12),
+      telemetry: {
+        timeToFirstReplyNowMs: roundState.firstReplyNowAt > 0
+          ? Math.max(0, Number(roundState.firstReplyNowAt || 0) - Number(roundState.roundStartAt || 0))
+          : 0,
+        timeBetweenSuccessfulSendsMs: avgTimeBetweenSuccessfulSendsMs,
+        lastTimeBetweenSuccessfulSendsMs: Math.max(0, Math.round(Number(roundState.lastTimeBetweenSuccessfulSendsMs || 0))),
+        candidateBacklogSize: Math.max(0, Math.floor(Number(roundState.lastCandidateBacklogSize || 0))),
+        stopRoundTriggerReason: String(roundState.stopReason || "").trim(),
+        resetRecoverySuccess: Math.max(0, Math.floor(Number(roundState.autoResetRecoverySuccessCount || 0))),
+        detailRouteRate,
+        inlineRouteRate,
+        scanTimeMs: avgScanTimeMs,
+        lastScanTimeMs: Math.max(0, Math.round(Number(roundState.lastScanTimeMs || 0))),
+        sendTimeMs: avgSendTimeMs,
+        lastSendTimeMs: Math.max(0, Math.round(Number(roundState.lastSendTimeMs || 0))),
+        scanCount: Math.max(0, Math.floor(Number(roundState.scanCount || 0))),
+        sendCount: Math.max(0, Math.floor(Number(roundState.sendCount || 0))),
+        backlogServedCount: Math.max(0, Math.floor(Number(roundState.backlogServedCount || 0))),
+        backlogRefillCount: Math.max(0, Math.floor(Number(roundState.backlogRefillCount || 0))),
+        servedFromBacklog: Boolean(roundState.lastServedFromBacklog)
+      }
+    };
+  }
+
+  function isExecutorRoundTargetRecorded(recordSet, payload = {}) {
+    if (!(recordSet instanceof Set)) {
+      return false;
+    }
+    const identity = getExecutorRoundTargetIdentity(payload);
+    return identity.keys.some((key) => recordSet.has(key));
+  }
+
+  function addExecutorRoundTargetRecord(roundState, bucketName, payload = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return false;
+    }
+    if (!(roundState[bucketName] instanceof Set)) {
+      roundState[bucketName] = new Set();
+    }
+    const identity = getExecutorRoundTargetIdentity(payload);
+    if (!identity.keys.length) {
+      return false;
+    }
+    let changed = false;
+    identity.keys.forEach((key) => {
+      if (!roundState[bucketName].has(key)) {
+        roundState[bucketName].add(key);
+        changed = true;
+      }
+    });
+    if (changed) {
+      roundState.lastUpdatedAt = Date.now();
+    }
+    return changed;
+  }
+
+  function noteExecutorRoundFailure(roundState, payload = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    roundState.failCountThisRound = Math.max(0, Math.floor(Number(roundState.failCountThisRound || 0))) + 1;
+    roundState.lastFailureAt = Date.now();
+    roundState.lastFailureReasonCode = String(payload?.reasonCode || payload?.reason || "").trim();
+    if (addExecutorRoundTargetRecord(roundState, "failedTargetKeys", payload)) {
+      pushExecutorRoundHistory(roundState, {
+        type: "failure",
+        tweetId: payload?.tweetId,
+        url: payload?.url,
+        reason: payload?.reason,
+        reasonCode: payload?.reasonCode,
+        action: payload?.action
+      });
+    }
+    if (addExecutorRoundTargetRecord(roundState, "denylistTargetKeys", payload)) {
+      roundState.denylistedTargetCount = Math.max(0, Math.floor(Number(roundState.denylistedTargetCount || 0))) + 1;
+    }
+    if (EXECUTOR_FAULT_REASON_CODES.has(String(payload?.reasonCode || "").trim())) {
+      roundState.executionFaultCount = Math.max(0, Math.floor(Number(roundState.executionFaultCount || 0))) + 1;
+    }
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function noteExecutorRoundSuccess(roundState, payload = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    if (addExecutorRoundTargetRecord(roundState, "shippedTargetKeys", payload)) {
+      roundState.successCountThisRound = Math.max(0, Math.floor(Number(roundState.successCountThisRound || 0))) + 1;
+      roundState.lastSuccessAt = Date.now();
+      pushExecutorRoundHistory(roundState, {
+        type: "success",
+        tweetId: payload?.tweetId,
+        url: payload?.url,
+        action: payload?.action
+      });
+    }
+    addExecutorRoundTargetRecord(roundState, "denylistTargetKeys", payload);
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function noteExecutorRoundSkip(roundState, payload = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    roundState.skipCountThisRound = Math.max(0, Math.floor(Number(roundState.skipCountThisRound || 0))) + 1;
+    if (addExecutorRoundTargetRecord(roundState, "denylistTargetKeys", payload)) {
+      roundState.denylistedTargetCount = Math.max(0, Math.floor(Number(roundState.denylistedTargetCount || 0))) + 1;
+    }
+    pushExecutorRoundHistory(roundState, {
+      type: "skip",
+      tweetId: payload?.tweetId,
+      url: payload?.url,
+      reason: payload?.reason,
+      reasonCode: payload?.reasonCode,
+      action: payload?.action
+    });
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function filterExecutorRoundCandidates(roundState, contexts = [], options = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return {
+        candidates: Array.isArray(contexts) ? contexts.slice() : [],
+        suppressed: []
+      };
+    }
+    const allowSurfaced = Boolean(options?.allowSurfaced);
+    const recordRepeats = options?.recordRepeats !== false;
+    const candidates = [];
+    const suppressed = [];
+    const seenInCall = new Set();
+    (Array.isArray(contexts) ? contexts : []).forEach((context) => {
+      const identity = getExecutorRoundTargetIdentity(context);
+      if (!identity.primaryKey) {
+        return;
+      }
+      if (seenInCall.has(identity.primaryKey)) {
+        return;
+      }
+      seenInCall.add(identity.primaryKey);
+      if (isExecutorRoundTargetRecorded(roundState.denylistTargetKeys, identity)) {
+        if (recordRepeats) {
+          roundState.repeatedTargetCount = Math.max(0, Math.floor(Number(roundState.repeatedTargetCount || 0))) + 1;
+        }
+        suppressed.push({
+          tweetId: identity.tweetId,
+          url: identity.url,
+          reasonCode: "denylisted-this-round"
+        });
+        return;
+      }
+      if (!allowSurfaced && isExecutorRoundTargetRecorded(roundState.surfacedTargetKeys, identity)) {
+        if (recordRepeats) {
+          roundState.repeatedTargetCount = Math.max(0, Math.floor(Number(roundState.repeatedTargetCount || 0))) + 1;
+        }
+        suppressed.push({
+          tweetId: identity.tweetId,
+          url: identity.url,
+          reasonCode: "already-presented-this-round"
+        });
+        return;
+      }
+      candidates.push(context);
+    });
+    roundState.lastUpdatedAt = Date.now();
+    return { candidates, suppressed };
+  }
+
+  function recordExecutorRoundSurfacedCandidates(roundState, contexts = [], options = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    const surfaced = Array.isArray(contexts) ? contexts : [];
+    const markSeen = options?.markSeen !== false;
+    if (!surfaced.length) {
+      roundState.emptyScanCount = Math.max(0, Math.floor(Number(roundState.emptyScanCount || 0))) + 1;
+      roundState.lastUpdatedAt = Date.now();
+      pushExecutorRoundHistory(roundState, {
+        type: "empty-scan",
+        note: "no-actionable-candidates"
+      });
+      return;
+    }
+    let newlySurfacedCount = 0;
+    if (markSeen) {
+      surfaced.forEach((context) => {
+        if (addExecutorRoundTargetRecord(roundState, "surfacedTargetKeys", context)) {
+          newlySurfacedCount += 1;
+        }
+      });
+      roundState.surfacedTargetCount = Math.max(0, Math.floor(Number(roundState.surfacedTargetCount || 0))) + newlySurfacedCount;
+    }
+    roundState.emptyScanCount = 0;
+    roundState.lastCandidateAt = Date.now();
+    if (!roundState.firstReplyNowAt) {
+      roundState.firstReplyNowAt = Date.now();
+    }
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function noteExecutorRoundScan(roundState, payload = {}) {
+    if (!roundState || typeof roundState !== "object") {
+      return;
+    }
+    const scanTimeMs = Math.max(0, Math.round(Number(payload?.scanTimeMs || 0)));
+    const candidateBacklogSize = Math.max(0, Math.floor(Number(payload?.candidateBacklogSize || 0)));
+    roundState.scanCount = Math.max(0, Math.floor(Number(roundState.scanCount || 0))) + 1;
+    roundState.scanTimeTotalMs = Math.max(0, Math.round(Number(roundState.scanTimeTotalMs || 0))) + scanTimeMs;
+    roundState.lastScanTimeMs = scanTimeMs;
+    roundState.lastCandidateBacklogSize = candidateBacklogSize;
+    roundState.lastServedFromBacklog = Boolean(payload?.servedFromBacklog);
+    if (payload?.servedFromBacklog) {
+      roundState.backlogServedCount = Math.max(0, Math.floor(Number(roundState.backlogServedCount || 0))) + Math.max(0, Math.floor(Number(payload?.candidateCount || 0)));
+    }
+    if (payload?.backlogRefilled) {
+      roundState.backlogRefillCount = Math.max(0, Math.floor(Number(roundState.backlogRefillCount || 0))) + 1;
+    }
+    if (payload?.autoResetRecovered) {
+      roundState.lastAutoResetRecoveredAt = Date.now();
+    }
+    roundState.lastUpdatedAt = Date.now();
+  }
+
+  function noteExecutorRoundActionTiming(roundState, action = "", result = {}, actionStartedAt = 0) {
+    if (!roundState || typeof roundState !== "object" || !Number.isFinite(Number(actionStartedAt)) || Number(actionStartedAt) <= 0) {
+      return;
+    }
+    const normalizedAction = String(result?.action || action || "").trim();
+    if (!["reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(normalizedAction)) {
+      return;
+    }
+    const now = Date.now();
+    const elapsedMs = Math.max(0, now - Number(actionStartedAt || now));
+    roundState.sendCount = Math.max(0, Math.floor(Number(roundState.sendCount || 0))) + 1;
+    roundState.sendTimeTotalMs = Math.max(0, Math.round(Number(roundState.sendTimeTotalMs || 0))) + elapsedMs;
+    roundState.lastSendTimeMs = elapsedMs;
+    if (result?.ok) {
+      const previousCompletedAt = Number(roundState.lastSendCompletedAt || 0);
+      if (previousCompletedAt > 0) {
+        const intervalMs = Math.max(0, now - previousCompletedAt);
+        roundState.lastTimeBetweenSuccessfulSendsMs = intervalMs;
+        roundState.timeBetweenSuccessfulSendsMsTotal = Math.max(0, Math.round(Number(roundState.timeBetweenSuccessfulSendsMsTotal || 0))) + intervalMs;
+        roundState.timeBetweenSuccessfulSendsCount = Math.max(0, Math.floor(Number(roundState.timeBetweenSuccessfulSendsCount || 0))) + 1;
+      }
+      roundState.lastSendCompletedAt = now;
+      if (normalizedAction === "reply-from-timeline") {
+        roundState.inlineRouteSuccessCount = Math.max(0, Math.floor(Number(roundState.inlineRouteSuccessCount || 0))) + 1;
+      } else {
+        roundState.detailRouteSuccessCount = Math.max(0, Math.floor(Number(roundState.detailRouteSuccessCount || 0))) + 1;
+      }
+    }
+    roundState.lastUpdatedAt = now;
+  }
 
   function sendRuntimeMessage(message, timeoutMs = 3500) {
     return new Promise((resolve) => {
@@ -1023,6 +1617,11 @@
     const replyArchive = pruneReplyArchive(state.replyArchive);
     const recentCandidates = pruneRecentCandidates(state.recentCandidates, EXECUTOR_SCAN_WINDOW_SIZE);
     const mediaSummaries = pruneMediaSummaries(state.mediaSummaries);
+    const executorRounds = Object.fromEntries(
+      Object.entries(state.executorRounds || {})
+        .map(([roundKey, roundState]) => [roundKey, buildExecutorRoundSnapshot(roundState)])
+        .filter((entry) => entry?.[1])
+    );
     return {
       settings: { ...(state.settings || {}) },
       repliedTweets: { ...(state.repliedTweets || {}) },
@@ -1033,6 +1632,7 @@
       recentCandidates,
       relationshipStates: { ...(state.relationshipStates || {}) },
       mediaSummaries,
+      executorRounds,
       trafficUpdatedAt: state.trafficUpdatedAt || 0,
       stats: { ...(state.stats || {}) },
       apiStateSource: reason
@@ -1233,6 +1833,11 @@
     return {
       ...(runtimeState && typeof runtimeState === "object" ? runtimeState : {}),
       recentCandidates: hydratedCandidates,
+      executorRounds: Object.fromEntries(
+        Object.entries(state.executorRounds || {})
+          .map(([roundKey, roundState]) => [roundKey, buildExecutorRoundSnapshot(roundState)])
+          .filter((entry) => entry?.[1])
+      ),
       lastScanAt: Number(
         state.lastScanCompletedAt ||
         runtimeState?.lastScanAt ||
@@ -1531,10 +2136,24 @@
     const mediaContextMissing = Boolean(input?.mediaContextMissing);
     const needsDetailContext = Boolean(input?.needsDetailContext);
     const needsVision = Boolean(input?.needsVision);
+    const quickDraftAllowed = Boolean(input?.quickDraftAllowed);
+    const mediaNotInspectedTextSufficient = Boolean(input?.mediaNotInspectedTextSufficient);
+    const detailRewriteInstruction = String(input?.detailRewriteInstruction || "").trim();
+    const allowInlineQuickDraft = Boolean(
+      timelineInlineReplyEligible &&
+      quickDraftAllowed &&
+      mediaNotInspectedTextSufficient &&
+      (
+        !detailRewriteInstruction ||
+        /不必阻断主槽|不阻断主槽|不必阻断|do not block|don't block/i.test(detailRewriteInstruction)
+      )
+    );
     const detailInspectionRequired = Boolean(
-      mediaContextMissing ||
-      needsDetailContext ||
-      needsVision
+      !allowInlineQuickDraft && (
+        mediaContextMissing ||
+        needsDetailContext ||
+        needsVision
+      )
     );
     const executionRoute = timelineInlineReplyEligible && !detailInspectionRequired
       ? "timeline_inline"
@@ -1543,11 +2162,13 @@
     const preferredAction = executionRoute === "timeline_inline"
       ? "replyFromTimeline"
       : (executionRoute === "detail_inspect_then_reply" ? "inspectThenReply" : "openComposer");
-    const instruction = executionRoute === "timeline_inline"
+    const instruction = executionRoute === "timeline_inline" && allowInlineQuickDraft
+      ? "首页文字已足够写主槽草稿，优先直接卡片快回；不要因为媒体尚未补检就强制进详情页。"
+      : (executionRoute === "timeline_inline"
       ? "首页预览正文已足够定稿，优先调用 runExecutorAction({ action:'reply-from-timeline', tweetId, draft }) 在当前时间线原地打开并提交，不要先进详情页。"
       : (executionRoute === "detail_inspect_then_reply"
         ? "这条值得立即处理，但需要先开详情页抓 media bundle，做 OCR/vision 并 setMediaSummary，再重读 context 后生成草稿并发送。不要因为媒体未检查而跳过。"
-        : "这条值得立即处理，但需要先打开详情页后再回复。");
+        : "这条值得立即处理，但需要先打开详情页后再回复。"));
     return {
       executionRoute,
       routeLabel: getReplyDropExecutionRouteUiLabel(executionRoute),
@@ -1556,6 +2177,7 @@
       preferredAction,
       isDetailInspectionRequired: executionRoute === "detail_inspect_then_reply",
       isImmediateWorkable: false,
+      allowInlineQuickDraft,
       instruction
     };
   }
@@ -1587,7 +2209,10 @@
         flags.includes("quote_context_possible") ||
         flags.includes("show_more_possible")
       ),
-      needsVision: Boolean(input?.needsVision || flags.includes("vision_required_but_missing"))
+      needsVision: Boolean(input?.needsVision || flags.includes("vision_required_but_missing")),
+      quickDraftAllowed: Boolean(input?.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(input?.mediaNotInspectedTextSufficient),
+      detailRewriteInstruction: String(input?.detailRewriteInstruction || "").trim()
     });
 
     let replyWorthinessState = "watch_later";
@@ -1617,6 +2242,7 @@
       isImmediateSendable: replyWorthinessState === "send_now",
       isImmediateWorkable: replyWorthinessState === "send_now",
       isDetailInspectionRequired: executionRouteMeta.isDetailInspectionRequired,
+      allowInlineQuickDraft: Boolean(executionRouteMeta.allowInlineQuickDraft),
       preferredOpenMode: executionRouteMeta.preferredOpenMode,
       preferredAction: executionRouteMeta.preferredAction,
       instruction: executionRouteMeta.instruction
@@ -1639,6 +2265,9 @@
       mediaContextMissing: Boolean(context?.contextCompleteness?.mediaContextMissing),
       needsDetailContext: Boolean(context?.contextCompleteness?.needsDetailContext),
       needsVision: Boolean(context?.media?.needsVision),
+      quickDraftAllowed: Boolean(context?.contextCompleteness?.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(context?.contextCompleteness?.mediaNotInspectedTextSufficient),
+      detailRewriteInstruction: String(context?.contextCompleteness?.detailRewriteInstruction || "").trim(),
       hardBlocked: (
         autoSafetyTier === "blocked" ||
         isReplyDropHardBlockReason(context?.scoring?.blockReason) ||
@@ -2280,12 +2909,17 @@
         targetTimeoutMs: EXECUTOR_TARGET_TIMEOUT_MS,
         roundMaxTargets: EXECUTOR_ROUND_MAX_TARGETS,
         roundBudgetMs: EXECUTOR_ROUND_BUDGET_MS,
+        roundIdleStopMs: EXECUTOR_ROUND_IDLE_STOP_MS,
         consecutiveEmptyResultLimit: EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT,
+        emptyScanLimit: EXECUTOR_EMPTY_SCAN_LIMIT,
+        executionFaultLimit: EXECUTOR_ROUND_EXECUTION_FAULT_LIMIT,
+        sameTargetPickLimit: 1,
         emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
         timeoutReasonCode: "target-timeout",
         emptyResultInstruction: "只有插件/runner没有拿到结构化结果的异常空返回才算 empty-result；value-below-send-floor、value-dropped-on-open、already-replied、target-page-mismatch 等正常拦截不计入。",
         noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
-      instruction: "从拿到候选开始计时，20秒内完成为正常；超过20秒必须停止当前目标并切换下一条。整轮最多10条或12分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有 auto_safe 候选，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；15秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。"
+        progressMetric: "successCountThisRound",
+        instruction: "从拿到候选开始计时，20秒内完成为正常；超过20秒必须停止当前目标并切换下一条。整轮最多10条或12分钟，先到即停止并回首页。连续3次 empty-result 视为执行链路异常，停止本轮并提示刷新后重试。若首页本轮没有 auto_safe 候选，调用 refreshRecommendations() 或自行刷新/滚动重扫至少1轮；15秒内仍无候选就返回 no-auto-safe-candidate 和 pickDiagnostics，不要继续空等。同一条目标同一轮只允许进入 pick 1 次；发送失败或显式 skip 后，本轮不再重复尝试。"
       },
       timelineReplyPolicy: {
         mode: "preview-first",
@@ -3149,6 +3783,7 @@
       actionableCount,
       requiredWhenActionableCountIsZero: true,
       minRescansBeforeGivingUp: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
+      emptyScanLimit: EXECUTOR_EMPTY_SCAN_LIMIT,
       recommendedAction: actionableCount > 0 ? "process-candidates" : "refresh-recommendations",
       method: "refreshRecommendations",
       noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
@@ -3157,6 +3792,28 @@
         : "本轮没有合格推荐时先调用 refreshRecommendations({ mode: 'scroll' }) 或刷新首页重扫1轮；15秒内仍无候选就返回 no-auto-safe-candidate + pickDiagnostics，不要继续空等。",
       generatedAt
     };
+  }
+
+  function isReplyDropImmediateReplyNowContext(context = {}) {
+    if (!context || typeof context !== "object") {
+      return false;
+    }
+    const sendability = context.sendability && typeof context.sendability === "object"
+      ? context.sendability
+      : resolveReplyDropContextSendability(context);
+    return (
+      String(context.routing?.recommendedDecision || "").trim() === "reply-now" &&
+      Boolean(sendability?.isImmediateSendable)
+    );
+  }
+
+  function filterReplyDropExecutorCandidatePool(contexts = [], options = {}) {
+    const onlyReplyNow = Boolean(options?.onlyReplyNow);
+    const source = Array.isArray(contexts) ? contexts : [];
+    if (!onlyReplyNow) {
+      return source.slice();
+    }
+    return source.filter((context) => isReplyDropImmediateReplyNowContext(context));
   }
 
   function isReplyDropExecutorHotQueueEntryUsable(context = {}, runtimeState = {}) {
@@ -3258,11 +3915,40 @@
       "timeline-article-missing",
       "composer-not-ready",
       "reply-surface-not-ready",
-      "navigating"
+      "navigating",
+      "generic-composer-opened",
+      "send-button-missing",
+      "send-button-disabled-but-target-locked",
+      "not-reply-composer"
+    ].includes(reasonCode);
+  }
+
+  function shouldRetryReplyOpenAfterRecovery(result = {}) {
+    if (!result || result.ok) {
+      return false;
+    }
+    const reasonCode = String(result.reasonCode || result.reason || "").trim();
+    return [
+      "context-not-locked",
+      "reply-context-missing",
+      "reply-target-lost",
+      "composer-not-ready",
+      "reply-surface-not-ready",
+      "generic-composer-opened",
+      "send-button-missing",
+      "send-button-disabled-but-target-locked",
+      "not-reply-composer"
     ].includes(reasonCode);
   }
 
   async function refreshReplyDropRecommendations(options = {}) {
+    const roundRuntime = ensureExecutorRoundRuntime(options);
+    if (isExecutorRoundSoftStopReason(roundRuntime?.stopReason) && options?.autoResetIfStopped !== false) {
+      resumeExecutorRound(roundRuntime, {
+        source: "refresh-recommendations",
+        note: "refresh-soft-unlock"
+      });
+    }
     const requestedMode = String(options?.mode || "auto").trim().toLowerCase();
     const mode = requestedMode === "auto" || !requestedMode
       ? (state.executorNoCandidateStreak >= 2 ? "reload" : "scroll")
@@ -3333,12 +4019,27 @@
   }
 
   async function getReplyDropApiAgentInbox(options = {}) {
+    const inboxStartedAt = Date.now();
     const runtimeState = await getApiRuntimeStateSnapshot();
+    const roundRuntime = ensureExecutorRoundRuntime(options);
     const limit = Math.max(1, Math.min(16, Math.floor(Number(options?.limit) || 6)));
     const includeMedia = Boolean(options?.includeMedia);
-    const generatedAt = Date.now();
+    const preservePool = options?.preservePool !== false;
+    const autoResetIfStopped = options?.autoResetIfStopped !== false;
+    const onlyReplyNow = Boolean(options?.onlyReplyNow);
+    const generatedAt = inboxStartedAt;
     const sortedCandidates = sortApiAgentCandidates(runtimeState?.recentCandidates || []);
     const scanWindowSize = Math.min(EXECUTOR_SCAN_WINDOW_SIZE, Math.max(limit * 3, 18));
+    const preservedPoolSource = preservePool
+      ? filterReplyDropExecutorCandidatePool(
+          readReplyDropExecutorHotQueue(runtimeState, Math.max(limit * 3, 12)),
+          { onlyReplyNow }
+        )
+      : [];
+    const preservedPool = filterExecutorRoundCandidates(roundRuntime, preservedPoolSource, {
+      allowSurfaced: true,
+      recordRepeats: false
+    });
     const orderedCandidates = [
       ...sortedCandidates.filter((candidate) => !String(candidate?.blockReason || "").trim()),
       ...sortedCandidates.filter((candidate) => String(candidate?.blockReason || "").trim())
@@ -3369,19 +4070,48 @@
     const autoSafeContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_safe");
     const fallbackContexts = contexts.filter((context) => context.autoSafety?.tier === "auto_fallback");
     const fallbackKeys = new Set(fallbackContexts.map((context) => String(context.tweetId || "").trim()).filter(Boolean));
-    const actionablePool = [...autoSafeContexts, ...fallbackContexts];
-    const liveActionableContexts = actionablePool.slice(0, limit);
-    if (actionablePool.length > 0) {
-      cacheReplyDropExecutorHotQueue(actionablePool);
+    const actionablePool = filterReplyDropExecutorCandidatePool([...autoSafeContexts, ...fallbackContexts], {
+      onlyReplyNow
+    });
+    const roundFilteredActionablePool = filterExecutorRoundCandidates(roundRuntime, actionablePool);
+    const liveActionableContexts = roundFilteredActionablePool.candidates.slice(0, limit);
+    const preservedBacklogCandidates = preservedPool.candidates.slice(0, limit);
+    const servedFromBacklog = preservedBacklogCandidates.length > 0;
+    const actionableContexts = servedFromBacklog ? preservedBacklogCandidates : liveActionableContexts;
+    const nextHotQueueSource = roundFilteredActionablePool.candidates.length > 0
+      ? (servedFromBacklog
+        ? [...preservedPool.candidates, ...roundFilteredActionablePool.candidates]
+        : roundFilteredActionablePool.candidates)
+      : [];
+    if (nextHotQueueSource.length > 0) {
+      cacheReplyDropExecutorHotQueue(nextHotQueueSource);
+    }
+    const supplyAvailable = actionableContexts.length > 0 || roundFilteredActionablePool.candidates.length > 0;
+    if (supplyAvailable) {
       state.executorNoCandidateStreak = 0;
     } else {
       state.executorNoCandidateStreak = Math.max(0, Number(state.executorNoCandidateStreak || 0)) + 1;
     }
-    const hotQueueFallbackCandidates = actionablePool.length > 0 ? [] : readReplyDropExecutorHotQueue(runtimeState, limit);
-    const actionableContexts = liveActionableContexts.length > 0 ? liveActionableContexts : hotQueueFallbackCandidates;
+    const autoResetRecovered = Boolean(
+      autoResetIfStopped &&
+      isExecutorRoundSoftStopReason(roundRuntime?.stopReason) &&
+      supplyAvailable &&
+      resumeExecutorRound(roundRuntime, {
+        source: servedFromBacklog ? "preserved-pool" : "fresh-actionable-pool",
+        recoverySucceeded: actionableContexts.length > 0,
+        note: servedFromBacklog ? "resume-from-backlog" : "resume-from-fresh-pool"
+      })
+    );
+    recordExecutorRoundSurfacedCandidates(roundRuntime, actionableContexts, {
+      markSeen: !servedFromBacklog
+    });
     const filteredCandidates = contexts
       .filter((context) => context.autoSafety?.tier !== "auto_safe" && !fallbackKeys.has(String(context.tweetId || "").trim()))
       .map((context) => summarizeFilteredExecutorCandidate(context));
+    const roundSuppressedCandidates = [
+      ...roundFilteredActionablePool.suppressed,
+      ...preservedPool.suppressed
+    ];
     const autoLanes = {
       auto_safe: autoSafeContexts,
       auto_fallback: fallbackContexts,
@@ -3395,45 +4125,109 @@
     const topFilteredCodes = getTopExecutorReasonCodes(contexts, 12);
     const topBlockedCodes = getTopExecutorReasonCodes(autoLanes.blocked, 8);
     const topHumanReviewCodes = getTopExecutorReasonCodes(autoLanes.human_review, 8);
+    const mergedBacklogKeys = new Set();
+    const mergedBacklogSize = nextHotQueueSource.reduce((count, context) => {
+      const identity = getExecutorRoundTargetIdentity(context);
+      const key = String(identity.primaryKey || "").trim();
+      if (!key || mergedBacklogKeys.has(key)) {
+        return count;
+      }
+      mergedBacklogKeys.add(key);
+      return count + 1;
+    }, 0);
+    const candidateBacklogSize = nextHotQueueSource.length > 0
+      ? Math.max(0, mergedBacklogSize - actionableContexts.length)
+      : (servedFromBacklog
+        ? Math.max(0, preservedPool.candidates.length - actionableContexts.length)
+        : Math.max(0, roundFilteredActionablePool.candidates.length - actionableContexts.length));
+    const scanTimeMs = Math.max(0, Date.now() - inboxStartedAt);
+    noteExecutorRoundScan(roundRuntime, {
+      scanTimeMs,
+      candidateCount: actionableContexts.length,
+      candidateBacklogSize,
+      servedFromBacklog,
+      backlogRefilled: roundFilteredActionablePool.candidates.length > actionableContexts.length,
+      autoResetRecovered
+    });
+    evaluateExecutorRoundStop(roundRuntime, {
+      candidateCount: actionableContexts.length
+    });
+    const roundState = buildExecutorRoundSnapshot(roundRuntime);
+    const roundStopped = Boolean(roundState?.isStopped);
+    const hardStopped = isExecutorRoundHardStopReason(roundState?.stopReason);
+    const finalCandidates = hardStopped ? [] : actionableContexts;
+    const throughputTelemetry = roundState?.telemetry || {};
 
     return {
       version: "replydrop-agent-inbox-v1",
       generatedAt,
       limit,
       scanWindowSize,
-      candidates: actionableContexts,
+      candidates: finalCandidates,
       autoLanes,
-      candidateDiagnostics: actionableContexts.map(summarizeExecutorCandidateDiagnostics),
+      candidateDiagnostics: finalCandidates.map(summarizeExecutorCandidateDiagnostics),
       diagnosticCandidates: contexts.slice(0, Math.max(limit, 32)),
       filteredCandidates,
       skipReasons: summarizeExecutorSkipReasons(filteredCandidates),
+      roundState,
       pickDiagnostics: {
         scannedCount: Number(runtimeState?.pageCandidateSync?.scannedCount || 0),
         visibleCount: Number(runtimeState?.pageCandidateSync?.visibleCount || 0),
         scanWindowSize,
         recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
-        candidateCount: actionableContexts.length,
-        actionablePoolCount: actionablePool.length,
-        hotQueueFallbackCount: hotQueueFallbackCandidates.length,
-        hotQueueUsed: actionablePool.length === 0 && hotQueueFallbackCandidates.length > 0,
+        candidateCount: finalCandidates.length,
+        actionablePoolCount: roundFilteredActionablePool.candidates.length,
+        rawActionablePoolCount: actionablePool.length,
+        replyNowPoolCount: actionablePool.length,
+        preservedPoolCount: preservedPool.candidates.length,
+        hotQueueFallbackCount: preservedPool.candidates.length,
+        hotQueueUsed: servedFromBacklog,
         noCandidateStreak: Number(state.executorNoCandidateStreak || 0),
-        safeCandidateCount: actionableContexts.length,
+        safeCandidateCount: finalCandidates.length,
         autoSafeCount: autoSafeContexts.length,
         fallbackCount: fallbackContexts.length,
         humanReviewCount: autoLanes.human_review.length,
         blockedCount: autoLanes.blocked.length,
         blockedCandidateCount: autoLanes.blocked.length,
         filteredCount: filteredCandidates.length,
+        roundSuppressedCount: roundSuppressedCandidates.length,
+        roundSuppressedCandidates: roundSuppressedCandidates.slice(0, 8),
         noAutoSafeCandidate: autoSafeContexts.length === 0,
-        recommendedResult: actionableContexts.length ? "process-candidates" : "no-auto-safe-candidate",
+        candidateBacklogSize,
+        preservePoolEnabled: preservePool,
+        preservePoolServed: servedFromBacklog,
+        autoResetIfStopped,
+        autoResetRecovered,
+        onlyReplyNow,
+        scanTimeMs,
+        recommendedResult: hardStopped
+          ? "stop-round"
+          : (finalCandidates.length ? "process-candidates" : "no-auto-safe-candidate"),
+        stopReason: String(roundState?.stopReason || "").trim(),
+        stopLabel: String(roundState?.stopLabel || "").trim(),
+        stopRoundTriggerReason: String(roundState?.stopReason || "").trim(),
+        resetRecoverySuccess: Number(throughputTelemetry.resetRecoverySuccess || 0),
+        detailRouteRate: Number(throughputTelemetry.detailRouteRate || 0),
+        inlineRouteRate: Number(throughputTelemetry.inlineRouteRate || 0),
+        sendTimeMs: Number(throughputTelemetry.sendTimeMs || 0),
+        timeToFirstReplyNowMs: Number(throughputTelemetry.timeToFirstReplyNowMs || 0),
+        timeBetweenSuccessfulSendsMs: Number(throughputTelemetry.timeBetweenSuccessfulSendsMs || 0),
         topFilteredCodes,
         topBlockedCodes,
         topHumanReviewCodes,
         topExcluded
       },
       pageCandidateSync: runtimeState?.pageCandidateSync || null,
-      emptyInboxRecovery: buildEmptyInboxRecovery(contexts, generatedAt),
-      executionPolicy: buildReplyDropExecutionPolicy(generatedAt),
+      emptyInboxRecovery: {
+        ...buildEmptyInboxRecovery(contexts, generatedAt),
+        stopReason: String(roundState?.stopReason || "").trim(),
+        stopLabel: String(roundState?.stopLabel || "").trim(),
+        roundState
+      },
+      executionPolicy: {
+        ...buildReplyDropExecutionPolicy(generatedAt),
+        roundState
+      },
       outputSchema: buildReplyDropReplySchema()
     };
   }
@@ -4122,7 +4916,12 @@
   }
 
   async function skipReplyDropCandidate(tweetId) {
-    const normalizedTweetId = normalizeApiTweetId(tweetId);
+    const payload = tweetId && typeof tweetId === "object" ? tweetId : {};
+    const normalizedTweetId = normalizeApiTweetId(
+      payload.tweetId ||
+      payload.targetTweetId ||
+      tweetId
+    );
     if (!normalizedTweetId) {
       throw new Error("invalid-tweet-id");
     }
@@ -4178,10 +4977,18 @@
         cacheReplyOpenFailure(timeoutFailure);
         return timeoutFailure;
       }
-      const result = await openQueueComposerHandoff({
+      let result = await openQueueComposerHandoff({
         ...normalizedPayload,
         url: directUrl
       });
+      if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldRetryReplyOpenAfterRecovery(result)) {
+        await settleFailedTimelineUi();
+        result = await openQueueComposerHandoff({
+          ...normalizedPayload,
+          __replyOpenRetried: true,
+          url: directUrl
+        });
+      }
       if (result?.ok) {
         clearReplyOpenFailure(result.targetUrl || directUrl);
       } else {
@@ -4211,14 +5018,101 @@
       cacheReplyOpenFailure(timeoutFailure);
       return timeoutFailure;
     }
-    const result = await openQueueComposerHandoff({
+    let result = await openQueueComposerHandoff({
       ...normalizedPayload,
       url: resolvedUrl
     });
+    if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldRetryReplyOpenAfterRecovery(result)) {
+      await settleFailedTimelineUi();
+      result = await openQueueComposerHandoff({
+        ...normalizedPayload,
+        __replyOpenRetried: true,
+        url: resolvedUrl
+      });
+    }
     if (result?.ok) {
       clearReplyOpenFailure(result.targetUrl || resolvedUrl);
     } else {
       cacheReplyOpenFailure(result);
+    }
+    return result;
+  }
+
+  function isReplyDropExecutorMutationAction(action = "") {
+    return [
+      "open-composer",
+      "reply-from-timeline",
+      "inspect-then-reply",
+      "submit-reply",
+      "reply",
+      "reply-auto",
+      "mark-shipped",
+      "skip"
+    ].includes(String(action || "").trim());
+  }
+
+  function buildReplyDropRoundStoppedFailure(roundState = null, payload = {}) {
+    return buildReplyActionFailure({
+      targetUrl: payload?.url || payload?.targetUrl || "",
+      reason: "round-stopped",
+      reasonCode: String(roundState?.stopReason || "round-stopped").trim(),
+      reasonLabel: String(roundState?.stopLabel || getExecutorRoundStopLabel("round-stopped")).trim(),
+      stage: "round-stopped",
+      shouldSkipTarget: true
+    });
+  }
+
+  function finalizeReplyDropExecutorRoundAction(roundState, action, payload, result, resolvedTargetUrl = "", actionStartedAt = 0) {
+    if (!roundState || typeof roundState !== "object") {
+      return result;
+    }
+    const targetIdentity = getExecutorRoundTargetIdentity({
+      ...(payload && typeof payload === "object" ? payload : {}),
+      url: normalizeTweetUrl(
+        result?.targetUrl ||
+        result?.url ||
+        result?.href ||
+        resolvedTargetUrl ||
+        payload?.url
+      ),
+      tweetId: payload?.tweetId || payload?.targetTweetId
+    });
+    if (isReplyDropExecutorMutationAction(action) && targetIdentity.keys.length) {
+      if (addExecutorRoundTargetRecord(roundState, "attemptedTargetKeys", targetIdentity)) {
+        roundState.attemptedTargetCount = Math.max(0, Math.floor(Number(roundState.attemptedTargetCount || 0))) + 1;
+      }
+    }
+    const normalizedReasonCode = String(result?.reasonCode || result?.reason || "").trim();
+    if (result?.ok) {
+      if (["reply-from-timeline", "inspect-then-reply", "submit-reply", "reply", "mark-shipped"].includes(action)) {
+        noteExecutorRoundSuccess(roundState, {
+          ...targetIdentity,
+          action
+        });
+      } else if (action === "skip") {
+        noteExecutorRoundSkip(roundState, {
+          ...targetIdentity,
+          action,
+          reasonCode: "skip-candidate"
+        });
+      }
+    } else if (isReplyDropExecutorMutationAction(action)) {
+      noteExecutorRoundFailure(roundState, {
+        ...targetIdentity,
+        action,
+        reason: String(result?.reason || "").trim(),
+        reasonCode: normalizedReasonCode
+      });
+    }
+    noteExecutorRoundActionTiming(roundState, action, result, actionStartedAt);
+    evaluateExecutorRoundStop(roundState, {
+      candidateCount: 0
+    });
+    if (result && typeof result === "object") {
+      return {
+        ...result,
+        roundState: buildExecutorRoundSnapshot(roundState)
+      };
     }
     return result;
   }
@@ -4240,7 +5134,7 @@
       case "inspect-then-reply":
       case "inspectthenreply":
       case "detail-inspect-then-reply":
-        return "reply";
+        return "inspect-then-reply";
       case "refresh":
       case "refresh-recommendations":
       case "rescan":
@@ -4270,10 +5164,15 @@
 
   async function runReplyDropExecutorAction(payload = {}) {
     const normalizedPayload = payload && typeof payload === "object" ? payload : {};
+    const roundRuntime = ensureExecutorRoundRuntime(normalizedPayload);
     let action = normalizeReplyDropExecutorAction(normalizedPayload.action || normalizedPayload.type);
+    const actionStartedAt = Date.now();
     const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
     let runtimeState = null;
     let resolvedTargetUrl = normalizeTweetUrl(normalizedPayload.url);
+    if (roundRuntime?.stopReason && action !== "refresh-recommendations") {
+      return buildReplyDropRoundStoppedFailure(roundRuntime, normalizedPayload);
+    }
     if (!resolvedTargetUrl && tweetId) {
       try {
         runtimeState = await getApiRuntimeStateSnapshot();
@@ -4299,9 +5198,52 @@
       if (!resolvedTargetUrl) {
         resolvedTargetUrl = normalizeTweetUrl(candidateRecord?.url || "");
       }
-      action = String(candidateRecord?.executionRoute || "").trim() === "timeline_inline"
+      const executionRoute = String(
+        candidateRecord?.executionRoute ||
+        candidateRecord?.execution?.executionRoute ||
+        ""
+      ).trim();
+      const requiresDetailInspection = Boolean(
+        executionRoute === "detail_inspect_then_reply" ||
+        executionRoute === "detail_open_only" ||
+        candidateRecord?.isDetailInspectionRequired === true ||
+        candidateRecord?.execution?.isDetailInspectionRequired === true
+      );
+      action = executionRoute === "timeline_inline"
         ? "reply-from-timeline"
-        : "reply";
+        : (requiresDetailInspection ? "inspect-then-reply" : "reply");
+    }
+    if (
+      isReplyDropExecutorMutationAction(action) &&
+      isExecutorRoundTargetRecorded(roundRuntime?.denylistTargetKeys, {
+        ...normalizedPayload,
+        tweetId,
+        url: resolvedTargetUrl
+      })
+    ) {
+      roundRuntime.repeatedTargetCount = Math.max(0, Math.floor(Number(roundRuntime.repeatedTargetCount || 0))) + 1;
+      pushExecutorRoundHistory(roundRuntime, {
+        type: "repeat-attempt",
+        tweetId,
+        url: resolvedTargetUrl,
+        action,
+        reasonCode: "target-denied-this-round"
+      });
+      return finalizeReplyDropExecutorRoundAction(
+        roundRuntime,
+        action,
+        normalizedPayload,
+        buildReplyActionFailure({
+          targetUrl: resolvedTargetUrl,
+          reason: "target-denied-this-round",
+          reasonCode: "target-denied-this-round",
+          reasonLabel: REPLY_REASON_LABELS["target-denied-this-round"],
+          stage: "round-denylist",
+          shouldSkipTarget: true
+        }),
+        resolvedTargetUrl,
+        actionStartedAt
+      );
     }
     if (["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
@@ -4310,7 +5252,7 @@
         stage: action
       });
       if (timeoutFailure) {
-        return {
+        return finalizeReplyDropExecutorRoundAction(roundRuntime, action, normalizedPayload, {
           ok: false,
           action: action || "unknown",
           stage: "target-timeout",
@@ -4324,17 +5266,21 @@
           timeoutMs: timeoutFailure.timeoutMs,
           actionGoalMs: timeoutFailure.actionGoalMs,
           shouldSkipTarget: true
-        };
+        }, targetForDeadline, actionStartedAt);
       }
     }
 
+    let actionResult;
     switch (action) {
       case "refresh-recommendations":
-        return refreshReplyDropRecommendations(normalizedPayload.options || normalizedPayload);
+        actionResult = await refreshReplyDropRecommendations(normalizedPayload.options || normalizedPayload);
+        break;
       case "queue":
-        return addReplyDropCandidateToQueue(tweetId);
+        actionResult = await addReplyDropCandidateToQueue(tweetId);
+        break;
       case "open-composer":
-        return openReplyDropComposer(normalizedPayload);
+        actionResult = await openReplyDropComposer(normalizedPayload);
+        break;
       case "reply-from-timeline": {
         const openResult = await openReplyDropComposer({
           ...normalizedPayload,
@@ -4357,7 +5303,7 @@
           if (detailSubmitResult?.ok) {
             clearReplyTargetAttempt(detailSubmitResult?.targetUrl || detailOpenResult?.targetUrl || resolvedTargetUrl);
           }
-          return {
+          actionResult = {
             ok: Boolean(detailSubmitResult?.ok),
             action: "reply",
             stage: detailSubmitResult?.ok ? "done" : "submit-reply",
@@ -4366,9 +5312,11 @@
             targetUrl: String(detailSubmitResult?.targetUrl || detailSubmitResult?.href || detailOpenResult?.targetUrl || detailOpenResult?.href || "").trim(),
             fallbackFrom: "reply-from-timeline"
           };
+          break;
         }
         if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
-          return openResult;
+          actionResult = openResult;
+          break;
         }
         const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
           ? normalizedPayload.submitOptions
@@ -4377,7 +5325,7 @@
         if (submitResult?.ok) {
           clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
         }
-        return {
+        actionResult = {
           ok: Boolean(submitResult?.ok),
           action: "reply-from-timeline",
           stage: submitResult?.ok ? "done" : "submit-reply",
@@ -4385,13 +5333,72 @@
           submit: submitResult,
           targetUrl: String(submitResult?.targetUrl || submitResult?.href || openResult?.targetUrl || openResult?.href || "").trim()
         };
+        break;
       }
-      case "inspect-then-reply":
+      case "inspect-then-reply": {
+        const openResult = await openReplyDropComposer({
+          ...normalizedPayload,
+          url: resolvedTargetUrl || normalizedPayload.url,
+          timelineFirst: false,
+          preferDetailPage: true,
+          preferTimeline: false
+        });
+        const openTimeoutFailure = checkReplyTargetDeadline(openResult?.targetUrl || resolvedTargetUrl, {
+          ...normalizedPayload,
+          stage: "open-composer"
+        });
+        if (openTimeoutFailure) {
+          actionResult = {
+            ok: false,
+            action: "inspect-then-reply",
+            stage: "target-timeout",
+            open: openResult,
+            submit: openTimeoutFailure,
+            targetUrl: String(openTimeoutFailure?.targetUrl || openResult?.targetUrl || resolvedTargetUrl || "").trim(),
+            reason: "target-timeout",
+            reasonCode: "target-timeout",
+            reasonLabel: getReplyReasonLabel("target-timeout"),
+            elapsedMs: openTimeoutFailure.elapsedMs,
+            timeoutMs: openTimeoutFailure.timeoutMs,
+            actionGoalMs: openTimeoutFailure.actionGoalMs,
+            shouldSkipTarget: true
+          };
+          break;
+        }
+        if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
+          actionResult = {
+            ok: Boolean(openResult?.ok),
+            action: "inspect-then-reply",
+            stage: "open-composer",
+            open: openResult,
+            submit: null,
+            targetUrl: String(openResult?.targetUrl || openResult?.href || resolvedTargetUrl || "").trim()
+          };
+          break;
+        }
+        const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
+          ? normalizedPayload.submitOptions
+          : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+        const submitResult = await submitReplyDropComposer(submitOptions);
+        if (submitResult?.ok) {
+          clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
+        }
+        actionResult = {
+          ok: Boolean(submitResult?.ok),
+          action: "inspect-then-reply",
+          stage: submitResult?.ok ? "done" : "submit-reply",
+          open: openResult,
+          submit: submitResult,
+          targetUrl: String(submitResult?.targetUrl || submitResult?.href || openResult?.targetUrl || openResult?.href || resolvedTargetUrl || "").trim()
+        };
+        break;
+      }
       case "submit-reply": {
         const submitOptions = normalizedPayload.options && typeof normalizedPayload.options === "object"
           ? normalizedPayload.options
           : normalizedPayload;
-        return submitReplyDropComposer(submitOptions);
+        actionResult = await submitReplyDropComposer(submitOptions);
+        break;
       }
       case "reply": {
         const openResult = await openReplyDropComposer(normalizedPayload);
@@ -4400,7 +5407,7 @@
           stage: "open-composer"
         });
         if (openTimeoutFailure) {
-          return {
+          actionResult = {
             ok: false,
             action: "reply",
             stage: "target-timeout",
@@ -4415,9 +5422,10 @@
             actionGoalMs: openTimeoutFailure.actionGoalMs,
             shouldSkipTarget: true
           };
+          break;
         }
         if (!openResult?.ok) {
-          return {
+          actionResult = {
             ok: false,
             action: "reply",
             stage: "open-composer",
@@ -4425,6 +5433,7 @@
             submit: null,
             targetUrl: String(openResult?.targetUrl || openResult?.href || "").trim()
           };
+          break;
         }
         const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
           ? normalizedPayload.submitOptions
@@ -4433,7 +5442,7 @@
         if (submitResult?.ok) {
           clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
         }
-        return {
+        actionResult = {
           ok: Boolean(submitResult?.ok),
           action: "reply",
           stage: submitResult?.ok ? "done" : "submit-reply",
@@ -4441,17 +5450,72 @@
           submit: submitResult,
           targetUrl: String(submitResult?.targetUrl || submitResult?.href || openResult?.targetUrl || openResult?.href || "").trim()
         };
+        break;
       }
       case "mark-shipped":
-        return markReplyDropTweetShipped({
+        actionResult = await markReplyDropTweetShipped({
           ...normalizedPayload,
           tweetId
         });
+        break;
       case "skip":
-        return skipReplyDropCandidate(tweetId);
+        actionResult = await skipReplyDropCandidate(tweetId);
+        break;
       default:
         throw new Error("unknown-executor-action");
     }
+
+    if (actionResult && typeof actionResult === "object" && !actionResult.ok) {
+      const nestedOpen = actionResult.open && typeof actionResult.open === "object" ? actionResult.open : null;
+      const nestedSubmit = actionResult.submit && typeof actionResult.submit === "object" ? actionResult.submit : null;
+      const propagatedReasonCode = String(
+        actionResult.reasonCode ||
+        nestedSubmit?.reasonCode ||
+        nestedOpen?.reasonCode ||
+        ""
+      ).trim();
+      const propagatedReason = String(
+        actionResult.reason ||
+        nestedSubmit?.reason ||
+        nestedOpen?.reason ||
+        ""
+      ).trim();
+      const propagatedReasonLabel = String(
+        actionResult.reasonLabel ||
+        nestedSubmit?.reasonLabel ||
+        nestedOpen?.reasonLabel ||
+        (propagatedReasonCode ? getReplyReasonLabel(propagatedReasonCode) : "")
+      ).trim();
+      if (propagatedReasonCode) {
+        actionResult.reasonCode = propagatedReasonCode;
+      }
+      if (propagatedReason) {
+        actionResult.reason = propagatedReason;
+      }
+      if (propagatedReasonLabel) {
+        actionResult.reasonLabel = propagatedReasonLabel;
+      }
+      if (actionResult.shouldSkipTarget == null) {
+        if (nestedSubmit?.shouldSkipTarget != null) {
+          actionResult.shouldSkipTarget = Boolean(nestedSubmit.shouldSkipTarget);
+        } else if (nestedOpen?.shouldSkipTarget != null) {
+          actionResult.shouldSkipTarget = Boolean(nestedOpen.shouldSkipTarget);
+        }
+      }
+    }
+
+    return finalizeReplyDropExecutorRoundAction(
+      roundRuntime,
+      action,
+      {
+        ...normalizedPayload,
+        tweetId,
+        url: resolvedTargetUrl || normalizedPayload.url
+      },
+      actionResult,
+      resolvedTargetUrl,
+      actionStartedAt
+    );
   }
 
   function pickVisibleReplySubmitButton(targetUrl = "") {
@@ -4684,12 +5748,28 @@
         return importReplyDropApiReplyLedger(args[0] || {});
       case "addToQueue":
         return addReplyDropCandidateToQueue(args[0]);
-      case "markShipped":
-        return markReplyDropTweetShipped(args[0], args[1], args[2] || {});
+      case "markShipped": {
+        const payload = args[0] && typeof args[0] === "object"
+          ? { ...(args[0] || {}) }
+          : {
+              tweetId: args[0],
+              replyText: typeof args[1] === "string" ? args[1] : "",
+              ...(args[2] && typeof args[2] === "object" ? args[2] : {})
+            };
+        const roundRuntime = ensureExecutorRoundRuntime(payload);
+        const result = await markReplyDropTweetShipped(args[0], args[1], args[2] || {});
+        return finalizeReplyDropExecutorRoundAction(roundRuntime, "mark-shipped", payload, result, payload.url, Date.now());
+      }
       case "unmarkReplied":
         return unmarkReplyDropTweet(args[0]);
-      case "skipCandidate":
-        return skipReplyDropCandidate(args[0]);
+      case "skipCandidate": {
+        const payload = args[0] && typeof args[0] === "object"
+          ? { ...(args[0] || {}) }
+          : { tweetId: args[0] };
+        const roundRuntime = ensureExecutorRoundRuntime(payload);
+        const result = await skipReplyDropCandidate(args[0]);
+        return finalizeReplyDropExecutorRoundAction(roundRuntime, "skip", payload, result, payload.url, Date.now());
+      }
       case "capturePickupSnapshot":
         return captureAndRecordPickupSnapshot(args[0] || {});
       case "captureReplyPerformance":
@@ -4801,6 +5881,17 @@
 
   function normalizeHandle(handle) {
     return String(handle || "").replace(/^@/, "").trim().toLowerCase();
+  }
+
+  function readNodeActionText(node) {
+    if (!(node instanceof HTMLElement)) {
+      return "";
+    }
+    return [
+      node.getAttribute("aria-label") || "",
+      node.getAttribute("title") || "",
+      node.textContent || ""
+    ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
   function uniqueList(value) {
@@ -5855,6 +6946,48 @@
     }
 
     return normalizedLinks[0]?.url || "";
+  }
+
+  function findPrimaryStatusLink(article, targetUrl = "") {
+    if (!(article instanceof Element)) {
+      return null;
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const authorHandle = readAuthorHandle(article);
+    const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
+      .filter((link) => link.closest(ARTICLE_SELECTOR) === article);
+    const normalizedLinks = links
+      .map((link) => ({
+        link,
+        url: normalizeTweetUrl(link.href || link.getAttribute("href") || ""),
+        hasTime: Boolean(link.querySelector("time[datetime]"))
+      }))
+      .filter((entry) => entry.url && entry.link instanceof HTMLElement);
+
+    if (normalizedTarget) {
+      const exact = normalizedLinks.find((entry) => entry.url === normalizedTarget);
+      if (exact?.link instanceof HTMLElement) {
+        return exact.link;
+      }
+    }
+
+    const matchingAuthorTimeLink = normalizedLinks.find((entry) => entry.hasTime && extractStatusAuthorHandle(entry.url) === authorHandle);
+    if (matchingAuthorTimeLink?.link instanceof HTMLElement) {
+      return matchingAuthorTimeLink.link;
+    }
+
+    const matchingAuthorLink = normalizedLinks.find((entry) => extractStatusAuthorHandle(entry.url) === authorHandle);
+    if (matchingAuthorLink?.link instanceof HTMLElement) {
+      return matchingAuthorLink.link;
+    }
+
+    const anyTimeLink = normalizedLinks.find((entry) => entry.hasTime);
+    if (anyTimeLink?.link instanceof HTMLElement) {
+      return anyTimeLink.link;
+    }
+
+    return normalizedLinks[0]?.link || null;
   }
 
   function readAuthorHandle(article) {
@@ -7559,7 +8692,9 @@
     const executionRoute = String(candidate?.executionRoute || "").trim();
     const immediateSendable = Boolean(candidate?.isImmediateSendable || sendabilityState === "send_now");
     const action = immediateSendable && draft
-      ? (executionRoute === "timeline_inline" ? "reply-from-timeline" : "reply")
+      ? (executionRoute === "timeline_inline"
+        ? "reply-from-timeline"
+        : (executionRoute === "detail_inspect_then_reply" ? "inspect-then-reply" : "reply"))
       : "open-composer";
     return runReplyDropExecutorAction({
       action,
@@ -8577,12 +9712,19 @@
       roundMaxTargets: EXECUTOR_ROUND_MAX_TARGETS,
       roundBudgetMs: EXECUTOR_ROUND_BUDGET_MS,
       roundBudgetMinutes: Math.round(EXECUTOR_ROUND_BUDGET_MS / 60000),
+      roundIdleStopMs: EXECUTOR_ROUND_IDLE_STOP_MS,
       consecutiveEmptyResultLimit: EXECUTOR_CONSECUTIVE_EMPTY_RESULT_LIMIT,
+      emptyScanLimit: EXECUTOR_EMPTY_SCAN_LIMIT,
+      executionFaultLimit: EXECUTOR_ROUND_EXECUTION_FAULT_LIMIT,
+      sameTargetPickLimit: 1,
+      preservePoolDefault: true,
+      autoResetIfStoppedDefault: true,
+      onlyReplyNowRecommended: true,
       emptyResultDefinition: "插件/runner没有拿到结构化执行结果的异常空返回；正常评分下降、低于发送线、已回复过、目标不匹配不算。",
       emptyResultInstruction: "同一轮连续 empty-result 达到3次时，立即停止本轮、切回首页，并提示执行链路异常，建议刷新后重试。",
       emptyInboxMinRescans: EXECUTOR_EMPTY_INBOX_MIN_RESCANS,
       noCandidateTimeoutMs: EXECUTOR_NO_CANDIDATE_TIMEOUT_MS,
-      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，先刷新/滚动重扫至少1轮；15秒内仍无候选，直接报告 no-auto-safe-candidate 和 pickDiagnostics，不要空转。",
+      emptyInboxInstruction: "如果本轮没有 recommendedDecision=reply-now 的合格候选，先优先消费 preservePool backlog；backlog 清空后再刷新/滚动重扫至少1轮。soft stop 后默认 autoResetIfStopped=true 自动解锁；15秒内仍无候选，直接报告 no-auto-safe-candidate 和 pickDiagnostics，不要空转。",
       targetStartedAt: normalizedStartedAt,
       targetDeadlineAt: normalizedStartedAt + EXECUTOR_TARGET_TIMEOUT_MS,
       switchTargetReasonCode: "target-timeout"
@@ -8935,6 +10077,38 @@
     );
   }
 
+  async function navigateToReplyTargetUrl(targetUrl, options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    const targetArticle = findReplyArticleByTarget(normalizedTarget, extractTweetIdFromUrl(normalizedTarget));
+    const statusLink = findPrimaryStatusLink(targetArticle, normalizedTarget);
+    if (statusLink instanceof HTMLElement && hasVisibleRect(statusLink)) {
+      const article = targetArticle instanceof Element ? targetArticle : statusLink.closest(ARTICLE_SELECTOR);
+      if (article instanceof Element) {
+        article.scrollIntoView({ block: "center", behavior: "auto" });
+        await waitFor(120);
+      }
+      triggerReplyActionClick(statusLink);
+      await waitFor(Math.max(220, Number(options.settleMs) || 320));
+      return true;
+    }
+
+    try {
+      global.location.assign(normalizedTarget);
+    } catch {
+      try {
+        global.location.href = normalizedTarget;
+      } catch {
+        return false;
+      }
+    }
+    await waitFor(Math.max(260, Number(options.settleMs) || 360));
+    return true;
+  }
+
   async function ensureTargetReplyContext(targetUrl, options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
     const maxRetry = Math.max(0, Math.floor(Number(options.maxRetry) || 0));
@@ -8967,8 +10141,7 @@
       }
 
       if (!navigated && currentUrl !== normalizedTarget) {
-        global.location.href = normalizedTarget;
-        navigated = true;
+        navigated = await navigateToReplyTargetUrl(normalizedTarget, options);
       }
 
       await waitFor(retryDelayMs);
@@ -9505,7 +10678,7 @@
           node.textContent ||
           ""
         ).trim().toLowerCase();
-        return ["close", "cancel", "back", "关闭", "關閉", "取消", "戻る"].some((keyword) => label.includes(keyword));
+        return ["close", "cancel", "back", "关闭", "關閉", "取消", "戻る", "閉じる"].some((keyword) => label.includes(keyword));
       });
 
     if (closeButton instanceof HTMLElement) {
@@ -9601,8 +10774,11 @@
         ? getVisibleReplySubmitButtons(container).find((node) => getReplyComposerContainer(node) === container) || null
         : null
     );
-    const buttonText = String(sendButton?.textContent || "").trim().toLowerCase();
-    const containerText = String(container?.textContent || "").trim().toLowerCase();
+    const buttonText = readNodeActionText(sendButton);
+    const containerText = [
+      container?.getAttribute?.("aria-label") || "",
+      container?.textContent || ""
+    ].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
     const hasReplyButtonText = REPLY_BUTTON_TEXT.some((keyword) => buttonText.includes(keyword));
     const hasReplyContextText = REPLY_CONTEXT_TEXT.some((keyword) => containerText.includes(keyword));
     const contextHandles = collectReplyContextHandles(container, containerText);
@@ -10847,6 +12023,38 @@
     };
   }
 
+  async function tryVerifyReplyFromStatusPage(targetUrl, options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return null;
+    }
+
+    const contextLock = await ensureTargetReplyContext(normalizedTarget, {
+      maxRetry: 1,
+      retryDelayMs: 320,
+      timeoutMs: Math.max(2200, Number(options.timeoutMs) || 4800)
+    });
+    if (!contextLock?.ok) {
+      return null;
+    }
+
+    const startedAt = Date.now();
+    const verifyTimeoutMs = Math.max(800, Number(options.verifyTimeoutMs) || 2600);
+    while (Date.now() - startedAt <= verifyTimeoutMs) {
+      const verificationEvidence = findReplyVerificationEvidence(normalizedTarget);
+      if (verificationEvidence) {
+        return finalizeVerifiedReply(normalizedTarget, {
+          ...options,
+          verificationSource: String(options.verificationSource || "status-page-probe").trim() || "status-page-probe",
+          verificationEvidence
+        });
+      }
+      await waitFor(240);
+    }
+
+    return null;
+  }
+
   function buildReplyMetaFromArticle(article) {
     if (!(article instanceof Element)) {
       return null;
@@ -11292,6 +12500,16 @@
         verificationSource: verificationEvidence.detectionSource,
         verificationEvidence
       });
+    }
+
+    const probedVerification = await tryVerifyReplyFromStatusPage(normalizedTarget, {
+      outcomeText: readOutcomeText(),
+      replyMeta,
+      likeOptions: options,
+      verificationSource: "status-page-probe"
+    });
+    if (probedVerification?.ok) {
+      return probedVerification;
     }
 
     await settleFailedTimelineUi();

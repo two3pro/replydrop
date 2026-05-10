@@ -169,6 +169,43 @@ window.ReplyDropAPI
 
 `getAgentInbox(options)` 的通用别名，推荐外部执行器优先使用。
 
+推荐额外传：
+
+- `options.roundId`
+- `options.sessionId`
+- `options.resetRound`
+- `options.preservePool=true`
+- `options.autoResetIfStopped=true`
+- `options.onlyReplyNow=true`
+
+现在返回里会额外包含：
+
+- `roundState`
+  - `roundStartAt`
+  - `roundDeadlineAt`
+  - `successCountThisRound`
+  - `failCountThisRound`
+  - `emptyScanCount`
+  - `repeatedTargetCount`
+  - `stopReason`
+  - `isStopped`
+- `pickDiagnostics.recommendedResult`
+  - 可能是 `process-candidates`
+  - 也可能是 `no-auto-safe-candidate`
+  - 若命中插件硬止损，会变成 `stop-round`
+- `pickDiagnostics.candidateBacklogSize`
+- `pickDiagnostics.preservePoolServed`
+- `pickDiagnostics.autoResetRecovered`
+- `pickDiagnostics.scanTimeMs`
+- `pickDiagnostics.sendTimeMs`
+- `pickDiagnostics.timeBetweenSuccessfulSendsMs`
+
+调用方约束：
+
+- 只有 `stopReason` 命中硬止损时，才把 `stop-round` 当成真正停轮；`empty-scan-limit / round-idle-timeout` 这类 soft stop 允许配合 `autoResetIfStopped` 继续发现候选
+- backlog 不为空时，优先连续消费 `candidates`，不要每发一条就先做 full refresh
+- 同一轮同一 `tweetId` 只会被放进 pick 1 次；被 `skip` 或发送失败后，该目标本轮会进入 denylist
+
 ### `getCandidateContext(tweetId, options)`
 
 返回单条候选的完整上下文包，适合：
@@ -374,6 +411,15 @@ window.ReplyDropAPI
 - `reply` 会先执行 `openComposer()`，成功后再执行 `submitReply()`
 - `open-composer` 支持直接传 `tweetId`，不必自己拼帖子 URL
 - 建议把 `getExecutorInbox().executionPolicy.targetStartedAt` 原样传入 `targetStartedAt`，这样插件能从首页候选选择时开始计算 120 秒硬截止
+- 建议把同一轮的 `roundId` / `sessionId` 一起传入；插件会据此记录真实的 `successCountThisRound / failCountThisRound / stopReason`
+- 同轮里，如果某目标已经 `skip`、发送失败、或被标记为本轮 denylist，再次调用会收到 `target-denied-this-round`
+
+新的轮控语义：
+
+- 连续 3 次空扫会触发 `stopReason=empty-scan-limit`
+- 单轮 90 秒没有新增成功会触发 `stopReason=round-idle-timeout`
+- 执行故障累计达到阈值会触发 `stopReason=execution-fault-limit`
+- 到达整轮预算或成功数上限会触发 `round-budget-exceeded / round-target-limit`
 
 ### `submitReply(options)`
 
