@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.255`
+Current version: `0.2.259`
 
-This Chrome / Brave baseline keeps the Safari `0.2.249` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, and `0.2.255` now separates reply worthiness from execution route so high-value media posts stay green even when they need detail inspection first.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.259` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, and `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.259` stops wasting good targets on transient execution failures and keeps the executor anchored to the Home For You feed:
+
+- transient failures such as `begin-failed`, `context-not-locked`, `reply-target-lost`, or `ticket-not-found` no longer automatically denylist a target for the rest of the round
+- `getExecutorInbox()` and `refreshRecommendations()` now verify the active Home tab and auto-correct back to `For You` before scanning, while reporting the selected feed in diagnostics
+- live rechecks now tolerate small score / exposure drift for previously `reply-now` timeline-inline candidates instead of immediately forcing `skip-recommended`
 
 Version `0.2.255` keeps media posts in sampling and routes them to detail inspection instead of downgrading:
 
@@ -166,16 +172,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.255.zip](./downloads/replydrop-p2.255.zip)
+- Chrome / Brave runtime package: [replydrop-p2.259.zip](./downloads/replydrop-p2.259.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.259.zip](./downloads/replydrop-safari-open-source-0.2.259.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.255` public baseline in this repo.
-  - Safari currently follows its own `0.2.249` release line.
+  - Chrome / Brave now uses the `0.2.259` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.259`.
 
 ## Local Install
 

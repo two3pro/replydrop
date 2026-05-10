@@ -128,6 +128,38 @@
     "send-not-verified",
     "begin-failed"
   ]);
+  const EXECUTOR_ROUND_TRANSIENT_FAILURE_CODES = new Set([
+    "begin-failed",
+    "context-not-locked",
+    "reply-context-missing",
+    "reply-target-lost",
+    "timeline-article-missing",
+    "timeline-inline-required",
+    "composer-not-ready",
+    "reply-surface-not-ready",
+    "generic-composer-opened",
+    "send-button-missing",
+    "send-button-disabled-but-target-locked",
+    "not-reply-composer",
+    "navigating",
+    "ticket-not-found",
+    "missing-ticket-id",
+    "replydrop-api-null-result",
+    "runtime-message-timeout"
+  ]);
+  const HOME_FOR_YOU_TEXTS = [
+    "for you",
+    "foryou",
+    "为你推荐",
+    "為你推薦"
+  ];
+  const HOME_FOLLOWING_TEXTS = [
+    "following",
+    "关注中",
+    "關注中",
+    "正在关注",
+    "正在關注"
+  ];
   const DROP_PATH = "M10 1.25C10 1.25 3 9.12 3 14.56C3 19.03 6.13 22.5 10 22.5C13.87 22.5 17 19.03 17 14.56C17 9.12 10 1.25 10 1.25Z";
   const DROP_SVG = `
     <svg class="xrs-drop-svg" viewBox="0 0 20 24" aria-hidden="true" focusable="false">
@@ -265,6 +297,18 @@
       keys,
       primaryKey: keys[0] || ""
     };
+  }
+
+  function isExecutorRoundTransientFailureReason(reasonCode = "") {
+    return EXECUTOR_ROUND_TRANSIENT_FAILURE_CODES.has(String(reasonCode || "").trim());
+  }
+
+  function shouldDenylistExecutorRoundFailure(payload = {}) {
+    const reasonCode = String(payload?.reasonCode || payload?.reason || "").trim();
+    if (!reasonCode) {
+      return true;
+    }
+    return !isExecutorRoundTransientFailureReason(reasonCode);
   }
 
   function createExecutorRoundRuntime(identity = {}, now = Date.now()) {
@@ -609,7 +653,7 @@
         action: payload?.action
       });
     }
-    if (addExecutorRoundTargetRecord(roundState, "denylistTargetKeys", payload)) {
+    if (shouldDenylistExecutorRoundFailure(payload) && addExecutorRoundTargetRecord(roundState, "denylistTargetKeys", payload)) {
       roundState.denylistedTargetCount = Math.max(0, Math.floor(Number(roundState.denylistedTargetCount || 0))) + 1;
     }
     if (EXECUTOR_FAULT_REASON_CODES.has(String(payload?.reasonCode || "").trim())) {
@@ -1797,6 +1841,7 @@
     const runtimeState = await getRuntimeStateSnapshot();
     const runtimeCandidates = Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates : [];
     const runtimeAttributionModel = buildApiAttributionModel(runtimeState);
+    const homeFeedState = getHomeFeedState();
     let domCandidates = collectDomCandidateSnapshot();
 
     if (shouldRefreshApiCandidateView(runtimeCandidates, domCandidates)) {
@@ -1851,7 +1896,10 @@
         scanPending: Boolean(state.scanTimer || state.lazyRescanTimer),
         updatedAt: Number(state.lastScanCompletedAt || runtimeState?.updatedAt || 0),
         scannedCount: Number(state.stats?.scannedCount || runtimeState?.scannedCount || 0),
-        visibleCount: Number(state.stats?.visibleCount || runtimeState?.visibleCount || 0)
+        visibleCount: Number(state.stats?.visibleCount || runtimeState?.visibleCount || 0),
+        sourceSurface: detectCurrentSourceSurface(),
+        selectedHomeFeed: homeFeedState.onHome ? homeFeedState.currentFeed : "",
+        selectedHomeFeedText: homeFeedState.onHome ? homeFeedState.selectedText : ""
       }
     };
   }
@@ -2415,6 +2463,11 @@
     const liveAgeMinutes = getReplyDropAgeMinutes(tweet?.timestamp || candidate?.timestamp || 0);
     const previewSurface = String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim();
     const liveSurface = String(tweet?.sourceSurface || liveAnalysis?.sourceSurface || "").trim();
+    const previewDecision = String(candidate?.recommendedDecision || "").trim();
+    const timelineInlineCandidate = (
+      String(candidate?.executionRoute || "").trim() === "timeline_inline" ||
+      Boolean(candidate?.timelineInlineReplyEligible)
+    );
     const scoreDelta = liveScore - previewScore;
     const exposureDelta = liveExposureScore - previewExposureScore;
     const currentDelta = liveScore - currentCandidateScore;
@@ -2423,10 +2476,21 @@
     const belowAverageLine = liveScore < averageLineScore;
     const belowExecutorSendFloor = liveScore < executorSendFloor;
     const belowDisplayThreshold = liveScore < displayThreshold;
-    const belowExposureFloor = liveExposureScore < Math.max(48, Math.min(64, executorSendFloor - 4));
+    const exposureFloor = Math.max(48, Math.min(64, executorSendFloor - 4));
+    const belowExposureFloor = liveExposureScore < exposureFloor;
     const olderThanAutoWindow = liveAgeMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES;
     const staleReplyWindow = liveAgeMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES;
     const surfaceChanged = Boolean(previewSurface && liveSurface && previewSurface !== liveSurface);
+    const sendFloorTolerance = Math.max(2, Math.min(4, Math.round(Math.max(0, executorSendFloor - displayThreshold) / 2) || 3));
+    const exposureFloorTolerance = 6;
+    const toleratedTimelineInlineDrift = Boolean(
+      previewDecision === "reply-now" &&
+      timelineInlineCandidate &&
+      !olderThanAutoWindow &&
+      liveScore >= Math.max(displayThreshold, executorSendFloor - sendFloorTolerance) &&
+      liveExposureScore >= Math.max(40, exposureFloor - exposureFloorTolerance) &&
+      !String(liveAnalysis?.blockReason || "").trim()
+    );
     const flags = [];
 
     if (surfaceChanged) {
@@ -2442,13 +2506,13 @@
       flags.push("below-average-line");
     }
     if (belowExecutorSendFloor) {
-      flags.push("below-executor-send-floor");
+      flags.push(toleratedTimelineInlineDrift ? "below-executor-send-floor-tolerated" : "below-executor-send-floor");
     }
     if (belowDisplayThreshold) {
-      flags.push("below-display-floor");
+      flags.push(toleratedTimelineInlineDrift ? "below-display-floor-tolerated" : "below-display-floor");
     }
     if (belowExposureFloor) {
-      flags.push("low-comment-exposure");
+      flags.push(toleratedTimelineInlineDrift ? "low-comment-exposure-tolerated" : "low-comment-exposure");
     }
     if (olderThanAutoWindow) {
       flags.push(staleReplyWindow ? "older-than-reply-window" : "older-than-auto-window");
@@ -2458,13 +2522,15 @@
     }
 
     const skipRecommended = (
-      belowDisplayThreshold ||
-      belowExecutorSendFloor ||
-      belowExposureFloor ||
+      (belowDisplayThreshold && !toleratedTimelineInlineDrift) ||
+      (belowExecutorSendFloor && !toleratedTimelineInlineDrift) ||
+      (belowExposureFloor && !toleratedTimelineInlineDrift) ||
       olderThanAutoWindow
     );
     if (skipRecommended) {
       flags.push("skip-recommended");
+    } else if (toleratedTimelineInlineDrift) {
+      flags.push("timeline-inline-recheck-tolerated");
     }
 
     let status = "stable";
@@ -2500,9 +2566,11 @@
       belowExecutorSendFloor,
       belowDisplayThreshold,
       belowExposureFloor,
+      exposureFloor,
       olderThanAutoWindow,
       staleReplyWindow,
       skipRecommended,
+      toleratedTimelineInlineDrift,
       flags: Array.from(new Set(flags)),
       liveTier: String(liveAnalysis?.tier || "").trim(),
       liveBlockReason: String(liveAnalysis?.blockReason || "").trim()
@@ -3598,6 +3666,7 @@
     const executorSendFloor = Number(context.recheck?.executorSendFloor || getConfiguredExecutorSendFloor(state.settings));
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
     const recommendedDecision = String(context.routing?.recommendedDecision || "").trim();
+    const toleratedTimelineInlineDrift = Boolean(context.recheck?.toleratedTimelineInlineDrift);
     const trafficProfile = buildExecutorTrafficProfile({
       views: context.post?.views,
       replies: context.post?.replies,
@@ -3608,7 +3677,7 @@
     if (recommendedDecision && recommendedDecision !== "reply-now") {
       reasons.push(`decision-${recommendedDecision}`);
     }
-    if (context.recheck?.skipRecommended) {
+    if (context.recheck?.skipRecommended && !toleratedTimelineInlineDrift) {
       reasons.push("skip-recommended");
     }
     if (!isBlueCheckEligibleAuthor(context.author?.verified, context.author?.verificationType)) {
@@ -3639,6 +3708,17 @@
       context.recheck.flags.forEach((flag) => {
         const normalized = String(flag || "").trim();
         if (normalized && !isReplyDropRouteOnlyFlag(normalized)) {
+          if (
+            toleratedTimelineInlineDrift &&
+            (
+              normalized === "below-executor-send-floor" ||
+              normalized === "below-display-floor" ||
+              normalized === "low-comment-exposure" ||
+              normalized === "skip-recommended"
+            )
+          ) {
+            return;
+          }
           reasons.push(normalized);
         }
       });
@@ -3966,6 +4046,21 @@
       };
     }
 
+    const homeFeed = await ensurePreferredHomeFeed({
+      allowClick: options?.ensureForYou !== false,
+      waitMs
+    });
+    if (homeFeed.changed) {
+      return {
+        ok: Boolean(homeFeed.ok),
+        action: "switch-home-feed",
+        mode: requestedMode,
+        homeFeed,
+        stats: { ...state.stats },
+        instruction: "已切回 For You 并触发重扫，请重新调用 getExecutorInbox()。"
+      };
+    }
+
     if (mode === "reload" || mode === "refresh") {
       global.location.reload();
       return {
@@ -4020,6 +4115,9 @@
 
   async function getReplyDropApiAgentInbox(options = {}) {
     const inboxStartedAt = Date.now();
+    const homeFeed = await ensurePreferredHomeFeed({
+      allowClick: options?.ensureForYou !== false
+    });
     const runtimeState = await getApiRuntimeStateSnapshot();
     const roundRuntime = ensureExecutorRoundRuntime(options);
     const limit = Math.max(1, Math.min(16, Math.floor(Number(options?.limit) || 6)));
@@ -4173,6 +4271,10 @@
       pickDiagnostics: {
         scannedCount: Number(runtimeState?.pageCandidateSync?.scannedCount || 0),
         visibleCount: Number(runtimeState?.pageCandidateSync?.visibleCount || 0),
+        sourceSurface: String(runtimeState?.pageCandidateSync?.sourceSurface || detectCurrentSourceSurface()).trim(),
+        selectedHomeFeed: String(runtimeState?.pageCandidateSync?.selectedHomeFeed || homeFeed?.currentFeed || "").trim(),
+        selectedHomeFeedText: String(runtimeState?.pageCandidateSync?.selectedHomeFeedText || homeFeed?.selectedText || "").trim(),
+        homeFeedAutoCorrected: Boolean(homeFeed?.changed && homeFeed?.ok),
         scanWindowSize,
         recentCandidateCount: Array.isArray(runtimeState?.recentCandidates) ? runtimeState.recentCandidates.length : 0,
         candidateCount: finalCandidates.length,
@@ -4217,6 +4319,7 @@
         topHumanReviewCodes,
         topExcluded
       },
+      homeFeed,
       pageCandidateSync: runtimeState?.pageCandidateSync || null,
       emptyInboxRecovery: {
         ...buildEmptyInboxRecovery(contexts, generatedAt),
@@ -5946,6 +6049,144 @@
     return "";
   }
 
+  function normalizeHomeFeedText(text = "") {
+    return String(text || "")
+      .normalize("NFKC")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isForYouFeedText(text = "") {
+    const normalized = normalizeHomeFeedText(text);
+    return HOME_FOR_YOU_TEXTS.some((value) => normalized.includes(value));
+  }
+
+  function isFollowingFeedText(text = "") {
+    const normalized = normalizeHomeFeedText(text);
+    return HOME_FOLLOWING_TEXTS.some((value) => normalized.includes(value));
+  }
+
+  function readHomeFeedTabText(node) {
+    if (!(node instanceof HTMLElement)) {
+      return "";
+    }
+    return normalizeHomeFeedText([
+      node.getAttribute("aria-label") || "",
+      node.getAttribute("title") || "",
+      node.textContent || ""
+    ].join(" "));
+  }
+
+  function findHomeFeedTab(kind = "for-you") {
+    const matcher = kind === "following" ? isFollowingFeedText : isForYouFeedText;
+    const selectors = [
+      '[role="tab"]',
+      '[data-testid="ScrollSnap-List"] [role="tab"]'
+    ];
+    const seen = new Set();
+    for (const selector of selectors) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      for (const node of nodes) {
+        if (!(node instanceof HTMLElement) || seen.has(node)) {
+          continue;
+        }
+        seen.add(node);
+        if (matcher(readHomeFeedTabText(node))) {
+          return node;
+        }
+      }
+    }
+    return null;
+  }
+
+  function getHomeFeedState() {
+    const path = String(global.location.pathname || "").toLowerCase();
+    const selectedText = readSurfaceSelectedText();
+    const forYouSelected = isForYouFeedText(selectedText);
+    const followingSelected = isFollowingFeedText(selectedText);
+    const forYouTab = path.startsWith("/home") ? findHomeFeedTab("for-you") : null;
+    const followingTab = path.startsWith("/home") ? findHomeFeedTab("following") : null;
+    const currentFeed = path.startsWith("/home")
+      ? (forYouSelected ? "for-you" : (followingSelected ? "following" : "unknown"))
+      : "";
+    return {
+      onHome: path.startsWith("/home"),
+      currentFeed,
+      selectedText,
+      forYouSelected,
+      followingSelected,
+      forYouTab,
+      followingTab
+    };
+  }
+
+  async function ensurePreferredHomeFeed(options = {}) {
+    const feedState = getHomeFeedState();
+    if (!feedState.onHome) {
+      return {
+        ok: false,
+        changed: false,
+        currentFeed: feedState.currentFeed,
+        selectedText: feedState.selectedText,
+        reason: "not-home"
+      };
+    }
+    if (feedState.forYouSelected) {
+      return {
+        ok: true,
+        changed: false,
+        currentFeed: "for-you",
+        selectedText: feedState.selectedText
+      };
+    }
+    if (!(feedState.forYouTab instanceof HTMLElement)) {
+      return {
+        ok: false,
+        changed: false,
+        currentFeed: feedState.currentFeed,
+        selectedText: feedState.selectedText,
+        reason: "for-you-tab-missing"
+      };
+    }
+    if (options?.allowClick === false) {
+      return {
+        ok: false,
+        changed: false,
+        currentFeed: feedState.currentFeed,
+        selectedText: feedState.selectedText,
+        reason: "for-you-required"
+      };
+    }
+
+    feedState.forYouTab.scrollIntoView({ block: "center", inline: "nearest" });
+    const clicked = triggerReplyActionClick(feedState.forYouTab);
+    if (!clicked) {
+      return {
+        ok: false,
+        changed: false,
+        currentFeed: feedState.currentFeed,
+        selectedText: feedState.selectedText,
+        reason: "for-you-click-failed"
+      };
+    }
+
+    state.lastDomChangeAt = Date.now();
+    scheduleScan();
+    const waitMs = Math.max(250, Math.min(1800, Math.floor(Number(options?.waitMs) || 650)));
+    await new Promise((resolve) => global.setTimeout(resolve, waitMs));
+    scanTweets();
+    const nextFeedState = getHomeFeedState();
+    return {
+      ok: nextFeedState.forYouSelected,
+      changed: true,
+      currentFeed: nextFeedState.forYouSelected ? "for-you" : nextFeedState.currentFeed,
+      previousFeed: feedState.currentFeed,
+      selectedText: nextFeedState.selectedText,
+      reason: nextFeedState.forYouSelected ? "" : "for-you-switch-pending"
+    };
+  }
+
   function detectCurrentSourceSurface() {
     const path = String(global.location.pathname || "").toLowerCase();
     if (path.startsWith("/search") || path.startsWith("/explore")) {
@@ -5956,13 +6197,7 @@
     }
     if (path.startsWith("/home")) {
       const selectedText = readSurfaceSelectedText();
-      if (
-        selectedText.includes("following") ||
-        selectedText.includes("关注中") ||
-        selectedText.includes("關注中") ||
-        selectedText.includes("正在关注") ||
-        selectedText.includes("正在關注")
-      ) {
+      if (isFollowingFeedText(selectedText)) {
         return "following";
       }
       return "for-you";

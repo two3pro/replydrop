@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.259
+
+- stop burning good targets on transient send failures: `begin-failed`、`context-not-locked`、`reply-target-lost`、`ticket-not-found` 这类瞬时执行故障不再直接进本轮 denylist，执行器可以继续重试或换路，不会因为一次假失败就把好目标永久踢出本轮
+- auto-correct Home feed before inbox scans: `getExecutorInbox()` / `refreshRecommendations()` 进入首页时会优先确认并纠偏到 `For You`，同时把 `selectedHomeFeed`、`selectedHomeFeedText`、`homeFeedAutoCorrected` 等诊断字段回传出来，减少在 `Following` 里把候选池扫空的情况
+- tolerate light timeline-inline drift during live recheck: 对已经判成 `reply-now` 且可首页原地回的候选，live recheck 允许小幅 score / exposure 漂移，改打 `*-tolerated` 标记而不是立刻 `skip-recommended`，降低“明明还能发却被复核误杀”的概率
+
 ## 0.2.258
 
 - rework executor candidate supply for throughput: `getExecutorInbox()` 新增默认开启的 `preservePool` / `autoResetIfStopped` 行为，优先连续消费 reply-now backlog，不再把“已展示过”候选直接打空

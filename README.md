@@ -6,9 +6,9 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.258`
+当前重置基线版本：`0.2.259`
 
-当前 Chrome / Brave 公开包继续沿用 Safari `0.2.249` 的共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，而 `0.2.258` 继续收口候选供给与吞吐，把 backlog、soft unlock、inline fast lane 和 throughput telemetry 补进执行层。
+当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.259` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，而 `0.2.259` 则补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -235,16 +235,16 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.258.zip](./downloads/replydrop-p2.258.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.259.zip](./downloads/replydrop-p2.259.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.249.zip](./downloads/replydrop-safari-open-source-0.2.249.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.259.zip](./downloads/replydrop-safari-open-source-0.2.259.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.258`
-  - Safari 当前走单独版本线 `0.2.249`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.259`
+  - Safari 源码公开包当前也同步到 `0.2.259`
 
 ## 本地安装
 
