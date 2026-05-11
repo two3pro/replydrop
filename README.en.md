@@ -6,11 +6,11 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.265`
+Current version: `0.2.266`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.265` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, and `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.266` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, and `0.2.266` hardens reload recovery for both async and direct detail-page reply actions.
 
-Version `0.2.265` also stays focused on execution, not scoring: detail/media routes now feed live detail-page `contextCompleteness`, execution-route hints, and media-sampling metadata back into open-stage recheck, which reduces false `value-dropped-on-open` blocks on fast-moving video/image samples; and when a failed action leaves an empty disabled composer behind, the executor now clears and closes that reply surface instead of abandoning the page in a dirty state.
+Version `0.2.266` also stays focused on execution, not scoring: reload-interrupted executor actions now wait for a real target-ready state, retry only a narrower set of surface/reload failures, and direct `replyFromTimeline(payload)` calls now get a local handoff too, so a document reload can still resume the action or at least run unified cleanup on the next document.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -37,6 +37,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.266` closes the next batch of pressure-tested workflow gaps:
+
+- reload-interrupted async handoffs no longer jump to terminal `replydrop-api-document-reloaded` after a single shaky resume; they wait for a target-ready detail page and retry only a narrower set of reload/surface failures
+- direct `replyFromTimeline(payload)` calls now create a local handoff too, so a detail-page document reload can still resume the action path or at least finish cleanup on the next document
+- exhausted reload resumes now clean the reply surface before final rejection, reducing the chance of leaving an empty disabled composer behind
 
 Version `0.2.265` closes the next batch of pressure-tested workflow gaps:
 
@@ -209,16 +215,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.265.zip](./downloads/replydrop-p2.265.zip)
+- Chrome / Brave runtime package: [replydrop-p2.266.zip](./downloads/replydrop-p2.266.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.265.zip](./downloads/replydrop-safari-open-source-0.2.265.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.266.zip](./downloads/replydrop-safari-open-source-0.2.266.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.265` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.265`.
+  - Chrome / Brave now uses the `0.2.266` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.266`.
 
 ## Local Install
 

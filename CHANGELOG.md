@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.266
+
+- keep reload-interrupted async actions recoverable for longer: `resumePersistedReplyDropAsyncHandoff()` now waits for a real target-ready state, retries a narrower set of reload/surface failures instead of immediately settling them, and allows more than one resume attempt before declaring the handoff exhausted
+- let direct `replyFromTimeline(payload)` survive document reload with an ephemeral handoff: executor mutation actions now create a local handoff even without an async ticket, so a detail-page reload can still resume the action or at least run unified cleanup on the next document
+- clean failed reload resumes before final rejection: when a resumed detail-page action still exhausts its retries, the executor now runs reply-surface cleanup before settling `replydrop-api-document-reloaded`, reducing the chance of leaving an empty disabled composer behind
+
 ## 0.2.265
 
 - feed live detail-page context back into open-stage value recheck: detail / media targets now re-run `buildLiveCandidateRecheck()` with current-page `contextCompleteness`, execution-route hints, and live media sampling metadata, so fast-moving video/image samples are less likely to be killed by a stale preview-shaped recheck

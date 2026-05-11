@@ -6,11 +6,11 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.265`
+当前重置基线版本：`0.2.266`
 
-当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.265` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，`0.2.262` 把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实，`0.2.263` 补平“卡在 reloading”和“详情页 direct timeline reply 走错路”这两个执行断点，`0.2.264` 把“详情页 direct reply 不该先弹回 home、失败目标别反复冒头、回复面别被水滴污染”这三件实测痛点收口，而 `0.2.265` 继续把“detail 打开后复核别误杀媒体样本、失败后别留空 composer”补平。
+当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.266` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，`0.2.262` 把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实，`0.2.263` 补平“卡在 reloading”和“详情页 direct timeline reply 走错路”这两个执行断点，`0.2.264` 把“详情页 direct reply 不该先弹回 home、失败目标别反复冒头、回复面别被水滴污染”这三件实测痛点收口，`0.2.265` 继续把“detail 打开后复核别误杀媒体样本、失败后别留空 composer”补平，而 `0.2.266` 则继续把“reload 中断后的 async 续跑别过早判死、直调 replyFromTimeline 也要有 reload 兜底”这层执行尾巴收口。
 
-`0.2.265` 的重点依然不是改评分，而是继续把 Win Chrome follow-up 里新的执行层问题收干净：detail / media 路线现在会把当前详情页重新推导出来的 `contextCompleteness`、execution route 和 media sampling 一起带回 open-stage live recheck，减少“预览时明明是 send_now，打开后却按缺上下文版本误杀”的情况；如果发送失败导致当前详情页残留一个空的、disabled 的回复框，执行器也会主动清空并收掉它，必要时直接把目标详情页刷新回干净状态。
+`0.2.266` 的重点依然不是改评分，而是继续把 Win Chrome follow-up 里剩下的 reload 续跑问题收干净：被 document reload 打断的 executor action 现在会等目标详情页真的 ready 再恢复，且只会对少数“页面/回复面还没准备好”的失败码继续续跑，不再把候选价值回落这类失败也拿去硬重试；同时，即便不是 `beginExecutorAction()` 这种 async 入口，直接 `replyFromTimeline(payload)` 也会挂一个本地 handoff，让 reload 后还能继续恢复动作或至少把失败后的空 composer 清掉。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -237,16 +237,16 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.265.zip](./downloads/replydrop-p2.265.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.266.zip](./downloads/replydrop-p2.266.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.265.zip](./downloads/replydrop-safari-open-source-0.2.265.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.266.zip](./downloads/replydrop-safari-open-source-0.2.266.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.265`
-  - Safari 源码公开包当前也同步到 `0.2.265`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.266`
+  - Safari 源码公开包当前也同步到 `0.2.266`
 
 ## 本地安装
 

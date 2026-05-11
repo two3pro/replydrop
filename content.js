@@ -16,6 +16,7 @@
   const REPLYDROP_ASYNC_TICKET_STORAGE_KEY = "__ReplyDropAsyncTicketsV2";
   const REPLYDROP_ASYNC_HANDOFF_STORAGE_KEY = "__ReplyDropAsyncHandoffsV1";
   const REPLYDROP_ASYNC_HANDOFF_MAX_AGE_MS = 2 * 60 * 1000;
+  const REPLYDROP_ASYNC_HANDOFF_MAX_RESUME_ATTEMPTS = 4;
   const REPLYDROP_MAX_ASYNC_HANDOFFS = 12;
   const ARTICLE_SELECTOR = '[data-testid="tweet"]';
   const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复", "返信", "リプライ"];
@@ -157,8 +158,26 @@
     "value-below-send-floor",
     "score-degraded-below-average",
     "score-below-agent-send-floor",
+    "replydrop-api-document-reloaded",
+    "replydrop-api-resume-failed",
     "replydrop-api-null-result",
     "runtime-message-timeout"
+  ]);
+  const REPLYDROP_ASYNC_RESUME_RETRY_REASON_CODES = new Set([
+    "replydrop-api-document-reloaded",
+    "replydrop-api-resume-failed",
+    "context-not-locked",
+    "reply-context-missing",
+    "reply-target-lost",
+    "timeline-article-missing",
+    "timeline-inline-required",
+    "composer-not-ready",
+    "reply-surface-not-ready",
+    "generic-composer-opened",
+    "send-button-missing",
+    "send-button-disabled-but-target-locked",
+    "not-reply-composer",
+    "navigating"
   ]);
   const HOME_FOR_YOU_TEXTS = [
     "for you",
@@ -6116,10 +6135,10 @@
   async function runReplyDropExecutorAction(payload = {}) {
     const normalizedPayload = payload && typeof payload === "object" ? payload : {};
     const roundRuntime = ensureExecutorRoundRuntime(normalizedPayload);
-    const asyncTicketId = getReplyDropAsyncTicketId(normalizedPayload);
-    const finalizeAsyncTicketResult = (result) => {
-      if (asyncTicketId) {
-        settleReplyDropAsyncHandoff(asyncTicketId, result);
+    let actionHandoffId = getReplyDropHandoffTicketId(normalizedPayload);
+    const finalizeActionHandoffResult = (result) => {
+      if (actionHandoffId) {
+        settleReplyDropAsyncHandoff(actionHandoffId, result);
       }
       return result;
     };
@@ -6130,7 +6149,7 @@
     let resolvedTargetUrl = normalizeTweetUrl(normalizedPayload.url);
     let candidateSnapshot = null;
     if (roundRuntime?.stopReason && action !== "refresh-recommendations") {
-      return buildReplyDropRoundStoppedFailure(roundRuntime, normalizedPayload);
+      return finalizeActionHandoffResult(buildReplyDropRoundStoppedFailure(roundRuntime, normalizedPayload));
     }
     if (!resolvedTargetUrl && tweetId) {
       try {
@@ -6191,16 +6210,24 @@
         : (requiresDetailInspection ? "inspect-then-reply" : "reply");
     }
     if (
-      asyncTicketId &&
+      !actionHandoffId &&
+      !normalizedPayload.__replyDropResumeNoPersist &&
+      ["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)
+    ) {
+      actionHandoffId = createReplyDropEphemeralHandoffId(action);
+    }
+    if (
+      actionHandoffId &&
       !normalizedPayload.__replyDropResumeNoPersist &&
       ["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)
     ) {
       persistReplyDropAsyncHandoff({
-        ticketId: asyncTicketId,
+        ticketId: actionHandoffId,
         method: "runExecutorAction",
         targetUrl: resolvedTargetUrl || normalizeTweetUrl(actionPayload?.url || normalizedPayload.url),
         payload: {
           ...actionPayload,
+          __replyDropHandoffId: actionHandoffId,
           action
         },
         state: normalizedPayload.__replyDropResumedFromReload ? "resuming" : "pending"
@@ -6222,7 +6249,7 @@
         action,
         reasonCode: "target-denied-this-round"
       });
-      return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(
+      return finalizeActionHandoffResult(finalizeReplyDropExecutorRoundAction(
         roundRuntime,
         action,
         actionPayload,
@@ -6245,7 +6272,7 @@
         stage: action
       });
       if (timeoutFailure) {
-        return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(roundRuntime, action, actionPayload, {
+        return finalizeActionHandoffResult(finalizeReplyDropExecutorRoundAction(roundRuntime, action, actionPayload, {
           ok: false,
           action: action || "unknown",
           stage: "target-timeout",
@@ -6522,7 +6549,7 @@
       );
     }
 
-    return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(
+    return finalizeActionHandoffResult(finalizeReplyDropExecutorRoundAction(
       roundRuntime,
       action,
       {
@@ -11022,6 +11049,20 @@
     return String(payload?.__replyDropAsyncTicketId || payload?.asyncTicketId || "").trim();
   }
 
+  function getReplyDropHandoffTicketId(payload = {}) {
+    const asyncTicketId = getReplyDropAsyncTicketId(payload);
+    if (asyncTicketId) {
+      return asyncTicketId;
+    }
+    return String(payload?.__replyDropHandoffId || "").trim();
+  }
+
+  function createReplyDropEphemeralHandoffId(method = "") {
+    const normalizedMethod = String(method || "action").trim().toLowerCase() || "action";
+    const nonce = Math.random().toString(36).slice(2, 10);
+    return `replydrop-handoff:${normalizedMethod}:${Date.now()}:${nonce}`;
+  }
+
   function persistReplyDropAsyncHandoff(entry = {}) {
     const normalized = normalizeReplyDropAsyncHandoffEntry({
       ...entry,
@@ -11086,6 +11127,66 @@
     return true;
   }
 
+  function buildReplyDropAsyncReloadFailure(targetUrl = "", payload = {}) {
+    return buildReplyActionFailure({
+      targetUrl,
+      reason: "replydrop-api-document-reloaded",
+      reasonCode: "replydrop-api-document-reloaded",
+      ...payload
+    });
+  }
+
+  function getReplyDropAsyncResumeTargetState(handoff = {}) {
+    const targetUrl = normalizeTweetUrl(handoff.targetUrl || resolveApiTargetUrlFromPayload(handoff.payload));
+    const targetTweetId = normalizeApiTweetId(
+      handoff.payload?.tweetId ||
+      handoff.payload?.targetTweetId ||
+      extractTweetIdFromUrl(targetUrl)
+    );
+    const currentStatusUrl = getCurrentStatusUrl();
+    const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
+    const targetArticle = targetTweetId
+      ? findTweetArticleByTweetId(targetTweetId, targetUrl)
+      : null;
+    const composer = queryReplyComposer({
+      targetUrl,
+      replyOnly: false,
+      requireLocked: false
+    });
+    const onTargetPage = Boolean(
+      (targetUrl && (currentUrl === targetUrl || currentStatusUrl === targetUrl)) ||
+      targetArticle instanceof Element
+    );
+    const ready = Boolean(
+      onTargetPage &&
+      (
+        targetArticle instanceof Element ||
+        composer instanceof HTMLElement
+      )
+    );
+    return {
+      targetUrl,
+      targetTweetId,
+      currentUrl,
+      currentStatusUrl,
+      targetArticle,
+      composer,
+      onTargetPage,
+      ready
+    };
+  }
+
+  function shouldRetryReplyDropAsyncResumeResult(result = {}) {
+    if (!result || result.ok) {
+      return false;
+    }
+    const reasonCode = String(result?.reasonCode || result?.reason || "").trim();
+    if (!reasonCode) {
+      return false;
+    }
+    return REPLYDROP_ASYNC_RESUME_RETRY_REASON_CODES.has(reasonCode);
+  }
+
   async function resumePersistedReplyDropAsyncHandoff() {
     if (state.asyncHandoffResumeScheduled) {
       return;
@@ -11096,30 +11197,23 @@
       await waitFor(320);
       const handoffs = readReplyDropAsyncHandoffs();
       for (const handoff of handoffs) {
-        if (!handoff || handoff.attempts >= 2) {
+        if (!handoff) {
+          continue;
+        }
+
+        const targetState = getReplyDropAsyncResumeTargetState(handoff);
+        const targetUrl = targetState.targetUrl;
+        if (handoff.attempts >= REPLYDROP_ASYNC_HANDOFF_MAX_RESUME_ATTEMPTS) {
           if (handoff?.ticketId) {
-            settleReplyDropAsyncHandoff(handoff.ticketId, buildReplyActionFailure({
-              targetUrl: handoff.targetUrl,
-              reason: "replydrop-api-document-reloaded",
-              reasonCode: "replydrop-api-document-reloaded"
-            }));
+            await settleFailedReplySurface(targetUrl, {
+              preferStayOnPage: true
+            });
+            settleReplyDropAsyncHandoff(handoff.ticketId, buildReplyDropAsyncReloadFailure(targetUrl));
           }
           continue;
         }
 
-        const targetUrl = normalizeTweetUrl(handoff.targetUrl || resolveApiTargetUrlFromPayload(handoff.payload));
-        const targetTweetId = normalizeApiTweetId(
-          handoff.payload?.tweetId ||
-          handoff.payload?.targetTweetId ||
-          extractTweetIdFromUrl(targetUrl)
-        );
-        const currentStatusUrl = getCurrentStatusUrl();
-        const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
-        const onTargetPage = Boolean(
-          (targetUrl && (currentUrl === targetUrl || currentStatusUrl === targetUrl)) ||
-          (targetTweetId && findTweetArticleByTweetId(targetTweetId, targetUrl))
-        );
-        if (!onTargetPage) {
+        if (!targetState.onTargetPage || !targetState.ready) {
           shouldRetry = true;
           continue;
         }
@@ -11135,6 +11229,7 @@
           ...(handoff.payload && typeof handoff.payload === "object" ? handoff.payload : {}),
           url: targetUrl || handoff.payload?.url || "",
           __replyDropAsyncTicketId: handoff.ticketId,
+          __replyDropHandoffId: handoff.ticketId,
           __replyDropResumeNoPersist: true,
           __replyDropResumedFromReload: true
         };
@@ -11151,11 +11246,7 @@
               result = await submitReplyDropComposer(resumePayload);
               break;
             default:
-              result = buildReplyActionFailure({
-                targetUrl,
-                reason: "replydrop-api-document-reloaded",
-                reasonCode: "replydrop-api-document-reloaded"
-              });
+              result = buildReplyDropAsyncReloadFailure(targetUrl);
               break;
           }
         } catch (error) {
@@ -11163,6 +11254,33 @@
             targetUrl,
             reason: "replydrop-api-resume-failed",
             reasonCode: String(error?.message || error || "replydrop-api-resume-failed")
+          });
+        }
+
+        if (shouldRetryReplyDropAsyncResumeResult(result)) {
+          await settleFailedReplySurface(targetUrl, {
+            preferStayOnPage: true
+          });
+          persistReplyDropAsyncHandoff({
+            ...handoff,
+            targetUrl,
+            attempts: handoff.attempts + 1,
+            state: "pending"
+          });
+          patchReplyDropAsyncTicketStorage(handoff.ticketId, {
+            state: "reloading",
+            done: false,
+            ok: false,
+            error: "",
+            result: null
+          });
+          shouldRetry = true;
+          continue;
+        }
+
+        if (!result?.ok) {
+          await settleFailedReplySurface(targetUrl, {
+            preferStayOnPage: true
           });
         }
         settleReplyDropAsyncHandoff(handoff.ticketId, result);
