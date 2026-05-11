@@ -6,11 +6,11 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.270`
+当前重置基线版本：`0.2.271`
 
-当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.270` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，`0.2.262` 把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实，`0.2.263` 补平“卡在 reloading”和“详情页 direct timeline reply 走错路”这两个执行断点，`0.2.264` 把“详情页 direct reply 不该先弹回 home、失败目标别反复冒头、回复面别被水滴污染”这三件实测痛点收口，`0.2.265` 继续把“detail 打开后复核别误杀媒体样本、失败后别留空 composer”补平，`0.2.266` 把“reload 中断后的 async 续跑别过早判死、直调 replyFromTimeline 也要有 reload 兜底”这层执行尾巴收口，`0.2.267` 把重点重新拉回吞吐主线，让正文已足够的高势能视频/图片帖更多留在 timeline fast lane，`0.2.268` 把详情 overlay 的评分水滴补回来了，`0.2.269` 继续把“正文已经够写的高分媒体帖别再默认掉回 detail”这层主发送语义补实，而 `0.2.270` 则把真正的主链补平：高潜力媒体帖即便还没拿到 OCR / vision / media summary，也不该在打开详情页的复核阶段就被提前判死。
+当前 Chrome / Brave 运行时包已同步到 `0.2.271`；Safari 源码公开包当前仍停留在 `0.2.270`，等待下一轮源码同步。`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，`0.2.262` 把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实，`0.2.263` 补平“卡在 reloading”和“详情页 direct timeline reply 走错路”这两个执行断点，`0.2.264` 把“详情页 direct reply 不该先弹回 home、失败目标别反复冒头、回复面别被水滴污染”这三件实测痛点收口，`0.2.265` 继续把“detail 打开后复核别误杀媒体样本、失败后别留空 composer”补平，`0.2.266` 把“reload 中断后的 async 续跑别过早判死、直调 replyFromTimeline 也要有 reload 兜底”这层执行尾巴收口，`0.2.267` 把重点重新拉回吞吐主线，让正文已足够的高势能视频/图片帖更多留在 timeline fast lane，`0.2.268` 把详情 overlay 的评分水滴补回来了，`0.2.269` 继续把“正文已经够写的高分媒体帖别再默认掉回 detail”这层主发送语义补实，`0.2.270` 把高潜力媒体帖的 detail inspection 主链补平，而 `0.2.271` 则继续把 Brave / OpenClaw 这条真实发送链收口：状态页占位 composer 不再冒充真回复框，compose-post dialog 的续跑与 handoff 也不再过早失效。
 
-`0.2.270` 的重点不是再强推所有媒体帖首页直回，而是确保真正值得处理的图片 / 视频帖能顺利走完“打开详情页 -> 看媒体 -> 重拿上下文 -> 继续发送”这条链。只要候选本来就是 `reply-now / send_now`，且媒体 inspection 还没做完，就不该在 open-stage recheck 里先被打成 `value-dropped-on-open`。同时，`0.2.268` 补回的详情 overlay 水滴也继续保留在这条版本线上。
+`0.2.271` 的重点是把“Brave / OpenClaw 里明明能看到回复入口，却总是开错框或在 reload 后丢 handoff”这层执行核补平。它不改评分主线，而是让 detail send 更稳地锁到真正的 reply composer，并把 async open/reply tickets 带过 compose-post / reload 这一段。当前 Chrome / Brave 安装包名为 `replydrop-p2.271.zip`。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -237,7 +237,7 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.270.zip](./downloads/replydrop-p2.270.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.271.zip](./downloads/replydrop-p2.271.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
 - Safari for macOS 源码包：[replydrop-safari-open-source-0.2.270.zip](./downloads/replydrop-safari-open-source-0.2.270.zip)
@@ -245,8 +245,8 @@ await page.evaluate(async () => {
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.270`
-  - Safari 源码公开包当前也同步到 `0.2.270`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.271`
+  - Safari 源码公开包当前仍为 `0.2.270`
 
 ## 本地安装
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.271
+
+- stop status-page placeholders and stale inline shells from masquerading as real reply composers: timeline/detail open now rejects the empty `tweetTextarea_0` placeholder, prefers real dialog composers, and waits longer before force-rewriting draft text, so Brave detail sends stop dying on the wrong surface
+- keep async open/reply handoffs alive across nested executor actions and compose-post resumes: nested `openReplyDropComposer()` calls no longer settle the outer ticket too early, and reload recovery now resumes `openComposer` handoffs on the real compose dialog instead of leaving `replydrop-api-document-reloaded` / empty-shell failures behind
+
 ## 0.2.270
 
 - keep high-potential pre-inspection media candidates alive through detail open-stage recheck: when a `reply-now / send_now` image or video post still needs OCR, vision, or media summary, opening detail no longer drops it as `value-dropped-on-open` before the inspection path has a chance to finish

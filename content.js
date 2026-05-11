@@ -3057,6 +3057,12 @@
       liveExposureScore >= Math.max(40, exposureFloor - exposureFloorTolerance) &&
       !String(liveAnalysis?.blockReason || "").trim()
     );
+    const timelineInlineOpenBypass = Boolean(
+      previewDecision === "reply-now" &&
+      timelineInlineCandidate &&
+      !olderThanAutoWindow &&
+      !String(liveAnalysis?.blockReason || "").trim()
+    );
     const toleratedDetailInspectionDrift = Boolean(
       previewDecision === "reply-now" &&
       detailInspectionCandidate &&
@@ -3112,6 +3118,7 @@
       olderThanAutoWindow ||
       (
         !preInspectionDetailBypass &&
+        !timelineInlineOpenBypass &&
         (
           (belowDisplayThreshold && !toleratedRecheckDrift) ||
           (belowExecutorSendFloor && !toleratedRecheckDrift) ||
@@ -3123,6 +3130,8 @@
       flags.push("skip-recommended");
     } else if (preInspectionDetailBypass) {
       flags.push("detail-inspection-pending");
+    } else if (timelineInlineOpenBypass) {
+      flags.push("timeline-inline-open-bypassed");
     } else if (toleratedTimelineInlineDrift) {
       flags.push("timeline-inline-recheck-tolerated");
     } else if (toleratedDetailInspectionDrift) {
@@ -3134,6 +3143,8 @@
       status = "skip";
     } else if (preInspectionDetailBypass) {
       status = "inspection-pending";
+    } else if (timelineInlineOpenBypass) {
+      status = "open-bypassed";
     } else if (meaningfulDrop) {
       status = "degraded";
     } else if (liveScore >= previewScore + 5) {
@@ -3168,6 +3179,7 @@
       olderThanAutoWindow,
       staleReplyWindow,
       skipRecommended,
+      timelineInlineOpenBypass,
       toleratedTimelineInlineDrift,
       toleratedDetailInspectionDrift,
       flags: Array.from(new Set(flags)),
@@ -6019,15 +6031,51 @@
 
   async function openReplyDropComposer(payload = {}) {
     const normalizedPayload = payload && typeof payload === "object" ? payload : {};
+    const actionHandoffId = getReplyDropHandoffTicketId(normalizedPayload);
+    const manageAsyncHandoff = Boolean(
+      actionHandoffId &&
+      !normalizedPayload.__replyDropNestedExecutorAction
+    );
+    const finalizeOpenComposerResult = (result, fallbackTargetUrl = "") => {
+      if (manageAsyncHandoff) {
+        settleReplyDropAsyncHandoff(actionHandoffId, result);
+      }
+      if (result?.ok) {
+        clearReplyOpenFailure(result.targetUrl || fallbackTargetUrl);
+      } else {
+        cacheReplyOpenFailure(result);
+      }
+      return result;
+    };
+    const persistOpenComposerHandoff = (targetUrl = "") => {
+      if (!manageAsyncHandoff || normalizedPayload.__replyDropResumeNoPersist) {
+        return false;
+      }
+      const normalizedTarget = normalizeTweetUrl(targetUrl || normalizedPayload.url);
+      if (!normalizedTarget) {
+        return false;
+      }
+      return persistReplyDropAsyncHandoff({
+        ticketId: actionHandoffId,
+        method: "openComposer",
+        targetUrl: normalizedTarget,
+        payload: {
+          ...normalizedPayload,
+          url: normalizedTarget,
+          __replyDropHandoffId: actionHandoffId
+        },
+        state: normalizedPayload.__replyDropResumedFromReload ? "resuming" : "pending"
+      });
+    };
     const directUrl = normalizeTweetUrl(normalizedPayload.url);
     if (directUrl) {
+      persistOpenComposerHandoff(directUrl);
       const timeoutFailure = beginReplyTargetAttempt(directUrl, {
         ...normalizedPayload,
         stage: "open-composer"
       });
       if (timeoutFailure) {
-        cacheReplyOpenFailure(timeoutFailure);
-        return timeoutFailure;
+        return finalizeOpenComposerResult(timeoutFailure, directUrl);
       }
       let result = await openQueueComposerHandoff({
         ...normalizedPayload,
@@ -6041,17 +6089,12 @@
           url: directUrl
         });
       }
-      if (result?.ok) {
-        clearReplyOpenFailure(result.targetUrl || directUrl);
-      } else {
-        cacheReplyOpenFailure(result);
-      }
-      return result;
+      return finalizeOpenComposerResult(result, directUrl);
     }
 
     const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
     if (!tweetId) {
-      return buildReplyActionFailure({ reason: "missing-url" });
+      return finalizeOpenComposerResult(buildReplyActionFailure({ reason: "missing-url" }));
     }
 
     let runtimeState = null;
@@ -6062,13 +6105,13 @@
     }
 
     const resolvedUrl = resolveApiTargetUrlFromPayload(normalizedPayload, runtimeState);
+    persistOpenComposerHandoff(resolvedUrl);
     const timeoutFailure = beginReplyTargetAttempt(resolvedUrl, {
       ...normalizedPayload,
       stage: "open-composer"
     });
     if (timeoutFailure) {
-      cacheReplyOpenFailure(timeoutFailure);
-      return timeoutFailure;
+      return finalizeOpenComposerResult(timeoutFailure, resolvedUrl);
     }
     let result = await openQueueComposerHandoff({
       ...normalizedPayload,
@@ -6082,12 +6125,7 @@
         url: resolvedUrl
       });
     }
-    if (result?.ok) {
-      clearReplyOpenFailure(result.targetUrl || resolvedUrl);
-    } else {
-      cacheReplyOpenFailure(result);
-    }
-    return result;
+    return finalizeOpenComposerResult(result, resolvedUrl);
   }
 
   function isReplyDropExecutorMutationAction(action = "") {
@@ -6432,11 +6470,13 @@
       case "reply-from-timeline": {
         const openResult = await openReplyDropComposer({
           ...actionPayload,
+          __replyDropNestedExecutorAction: true,
           timelineFirst: true
         });
         if (!openResult?.ok && shouldFallbackReplyDropTimelineToDetail(openResult, resolvedTargetUrl)) {
           const detailOpenResult = await openReplyDropComposer({
             ...actionPayload,
+            __replyDropNestedExecutorAction: true,
             url: resolvedTargetUrl,
             timelineFirst: false,
             preferDetailPage: true
@@ -6495,6 +6535,7 @@
       case "inspect-then-reply": {
         const openResult = await openReplyDropComposer({
           ...actionPayload,
+          __replyDropNestedExecutorAction: true,
           url: resolvedTargetUrl || normalizedPayload.url,
           timelineFirst: false,
           preferDetailPage: true,
@@ -6558,7 +6599,10 @@
         break;
       }
       case "reply": {
-        const openResult = await openReplyDropComposer(actionPayload);
+        const openResult = await openReplyDropComposer({
+          ...actionPayload,
+          __replyDropNestedExecutorAction: true
+        });
         const openTimeoutFailure = checkReplyTargetDeadline(openResult?.targetUrl || resolvedTargetUrl, {
           ...actionPayload,
           stage: "open-composer"
@@ -10709,6 +10753,7 @@
 
     state.observer = new MutationObserver(() => {
       state.lastDomChangeAt = Date.now();
+      void recoverReplyDropPreparedComposerTickets({ maxAttempts: 1, delayMs: 120 });
       if (state.scanTimer || state.lazyRescanTimer) {
         return;
       }
@@ -11281,15 +11326,28 @@
       replyOnly: false,
       requireLocked: false
     });
+    const composerContext = buildReplyComposerContext({
+      targetUrl,
+      editor: composer
+    });
+    const composeResumeReady = Boolean(
+      composer instanceof HTMLElement &&
+      composerContext.composerLocked &&
+      composerContext.dialogComposer
+    );
     const onTargetPage = Boolean(
       (targetUrl && (currentUrl === targetUrl || currentStatusUrl === targetUrl)) ||
-      targetArticle instanceof Element
+      targetArticle instanceof Element ||
+      composeResumeReady
     );
     const ready = Boolean(
-      onTargetPage &&
+      composeResumeReady ||
       (
-        targetArticle instanceof Element ||
-        composer instanceof HTMLElement
+        onTargetPage &&
+        (
+          targetArticle instanceof Element ||
+          composer instanceof HTMLElement
+        )
       )
     );
     return {
@@ -11299,6 +11357,8 @@
       currentStatusUrl,
       targetArticle,
       composer,
+      composerContext,
+      composeResumeReady,
       onTargetPage,
       ready
     };
@@ -11341,7 +11401,35 @@
           continue;
         }
 
-        if (!targetState.onTargetPage || !targetState.ready) {
+        if (
+          !targetState.onTargetPage &&
+          targetUrl &&
+          ["runExecutorAction", "openComposer", "submitReply"].includes(String(handoff.method || "").trim())
+        ) {
+          persistReplyDropAsyncHandoff({
+            ...handoff,
+            targetUrl,
+            attempts: handoff.attempts + 1,
+            state: "navigating"
+          });
+          patchReplyDropAsyncTicketStorage(handoff.ticketId, {
+            state: "reloading",
+            done: false,
+            ok: false,
+            error: "",
+            result: null
+          });
+          void navigateToReplyTargetUrl(targetUrl, {
+            settleMs: 320
+          });
+          return;
+        }
+
+        const canResumeOnTargetContext = Boolean(
+          targetState.onTargetPage &&
+          ["runExecutorAction", "openComposer"].includes(String(handoff.method || "").trim())
+        );
+        if (!targetState.ready && !canResumeOnTargetContext) {
           shouldRetry = true;
           continue;
         }
@@ -11419,6 +11507,91 @@
         scheduleReplyDropAsyncHandoffResume();
       }
     }
+  }
+
+  async function recoverReplyDropPreparedComposerTickets(options = {}) {
+    const maxAttempts = Math.max(1, Math.floor(Number(options.maxAttempts) || 6));
+    const delayMs = Math.max(120, Number(options.delayMs) || 220);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) {
+        await waitFor(delayMs);
+      }
+
+      const recoverableEntries = readReplyDropAsyncTicketStorageEntries().filter((entry) => {
+        const method = String(entry?.method || "").trim();
+        const reasonCode = String(entry?.result?.reasonCode || entry?.error || "").trim();
+        if (method !== "openComposer") {
+          return false;
+        }
+        return (
+          !entry.done ||
+          entry.state === "pending" ||
+          entry.state === "reloading" ||
+          reasonCode === "replydrop-api-document-reloaded"
+        );
+      });
+      if (!recoverableEntries.length) {
+        return false;
+      }
+
+      const targetUrl = normalizeTweetUrl(resolveReplyTargetUrl());
+      if (!targetUrl) {
+        continue;
+      }
+
+      const editor = queryReplyComposer({
+        targetUrl,
+        replyOnly: true,
+        requireLocked: true
+      });
+      const sendButton = pickVisibleReplySubmitButton(targetUrl);
+      if (!(editor instanceof HTMLElement) || !(sendButton instanceof HTMLElement)) {
+        continue;
+      }
+
+      const context = buildReplyComposerContext({
+        targetUrl,
+        editor,
+        sendButton
+      });
+      if (!context.composerLocked || !isReplySubmitButtonEnabled(sendButton)) {
+        continue;
+      }
+
+      const draftLoaded = Boolean(String(readReplyComposerText(editor) || "").trim());
+      cachePreparedReplyComposer({
+        targetUrl,
+        editor,
+        sendButton,
+        mode: "recovered-after-reload",
+        draftLoaded
+      });
+
+      const recoveredResult = {
+        ok: true,
+        targetUrl,
+        currentUrl: normalizeTweetUrl(global.location.href),
+        articleUrl: String(context.articleUrl || "").trim(),
+        href: normalizeTweetUrl(global.location.href),
+        composerReady: true,
+        draftLoaded,
+        recoveredFromReload: true
+      };
+
+      recoverableEntries.forEach((entry) => {
+        patchReplyDropAsyncTicketStorage(entry.ticketId, {
+          state: "resolved",
+          done: true,
+          ok: true,
+          error: "",
+          result: recoveredResult
+        });
+      });
+      return true;
+    }
+
+    return false;
   }
 
   function clearPreparedReplyComposer(targetUrl = "") {
@@ -12151,6 +12324,17 @@
     return !sendButton.hasAttribute("disabled") && String(sendButton.getAttribute("aria-disabled") || "").toLowerCase() !== "true";
   }
 
+  function isReplyComposerDialogContainer(node) {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    return Boolean(node.closest('[aria-modal="true"], [role="dialog"], [data-testid="sheetDialog"]'));
+  }
+
+  function isReplyComposerPlaceholderContext(context = {}) {
+    return Boolean(context?.inlineStatusPlaceholder);
+  }
+
   async function waitForReplySubmitReady(targetUrl, draft = "", options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
     const timeoutMs = Math.max(200, Number(options.timeoutMs) || 2600);
@@ -12200,7 +12384,11 @@
         context.composerLocked &&
         draftReady &&
         !sendButtonEnabled &&
-        forceRewriteCount < 2
+        forceRewriteCount < 2 &&
+        (
+          !context.dialogComposer ||
+          Date.now() - startedAt >= 1400
+        )
       ) {
         forceRewriteCount += 1;
         setReplyComposerText(editor, draft, {
@@ -12779,6 +12967,9 @@
         ? getVisibleReplySubmitButtons(container).find((node) => getReplyComposerContainer(node) === container) || null
         : null
     );
+    const editorText = readReplyComposerText(editor);
+    const sendButtonEnabled = sendButton instanceof HTMLElement && isReplySubmitButtonEnabled(sendButton);
+    const dialogComposer = isReplyComposerDialogContainer(container || editor || sendButton);
     const buttonText = readNodeActionText(sendButton);
     const containerText = [
       container?.getAttribute?.("aria-label") || "",
@@ -12822,9 +13013,30 @@
     );
     const inlineStatusReplyEvidence = Boolean(
       !isComposePostPath() &&
+      !dialogComposer &&
       pendingTargetFresh &&
       pageLocked &&
-      Boolean(editor || sendButton || container)
+      Boolean(editor || sendButton || container) &&
+      (
+        sendButtonEnabled ||
+        Boolean(editorText) ||
+        hasReplyContextText ||
+        contextStatusUrl === targetUrl ||
+        articleUrl === targetUrl
+      )
+    );
+    const inlineStatusPlaceholder = Boolean(
+      !dialogComposer &&
+      !isComposePostPath() &&
+      pendingTargetFresh &&
+      currentStatusUrl === targetUrl &&
+      pageLocked &&
+      Boolean(editor || sendButton || container) &&
+      !Boolean(editorText) &&
+      !sendButtonEnabled &&
+      !hasReplyContextText &&
+      !contextStatusUrl &&
+      !articleUrl
     );
     const timelinePendingTargetLocked = Boolean(
       timelinePendingReplyEvidence &&
@@ -12851,7 +13063,15 @@
           (
             contextStatusUrl === targetUrl ||
             articleUrl === targetUrl ||
-            (currentStatusUrl === targetUrl && (hasReplyContextText || hasReplyButtonText))
+            (
+              currentStatusUrl === targetUrl &&
+              (
+                hasReplyContextText ||
+                dialogComposer ||
+                sendButtonEnabled ||
+                Boolean(editorText)
+              )
+            )
           )
         )
       )
@@ -12887,15 +13107,19 @@
       pendingTargetFresh,
       pageLocked,
       composerLocked,
+      dialogComposer,
       composePostTargetLocked,
       timelinePendingTargetLocked,
       inlineStatusReplyEvidence,
+      inlineStatusPlaceholder,
       explicitReplyEvidence,
       hasReplyButtonText,
       hasReplyContextText,
       targetLocked,
       genericComposerOpened,
       replyTargetLost,
+      editorText,
+      sendButtonEnabled,
       editor,
       sendButton,
       container
@@ -13055,6 +13279,9 @@
         if (entry.context.genericComposerOpened) {
           return false;
         }
+        if (isReplyComposerPlaceholderContext(entry.context)) {
+          return false;
+        }
         if (requireLocked) {
           return targetUrl ? entry.context.composerLocked : entry.context.explicitReplyEvidence;
         }
@@ -13067,6 +13294,7 @@
       })
       .sort((left, right) => (
         Number(right.visible) - Number(left.visible) ||
+        Number(right.context.dialogComposer) - Number(left.context.dialogComposer) ||
         Number(right.context.composerLocked) - Number(left.context.composerLocked) ||
         Number(right.context.explicitReplyEvidence) - Number(left.context.explicitReplyEvidence)
       ));
@@ -13531,6 +13759,81 @@
     if (timelineResult?.timelineAttempted) {
       return timelineResult;
     }
+
+    const resumedComposer = queryReplyComposer({
+      targetUrl,
+      replyOnly: true,
+      requireLocked: true
+    });
+    const resumedComposerContext = buildReplyComposerContext({
+      targetUrl,
+      editor: resumedComposer
+    });
+    if (
+      resumedComposer instanceof HTMLElement &&
+      resumedComposerContext.composerLocked &&
+      resumedComposerContext.dialogComposer
+    ) {
+      resumedComposer.focus();
+      const draftLoaded = draft ? setReplyComposerText(resumedComposer, draft) : Boolean(readReplyComposerText(resumedComposer));
+      const submitReadyState = draft
+        ? await waitForReplySubmitReady(targetUrl, draft, {
+            timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS
+          })
+        : {
+            ok: true,
+            editor: resumedComposer,
+            sendButton: pickVisibleReplySubmitButton(targetUrl),
+            context: buildReplyComposerContext({ targetUrl, editor: resumedComposer }),
+            editorText: readReplyComposerText(resumedComposer),
+            editorFound: true,
+            sendButtonFound: true,
+            buttonDisabled: false,
+            draftReady: true,
+            composerLocked: true,
+            pageLocked: Boolean(resumedComposerContext.pageLocked)
+          };
+      if (draft && !submitReadyState?.ok) {
+        return buildReplyActionFailure({
+          targetUrl,
+          currentUrl: normalizeTweetUrl(global.location.href),
+          articleUrl: targetUrl,
+          reason: submitReadyState?.reason || "send-disabled",
+          reasonCode: submitReadyState?.reasonCode || (submitReadyState?.context?.composerLocked ? "send-button-disabled-but-target-locked" : "context-not-locked"),
+          stylePatternHits: submitReadyState?.stylePatternHits,
+          draftValidation: submitReadyState?.draftValidation,
+          submitReadyDiagnostics: {
+            editorFound: Boolean(submitReadyState?.editorFound),
+            sendButtonFound: Boolean(submitReadyState?.sendButtonFound),
+            buttonDisabled: Boolean(submitReadyState?.buttonDisabled),
+            draftReady: Boolean(submitReadyState?.draftReady),
+            composerLocked: Boolean(submitReadyState?.composerLocked),
+            pageLocked: Boolean(submitReadyState?.pageLocked)
+          }
+        });
+      }
+
+      cachePreparedReplyComposer({
+        targetUrl,
+        editor: resumedComposer,
+        sendButton: submitReadyState?.sendButton,
+        mode: "compose-post-resume",
+        draftLoaded
+      });
+      return {
+        ok: true,
+        composerReady: true,
+        draftLoaded,
+        submitReady: Boolean(submitReadyState?.ok),
+        ...buildReplyActionMeta({
+          targetUrl,
+          currentUrl: normalizeTweetUrl(global.location.href),
+          articleUrl: targetUrl,
+          contextSource: "compose-post-resume"
+        })
+      };
+    }
+
     if (timelineOnly) {
       return buildReplyActionFailure({
         targetUrl,
@@ -14672,7 +14975,7 @@
       targetUrl: normalizedTarget,
       sendButton
     });
-    if (context.genericComposerOpened) {
+    if (context.genericComposerOpened || isReplyComposerPlaceholderContext(context)) {
       return false;
     }
     if (normalizedTarget) {
@@ -14813,6 +15116,7 @@
     startObserver();
     scheduleScan();
     void resumePersistedReplyDropAsyncHandoff();
+    void recoverReplyDropPreparedComposerTickets();
   }
 
   if (document.readyState === "loading") {
