@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.260
+
+- keep strong media candidates in the main traffic lane: `content.js` 新增 `buildReplyDropMediaSamplingMeta()`，把高动量媒体帖的采样晋升、route bucket override、growth-bait 拥挤识别和 execution boost 收口到同一层，不再因为需要 detail inspection 就轻易掉出主发送池
+- carry more media and traffic diagnostics through the public candidate payload: API summary / context scoring 现在会回传 `trafficOverrideEligible`、`mediaSamplingPromoted`、`growthBaitSignal`、`growthBaitCrowded`、`needsDetailContext`、`mediaContextMissing`、`mediaVelocityInspectionHint`、`mediaSummaryAvailable` 等字段，方便外部执行器看清“值不值得回”和“该走哪条路”
+- tolerate a wider class of transient round failures: `candidate-not-found`、`round-idle-timeout`、`value-dropped-on-open`、`value-below-send-floor`、`score-degraded-below-average`、`score-below-agent-send-floor` 这类波动现在按瞬时执行失败处理，不再轻易把整轮或好目标毒死
+
 ## 0.2.259
 
 - stop burning good targets on transient send failures: `begin-failed`、`context-not-locked`、`reply-target-lost`、`ticket-not-found` 这类瞬时执行故障不再直接进本轮 denylist，执行器可以继续重试或换路，不会因为一次假失败就把好目标永久踢出本轮

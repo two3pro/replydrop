@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.259`
+Current version: `0.2.260`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.259` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, and `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.260` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, and `0.2.260` keeps high-momentum media posts in the main traffic lane while expanding media diagnostics and transient failure tolerance.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.260` keeps strong media candidates in the main traffic lane instead of treating them as fragile edge cases:
+
+- media sampling meta can now promote high-momentum image/video posts, override route buckets, and classify crowded growth-bait setups without automatically downgrading them just because they need detail inspection
+- candidate summaries and context scoring now expose `trafficOverrideEligible`, `mediaSamplingPromoted`, `growthBaitSignal`, `growthBaitCrowded`, `needsDetailContext`, `mediaContextMissing`, `mediaVelocityInspectionHint`, and `mediaSummaryAvailable`
+- transient failures such as `candidate-not-found`, `round-idle-timeout`, `value-dropped-on-open`, `value-below-send-floor`, `score-degraded-below-average`, and `score-below-agent-send-floor` are now treated as tolerable round failures instead of immediately poisoning the loop
 
 Version `0.2.259` stops wasting good targets on transient execution failures and keeps the executor anchored to the Home For You feed:
 
@@ -172,16 +178,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.259.zip](./downloads/replydrop-p2.259.zip)
+- Chrome / Brave runtime package: [replydrop-p2.260.zip](./downloads/replydrop-p2.260.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.259.zip](./downloads/replydrop-safari-open-source-0.2.259.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.260.zip](./downloads/replydrop-safari-open-source-0.2.260.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.259` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.259`.
+  - Chrome / Brave now uses the `0.2.260` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.260`.
 
 ## Local Install
 

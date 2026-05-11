@@ -144,6 +144,12 @@
     "navigating",
     "ticket-not-found",
     "missing-ticket-id",
+    "candidate-not-found",
+    "round-idle-timeout",
+    "value-dropped-on-open",
+    "value-below-send-floor",
+    "score-degraded-below-average",
+    "score-below-agent-send-floor",
     "replydrop-api-null-result",
     "runtime-message-timeout"
   ]);
@@ -1113,6 +1119,8 @@
       recommendedSlot: String(candidate.recommendedSlot || "").trim(),
       recommendedDecision: String(candidate.recommendedDecision || "").trim(),
       trafficQualified: Boolean(candidate.trafficQualified),
+      trafficOverrideEligible: Boolean(candidate.trafficOverrideEligible),
+      mediaSamplingPromoted: Boolean(candidate.mediaSamplingPromoted),
       replyWorthinessState: String(candidate.replyWorthinessState || candidate.sendabilityState || "").trim(),
       executionRoute: String(candidate.executionRoute || "").trim(),
       executionRouteLabel: String(candidate.executionRouteLabel || "").trim(),
@@ -1134,6 +1142,12 @@
       bookmarks: Number(candidate.bookmarks || 0),
       blockReason: String(candidate.blockReason || "").trim(),
       lowSemanticConfidence: Boolean(candidate.lowSemanticConfidence),
+      growthBaitSignal: Boolean(candidate.growthBaitSignal),
+      growthBaitCrowded: Boolean(candidate.growthBaitCrowded),
+      needsDetailContext: Boolean(candidate.needsDetailContext),
+      mediaContextMissing: Boolean(candidate.mediaContextMissing),
+      mediaVelocityInspectionHint: Boolean(candidate.mediaVelocityInspectionHint),
+      mediaSummaryAvailable: Boolean(candidate.mediaSummaryAvailable),
       breakdown: Array.isArray(candidate.breakdown)
         ? candidate.breakdown.slice(0, 8).map((item) => ({
             key: String(item?.key || "").trim(),
@@ -1928,6 +1942,22 @@
       (views >= 120000 && conversationRatio > 0 && conversationRatio < 0.0025) ||
       likeReplyRatio >= 22
     );
+    const trafficProfile = buildExecutorTrafficProfile({
+      views,
+      replies,
+      velocityPerHour: candidate?.trafficVelocityPerHour,
+      phase: candidate?.trafficPhase,
+      ageMinutes,
+      timestamp,
+      mediaKind: candidate?.mediaKind
+    });
+    const mediaSampling = buildReplyDropMediaSamplingMeta(candidate, candidate?.contextCompleteness || {}, {
+      executionScore,
+      predictedCommentExposure,
+      ageMinutes,
+      trafficProfile,
+      needsVision: Boolean(candidate?.lowSemanticConfidence)
+    });
     const language = uiLanguage === "zh-Hant" ? "zh-Hant" : uiLanguage === "ja" ? "ja" : uiLanguage === "ko" ? "ko" : uiLanguage === "en" ? "en" : "zh-Hans";
     const labels = {
       "zh-Hans": {
@@ -1972,6 +2002,10 @@
     );
     if ((crowded || broadcastHeavy) && replyPickupScore < 60 && predictedCommentExposure < 62 && !validatedRelationshipHot && !memoryHot) {
       key = "crowded";
+    } else if (mediaSampling.crowdedGrowthBait) {
+      key = "crowded";
+    } else if (mediaSampling.promoteToNow && !lowPickupDespiteHeat) {
+      key = "now";
     } else if (
       ageMinutes <= 90 &&
       executionScore >= 60 &&
@@ -2139,12 +2173,15 @@
     switch (String(flag || "").trim()) {
       case "media_post":
       case "media_context_missing":
+      case "media_high_velocity_needs_inspection":
       case "media_not_inspected_text_sufficient":
       case "needs_detail_context":
       case "vision_required_but_missing":
       case "quote_context_possible":
       case "show_more_possible":
       case "not-timeline-inline-eligible":
+      case "timeline-inline-recheck-tolerated":
+      case "detail-inspection-recheck-tolerated":
         return true;
       default:
         return false;
@@ -2373,6 +2410,235 @@
     return Math.max(0, Math.min(100, Math.round(score || 0)));
   }
 
+  function buildReplyDropMediaSamplingMeta(candidate = {}, contextCompleteness = {}, options = {}) {
+    const hasVisualMedia = hasVisualMediaKind(candidate?.mediaKind);
+    const mediaSummaryText = String(
+      options?.mediaSummaryText ??
+      candidate?.mediaSummaryText ??
+      ""
+    ).trim();
+    const mediaSummaryAvailable = Boolean(
+      options?.mediaSummaryAvailable ??
+      contextCompleteness?.mediaSummaryAvailable ??
+      candidate?.mediaSummaryAvailable
+    );
+    const mediaContextMissing = Boolean(
+      options?.mediaContextMissing ??
+      contextCompleteness?.mediaContextMissing ??
+      candidate?.mediaContextMissing
+    );
+    const needsDetailContext = Boolean(
+      options?.needsDetailContext ??
+      contextCompleteness?.needsDetailContext ??
+      candidate?.needsDetailContext
+    );
+    const quickDraftAllowed = Boolean(
+      options?.quickDraftAllowed ??
+      contextCompleteness?.quickDraftAllowed ??
+      candidate?.quickDraftAllowed
+    );
+    const mediaNotInspectedTextSufficient = Boolean(
+      options?.mediaNotInspectedTextSufficient ??
+      contextCompleteness?.mediaNotInspectedTextSufficient ??
+      candidate?.mediaNotInspectedTextSufficient
+    );
+    const executionScore = Math.max(
+      0,
+      Math.min(100, Math.round(Number(
+        options?.executionScore ??
+        candidate?.executionScore ??
+        candidate?.understandingConfidence ??
+        0
+      )))
+    );
+    const predictedCommentExposure = Math.max(
+      0,
+      Math.min(100, Math.round(Number(
+        options?.predictedCommentExposure ??
+        candidate?.predictedCommentExposure ??
+        candidate?.replyPickupScore ??
+        candidate?.reachLikelihood ??
+        0
+      )))
+    );
+    const postBlastScore = getCandidatePostBlastScore(candidate);
+    const replyPickupScore = getCandidateReplyPickupScore(candidate);
+    const score = Math.max(0, Math.min(100, Math.round(Number(candidate?.score || candidate?.finalScore || 0))));
+    const opportunityBoost = Number(candidate?.opportunityBoost || 0);
+    const semanticMediaSource = [
+      String(candidate?.text || "").trim(),
+      mediaSummaryText
+    ].filter(Boolean).join(" ").toLowerCase();
+    const ageMinutes = Number.isFinite(Number(options?.ageMinutes))
+      ? Math.max(0, Math.round(Number(options.ageMinutes)))
+      : getReplyDropAgeMinutes(candidate?.timestamp || 0);
+    const trafficProfile = options?.trafficProfile && typeof options.trafficProfile === "object"
+      ? options.trafficProfile
+      : buildExecutorTrafficProfile({
+          views: candidate?.views,
+          replies: candidate?.replies,
+          velocityPerHour: candidate?.trafficVelocityPerHour,
+          phase: candidate?.trafficPhase,
+          ageMinutes,
+          timestamp: candidate?.timestamp,
+          mediaKind: candidate?.mediaKind
+        });
+    const velocityHot = Number(trafficProfile.velocityPerHour || 0) >= Math.max(
+      650,
+      Math.round(Number(trafficProfile.minVelocityPerHour || 0) * 0.72)
+    );
+    const viewBurst = Number(trafficProfile.views || 0) >= Math.max(
+      900,
+      Number(trafficProfile.minViews || 0) + 300
+    );
+    const replyBurst = Number(trafficProfile.replies || 0) >= Math.max(
+      5,
+      Number(trafficProfile.minReplies || 0) - 2
+    );
+    const earlyVisualBurst = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= 20 &&
+      (
+        (Number(trafficProfile.views || 0) >= 180 && Number(trafficProfile.replies || 0) >= 5) ||
+        (Number(trafficProfile.views || 0) >= 320 && Number(trafficProfile.replies || 0) >= 4) ||
+        (velocityHot && Number(trafficProfile.replies || 0) >= 3)
+      )
+    );
+    const strongMediaEngagement = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= 45 &&
+      score >= 64 &&
+      executionScore >= 46 &&
+      predictedCommentExposure >= 46 &&
+      Number(trafficProfile.replies || 0) >= 5
+    );
+    const stableVisualMomentum = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= 90 &&
+      trafficProfile.qualified &&
+      executionScore >= 60 &&
+      predictedCommentExposure >= 54 &&
+      (
+        score >= 56 ||
+        replyPickupScore >= 46 ||
+        postBlastScore >= 54
+      )
+    );
+    const growthBaitSignal = Boolean(
+      hasVisualMedia &&
+      /(?:organic followers|followers|mutuals|just reply|reply\s*-\s*hello|say\s*hi|say\s*hello|connect with|support you instantly|drop your username|follow back|f4f|follow train|互关|回关|互粉|互fo|涨粉|粉丝|加好友|打个招呼)/i.test(semanticMediaSource)
+    );
+    const crowdedGrowthBait = Boolean(
+      growthBaitSignal &&
+      ageMinutes <= 90 &&
+      (
+        Number(trafficProfile.replies || 0) >= 18 ||
+        (
+          Number(trafficProfile.replies || 0) >= 10 &&
+          (velocityHot || Number(trafficProfile.views || 0) >= 180)
+        )
+      )
+    );
+    const highTrafficSignal = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES &&
+      (
+        trafficProfile.qualified ||
+        earlyVisualBurst ||
+        velocityHot ||
+        (viewBurst && replyBurst) ||
+        postBlastScore >= 68 ||
+        (score >= 54 && replyPickupScore >= 44) ||
+        strongMediaEngagement ||
+        opportunityBoost >= 10
+      )
+    );
+    const unstablePreview = (
+      executionScore < 56 ||
+      predictedCommentExposure < 52 ||
+      Math.max(0, postBlastScore - replyPickupScore) >= 16
+    );
+    const unresolvedMedia = Boolean(
+      hasVisualMedia &&
+      !mediaSummaryAvailable &&
+      (
+        mediaContextMissing ||
+        Boolean(candidate?.lowSemanticConfidence || options?.needsVision) ||
+        (needsDetailContext && !mediaNotInspectedTextSufficient)
+      )
+    );
+    const detailInspectionBoost = Boolean(
+      hasVisualMedia &&
+      !mediaSummaryAvailable &&
+      highTrafficSignal &&
+      (
+        unresolvedMedia ||
+        unstablePreview ||
+        (!quickDraftAllowed && !mediaNotInspectedTextSufficient)
+      )
+    );
+    const trafficOverrideEligible = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= 90 &&
+      (
+        trafficProfile.qualified ||
+        (
+          highTrafficSignal &&
+          (
+            stableVisualMomentum ||
+            velocityHot ||
+            earlyVisualBurst ||
+            strongMediaEngagement ||
+            (viewBurst && (postBlastScore >= 54 || replyPickupScore >= 46)) ||
+            (
+              executionScore >= 46 &&
+              predictedCommentExposure >= 46 &&
+              Number(trafficProfile.replies || 0) >= 5
+            )
+          )
+        )
+      )
+    );
+    const promoteToNow = Boolean(
+      hasVisualMedia &&
+      ageMinutes <= 90 &&
+      !crowdedGrowthBait &&
+      (
+        stableVisualMomentum ||
+        mediaSummaryAvailable
+          ? (
+            highTrafficSignal &&
+            executionScore >= 48 &&
+            predictedCommentExposure >= 44 &&
+            (replyPickupScore >= 44 || postBlastScore >= 54 || trafficOverrideEligible)
+          )
+          : (
+            detailInspectionBoost &&
+            (postBlastScore >= 55 || replyPickupScore >= 46 || trafficOverrideEligible)
+          )
+      )
+    );
+    return {
+      hasVisualMedia,
+      mediaSummaryAvailable,
+      mediaContextMissing,
+      needsDetailContext,
+      quickDraftAllowed,
+      mediaNotInspectedTextSufficient,
+      ageMinutes,
+      trafficProfile,
+      velocityHot,
+      growthBaitSignal,
+      crowdedGrowthBait,
+      highTrafficSignal,
+      unstablePreview,
+      unresolvedMedia,
+      detailInspectionBoost,
+      trafficOverrideEligible,
+      promoteToNow
+    };
+  }
+
   function getReplyDropHarmonicMean(values = []) {
     const normalized = (Array.isArray(values) ? values : [])
       .map((value) => Number(value || 0))
@@ -2388,11 +2654,38 @@
   }
 
   function computeCandidateExecutionScore(candidate = {}, contextCompleteness = {}, timelineInlineReplyEligible = false) {
-    void contextCompleteness;
     void timelineInlineReplyEligible;
     let score = Number(candidate?.executionScore ?? candidate?.understandingConfidence ?? 58);
     if (!Number.isFinite(score)) {
       score = 58;
+    }
+    const mediaSampling = buildReplyDropMediaSamplingMeta(candidate, contextCompleteness, {
+      ageMinutes: getReplyDropAgeMinutes(candidate?.timestamp || 0),
+      executionScore: score,
+      mediaSummaryAvailable: Boolean(contextCompleteness?.mediaSummaryAvailable),
+      mediaContextMissing: Boolean(contextCompleteness?.mediaContextMissing),
+      needsDetailContext: Boolean(contextCompleteness?.needsDetailContext),
+      quickDraftAllowed: Boolean(contextCompleteness?.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness?.mediaNotInspectedTextSufficient),
+      needsVision: Boolean(candidate?.lowSemanticConfidence)
+    });
+    if (mediaSampling.detailInspectionBoost) {
+      const detailBoostFloor = mediaSampling.trafficOverrideEligible
+        ? 54
+        : 50;
+      score = Math.max(score, detailBoostFloor);
+    } else if (mediaSampling.mediaSummaryAvailable && mediaSampling.highTrafficSignal && mediaSampling.hasVisualMedia) {
+      const summaryBoostFloor = Math.max(
+        52,
+        Math.round(
+          getReplyDropHarmonicMean([
+            getCandidatePostBlastScore(candidate),
+            Math.max(40, getCandidateReplyPickupScore(candidate)),
+            Math.max(50, score)
+          ]) * 0.84
+        )
+      );
+      score = Math.max(score, Math.min(82, summaryBoostFloor));
     }
     if (isReplyDropHardBlockReason(candidate?.blockReason)) {
       score -= 18;
@@ -2431,7 +2724,7 @@
     return Math.max(0, Math.round((Date.now() - normalized) / 60000));
   }
 
-  function buildLiveCandidateRecheck(candidate = {}, article = null) {
+  function buildLiveCandidateRecheck(candidate = {}, article = null, options = {}) {
     if (!(article instanceof Element) || typeof global.XReplyScorer?.analyzeTweet !== "function") {
       return {
         attempted: false,
@@ -2463,10 +2756,23 @@
     const liveAgeMinutes = getReplyDropAgeMinutes(tweet?.timestamp || candidate?.timestamp || 0);
     const previewSurface = String(candidate?.peakSourceSurface || candidate?.sourceSurface || "").trim();
     const liveSurface = String(tweet?.sourceSurface || liveAnalysis?.sourceSurface || "").trim();
-    const previewDecision = String(candidate?.recommendedDecision || "").trim();
-    const timelineInlineCandidate = (
-      String(candidate?.executionRoute || "").trim() === "timeline_inline" ||
-      Boolean(candidate?.timelineInlineReplyEligible)
+    const previewDecision = String(options?.previewDecision || candidate?.recommendedDecision || "").trim();
+    const timelineInlineCandidate = Boolean(
+      options?.timelineInlineReplyEligible ??
+      (
+        String(candidate?.executionRoute || "").trim() === "timeline_inline" ||
+        Boolean(candidate?.timelineInlineReplyEligible)
+      )
+    );
+    const detailInspectionCandidate = Boolean(
+      options?.detailInspectionCandidate ??
+      (
+        String(candidate?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
+        (
+          hasVisualMediaKind(candidate?.mediaKind) &&
+          Boolean(options?.contextCompleteness?.needsDetailContext)
+        )
+      )
     );
     const scoreDelta = liveScore - previewScore;
     const exposureDelta = liveExposureScore - previewExposureScore;
@@ -2481,8 +2787,53 @@
     const olderThanAutoWindow = liveAgeMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES;
     const staleReplyWindow = liveAgeMinutes > EXECUTOR_STALE_REPLY_MAX_AGE_MINUTES;
     const surfaceChanged = Boolean(previewSurface && liveSurface && previewSurface !== liveSurface);
+    const inferredContextCompleteness = options?.contextCompleteness && typeof options.contextCompleteness === "object"
+      ? options.contextCompleteness
+      : {
+          needsDetailContext: Boolean(
+            candidate?.needsDetailContext ||
+            candidate?.mediaContextMissing ||
+            String(candidate?.executionRoute || "").trim() === "detail_inspect_then_reply"
+          ),
+          mediaContextMissing: Boolean(candidate?.mediaContextMissing),
+          mediaSummaryAvailable: Boolean(candidate?.mediaSummaryAvailable),
+          mediaNotInspectedTextSufficient: Boolean(candidate?.mediaNotInspectedTextSufficient)
+        };
+    const mediaSampling = options?.mediaSampling && typeof options.mediaSampling === "object"
+      ? options.mediaSampling
+      : buildReplyDropMediaSamplingMeta(candidate, inferredContextCompleteness, {
+          ageMinutes: liveAgeMinutes,
+          needsVision: Boolean(candidate?.lowSemanticConfidence)
+        });
+    const mediaSummaryAvailable = Boolean(
+      inferredContextCompleteness.mediaSummaryAvailable ||
+      candidate?.mediaSummaryAvailable
+    );
+    const mediaContextMissing = Boolean(
+      inferredContextCompleteness.mediaContextMissing ||
+      candidate?.mediaContextMissing
+    );
+    const mediaSamplingPromoted = Boolean(
+      candidate?.mediaSamplingPromoted ||
+      mediaSampling?.promoteToNow
+    );
     const sendFloorTolerance = Math.max(2, Math.min(4, Math.round(Math.max(0, executorSendFloor - displayThreshold) / 2) || 3));
     const exposureFloorTolerance = 6;
+    const detailInspectionToleranceBoost = Boolean(
+      previewDecision === "reply-now" &&
+      detailInspectionCandidate &&
+      (
+        mediaSummaryAvailable ||
+        mediaSamplingPromoted ||
+        mediaSampling?.trafficOverrideEligible ||
+        mediaSampling?.detailInspectionBoost ||
+        !mediaContextMissing
+      )
+    );
+    const detailSendFloorTolerance = detailInspectionToleranceBoost ? 8 : 6;
+    const detailExposureFloorTolerance = detailInspectionToleranceBoost ? 14 : 10;
+    const detailScoreFloor = mediaSummaryAvailable ? 38 : 40;
+    const detailExposureFloorMin = mediaSummaryAvailable ? 34 : 36;
     const toleratedTimelineInlineDrift = Boolean(
       previewDecision === "reply-now" &&
       timelineInlineCandidate &&
@@ -2491,6 +2842,27 @@
       liveExposureScore >= Math.max(40, exposureFloor - exposureFloorTolerance) &&
       !String(liveAnalysis?.blockReason || "").trim()
     );
+    const toleratedDetailInspectionDrift = Boolean(
+      previewDecision === "reply-now" &&
+      detailInspectionCandidate &&
+      !olderThanAutoWindow &&
+      (
+        detailInspectionToleranceBoost ||
+        mediaSampling?.trafficOverrideEligible ||
+        mediaSampling?.detailInspectionBoost
+      ) &&
+      liveScore >= Math.max(
+        detailScoreFloor,
+        displayThreshold - 8,
+        executorSendFloor - detailSendFloorTolerance
+      ) &&
+      liveExposureScore >= Math.max(
+        detailExposureFloorMin,
+        exposureFloor - detailExposureFloorTolerance
+      ) &&
+      !String(liveAnalysis?.blockReason || "").trim()
+    );
+    const toleratedRecheckDrift = toleratedTimelineInlineDrift || toleratedDetailInspectionDrift;
     const flags = [];
 
     if (surfaceChanged) {
@@ -2506,13 +2878,13 @@
       flags.push("below-average-line");
     }
     if (belowExecutorSendFloor) {
-      flags.push(toleratedTimelineInlineDrift ? "below-executor-send-floor-tolerated" : "below-executor-send-floor");
+      flags.push(toleratedRecheckDrift ? "below-executor-send-floor-tolerated" : "below-executor-send-floor");
     }
     if (belowDisplayThreshold) {
-      flags.push(toleratedTimelineInlineDrift ? "below-display-floor-tolerated" : "below-display-floor");
+      flags.push(toleratedRecheckDrift ? "below-display-floor-tolerated" : "below-display-floor");
     }
     if (belowExposureFloor) {
-      flags.push(toleratedTimelineInlineDrift ? "low-comment-exposure-tolerated" : "low-comment-exposure");
+      flags.push(toleratedRecheckDrift ? "low-comment-exposure-tolerated" : "low-comment-exposure");
     }
     if (olderThanAutoWindow) {
       flags.push(staleReplyWindow ? "older-than-reply-window" : "older-than-auto-window");
@@ -2522,15 +2894,17 @@
     }
 
     const skipRecommended = (
-      (belowDisplayThreshold && !toleratedTimelineInlineDrift) ||
-      (belowExecutorSendFloor && !toleratedTimelineInlineDrift) ||
-      (belowExposureFloor && !toleratedTimelineInlineDrift) ||
+      (belowDisplayThreshold && !toleratedRecheckDrift) ||
+      (belowExecutorSendFloor && !toleratedRecheckDrift) ||
+      (belowExposureFloor && !toleratedRecheckDrift) ||
       olderThanAutoWindow
     );
     if (skipRecommended) {
       flags.push("skip-recommended");
     } else if (toleratedTimelineInlineDrift) {
       flags.push("timeline-inline-recheck-tolerated");
+    } else if (toleratedDetailInspectionDrift) {
+      flags.push("detail-inspection-recheck-tolerated");
     }
 
     let status = "stable";
@@ -2571,6 +2945,7 @@
       staleReplyWindow,
       skipRecommended,
       toleratedTimelineInlineDrift,
+      toleratedDetailInspectionDrift,
       flags: Array.from(new Set(flags)),
       liveTier: String(liveAnalysis?.tier || "").trim(),
       liveBlockReason: String(liveAnalysis?.blockReason || "").trim()
@@ -2621,6 +2996,7 @@
     const replies = Math.max(0, Number(metrics?.replies) || 0);
     const velocityPerHour = Math.max(0, Number(metrics?.velocityPerHour) || 0);
     const phase = normalizeTrafficPhaseKey(metrics?.phase);
+    const hasVisualMedia = Boolean(metrics?.hasVisualMedia) || hasVisualMediaKind(metrics?.mediaKind);
     const ageMinutes = getExecutorAgeMinutes(metrics);
     const trendingLike = phase === "trending" || phase === "viral";
     const risingLike = phase === "rising";
@@ -2652,6 +3028,22 @@
       maxReplyFloor = 40;
     }
 
+    if (hasVisualMedia) {
+      if (earlyWindow) {
+        minReplies = Math.max(6, minReplies - 2);
+        minVelocityPerHour = Math.max(360, Math.round(minVelocityPerHour * 0.82));
+        maxReplyFloor = Math.max(maxReplyFloor, 110);
+      } else if (midWindow) {
+        minReplies = Math.max(10, minReplies - 2);
+        minVelocityPerHour = Math.max(980, Math.round(minVelocityPerHour * 0.85));
+        maxReplyFloor = Math.max(maxReplyFloor, 72);
+      } else if (ageMinutes != null) {
+        minReplies = Math.max(14, minReplies - 2);
+        minVelocityPerHour = Math.max(1200, Math.round(minVelocityPerHour * 0.86));
+        maxReplyFloor = Math.max(maxReplyFloor, 48);
+      }
+    }
+
     let baseQualified = false;
     if (earlyWindow) {
       baseQualified = (
@@ -2673,9 +3065,9 @@
       );
     }
     const phaseQualified = (
-      (earlyWindow && trendingLike && views >= 420 && velocityPerHour >= 320) ||
-      (earlyWindow && risingLike && views >= 500 && velocityPerHour >= 450) ||
-      (midWindow && trendingLike && views >= 4200 && replies >= 10 && velocityPerHour >= 1100)
+      (earlyWindow && trendingLike && views >= (hasVisualMedia ? 360 : 420) && velocityPerHour >= (hasVisualMedia ? 260 : 320)) ||
+      (earlyWindow && risingLike && views >= (hasVisualMedia ? 440 : 500) && velocityPerHour >= (hasVisualMedia ? 380 : 450)) ||
+      (midWindow && trendingLike && views >= (hasVisualMedia ? 3600 : 4200) && replies >= (hasVisualMedia ? 8 : 10) && velocityPerHour >= (hasVisualMedia ? 980 : 1100))
     );
     const crowdQualified = replies <= maxReplyFloor;
     const qualified = (
@@ -2699,6 +3091,7 @@
       replies,
       velocityPerHour,
       phase,
+      hasVisualMedia,
       ageMinutes,
       qualified,
       phaseRank,
@@ -2742,7 +3135,8 @@
           replies: candidate?.replies,
           velocityPerHour: candidate?.trafficVelocityPerHour,
           phase: candidate?.trafficPhase,
-          timestamp: candidate?.timestamp
+          timestamp: candidate?.timestamp,
+          mediaKind: candidate?.mediaKind
         })
       }))
       .sort((left, right) => (
@@ -2916,6 +3310,19 @@
     const hasQuote = articleHasQuoteCard(article);
     const hasShowMore = articleHasShowMoreCue(article);
     const text = String(candidate?.text || candidate?.draft || "").trim();
+    const previewVelocityPerHour = Number(candidate?.trafficVelocityPerHour || 0);
+    const previewViews = Number(candidate?.views || 0);
+    const previewReplies = Number(candidate?.replies || 0);
+    const previewPostBlastScore = getCandidatePostBlastScore(candidate);
+    const previewReplyPickupScore = getCandidateReplyPickupScore(candidate);
+    const previewExecutionScore = Math.max(
+      0,
+      Math.min(100, Math.round(Number(candidate?.executionScore || candidate?.understandingConfidence || 0)))
+    );
+    const previewExposureScore = Math.max(
+      0,
+      Math.min(100, Math.round(Number(candidate?.predictedCommentExposure || candidate?.replyPickupScore || candidate?.reachLikelihood || 0)))
+    );
     const semanticTokens = text
       .split(/[\s,.;:!?/\\|()[\]{}"'`~<>，。！？、]+/)
       .filter(Boolean)
@@ -2923,17 +3330,39 @@
     const hasSummary = Boolean(mediaSummary?.summary || mediaSummary?.ocrText);
     const textCarriesThesis = text.length >= 110 || semanticTokens >= 18;
     const mediaContextMissing = hasVisualMedia && !hasSummary && !textCarriesThesis;
+    const mediaVelocityInspectionHint = Boolean(
+      hasVisualMedia &&
+      !hasSummary &&
+      (
+        previewVelocityPerHour >= 700 ||
+        (previewViews >= 900 && previewReplies >= 5) ||
+        previewPostBlastScore >= 68
+      ) &&
+      (
+        previewExecutionScore < 56 ||
+        previewExposureScore < 52 ||
+        Math.max(0, previewPostBlastScore - previewReplyPickupScore) >= 16
+      )
+    );
+    const mediaNotInspectedTextSufficient = Boolean(hasVisualMedia && !hasSummary && textCarriesThesis);
     const needsDetailContext = Boolean(
       mediaContextMissing ||
+      mediaVelocityInspectionHint ||
       hasQuote ||
       (hasShowMore && !textCarriesThesis) ||
       (hasVisualMedia && !hasSummary && !textCarriesThesis)
     );
-    const quickDraftAllowed = Boolean(textCarriesThesis && !mediaContextMissing && !hasQuote);
+    const quickDraftAllowed = Boolean(
+      textCarriesThesis &&
+      !mediaContextMissing &&
+      !hasQuote &&
+      !mediaVelocityInspectionHint
+    );
     const flags = [];
     if (mediaContextMissing) flags.push("media_context_missing");
+    if (mediaVelocityInspectionHint) flags.push("media_high_velocity_needs_inspection");
     if (hasVisualMedia) flags.push("media_post");
-    if (hasVisualMedia && !hasSummary && textCarriesThesis) flags.push("media_not_inspected_text_sufficient");
+    if (mediaNotInspectedTextSufficient) flags.push("media_not_inspected_text_sufficient");
     if (hasQuote) flags.push("quote_context_possible");
     if (hasShowMore) flags.push("show_more_possible");
     if (quickDraftAllowed) flags.push("quick_draft_allowed");
@@ -2941,9 +3370,10 @@
     return {
       needsDetailContext,
       mediaContextMissing,
-      mediaNotInspectedTextSufficient: Boolean(hasVisualMedia && !hasSummary && textCarriesThesis),
+      mediaNotInspectedTextSufficient,
       quickDraftAllowed,
       mediaSummaryAvailable: hasSummary,
+      mediaVelocityInspectionHint,
       draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
       flags,
       detailRewriteInstruction: needsDetailContext
@@ -3253,36 +3683,106 @@
     const attributionSummary = typeof global.ReplyDropAttributionCore?.summarizeCandidateAttribution === "function"
       ? global.ReplyDropAttributionCore.summarizeCandidateAttribution(candidate, attributionModel)
       : null;
-    const lane = getCandidateLaneDescriptor(candidate, runtimeState?.uiLanguage || "zh-Hans");
-    const recommendedSlot = getRecommendedQueueSlot(candidate, runtimeState, attributionSummary);
     const highlights = getUserFacingApiHighlights(candidate, 3);
     const text = String(candidate?.text || candidate?.draft || "").trim().slice(0, 560);
     const timestamp = Number(candidate?.timestamp || 0);
     const ageMinutes = timestamp
       ? Math.max(0, Math.round((Date.now() - timestamp) / 60000))
       : 0;
+    const mediaKind = String(candidate?.mediaKind || "").trim();
+    const mediaPresent = hasVisualMediaKind(mediaKind);
+    const mediaSummary = getMediaSummaryFromState(runtimeState, tweetId);
+    const mediaSummaryText = [
+      String(mediaSummary?.summary || "").trim(),
+      String(mediaSummary?.ocrText || "").trim()
+    ].filter(Boolean).join(" ").trim();
+    const liveArticle = options?.article instanceof Element
+      ? options.article
+      : findTweetArticleByTweetId(tweetId, normalizedUrl);
+    const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
+    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, liveArticle);
+    const executionScore = computeCandidateExecutionScore(
+      candidate,
+      contextCompleteness,
+      timelineInlineReplyEligible
+    );
+    const predictedCommentExposure = getCandidatePredictedCommentExposure(
+      candidate,
+      executionScore
+    );
     const trafficProfile = buildExecutorTrafficProfile({
       views: candidate?.views,
       replies: candidate?.replies,
       velocityPerHour: candidate?.trafficVelocityPerHour,
       phase: candidate?.trafficPhase,
       ageMinutes,
-      timestamp
+      timestamp,
+      mediaKind
     });
-    const mediaKind = String(candidate?.mediaKind || "").trim();
-    const mediaPresent = hasVisualMediaKind(mediaKind);
-    const needsVision = mediaPresent && Boolean(candidate?.lowSemanticConfidence || text.length < 32);
-    const mediaSummary = getMediaSummaryFromState(runtimeState, tweetId);
-    const liveArticle = options?.article instanceof Element
-      ? options.article
-      : findTweetArticleByTweetId(tweetId, normalizedUrl);
-    const recheck = buildLiveCandidateRecheck(candidate, liveArticle);
-    const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
-    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, liveArticle);
-    const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
-    const recommendedDecision = (recheck?.skipRecommended || !trafficProfile.qualified)
+    const needsVision = Boolean(
+      mediaPresent &&
+      (
+        candidate?.lowSemanticConfidence ||
+        contextCompleteness.mediaContextMissing ||
+        contextCompleteness.mediaVelocityInspectionHint
+      )
+    );
+    const decisionCandidate = {
+      ...candidate,
+      executionScore,
+      predictedCommentExposure,
+      needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
+      mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
+      mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
+      mediaSummaryText,
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
+      timelineInlineReplyEligible
+    };
+    const mediaSampling = buildReplyDropMediaSamplingMeta(decisionCandidate, contextCompleteness, {
+      executionScore,
+      predictedCommentExposure,
+      ageMinutes,
+      trafficProfile,
+      needsVision,
+      mediaSummaryText
+    });
+    const lane = getCandidateLaneDescriptor({
+      ...decisionCandidate,
+      trafficQualified: Boolean(trafficProfile.qualified || mediaSampling.trafficOverrideEligible)
+    }, runtimeState?.uiLanguage || "zh-Hans");
+    const computedRecommendedSlot = getRecommendedQueueSlot(decisionCandidate, runtimeState, attributionSummary);
+    const recommendedSlot = source === "queue"
+      ? (String(candidate?.recommendedSlot || "").trim() || computedRecommendedSlot)
+      : computedRecommendedSlot;
+    const hardBlocked = (
+      isReplyDropHardBlockReason(candidate?.blockReason) ||
+      !isBlueCheckEligibleAuthor(candidate?.authorVerified, candidate?.authorVerificationType)
+    );
+    const effectiveTrafficQualified = Boolean(trafficProfile.qualified || mediaSampling.trafficOverrideEligible);
+    const provisionalRecommendedDecision = (hardBlocked || !effectiveTrafficQualified)
       ? "skip"
       : mapQueueSlotToDecision(recommendedSlot);
+    const recheck = buildLiveCandidateRecheck({
+      ...decisionCandidate,
+      recommendedDecision: provisionalRecommendedDecision,
+      executionRoute: contextCompleteness.needsDetailContext || needsVision
+        ? "detail_inspect_then_reply"
+        : (timelineInlineReplyEligible ? "timeline_inline" : String(candidate?.executionRoute || "").trim())
+    }, liveArticle, {
+      contextCompleteness,
+      mediaSampling,
+      previewDecision: provisionalRecommendedDecision,
+      timelineInlineReplyEligible,
+      detailInspectionCandidate: Boolean(
+        mediaSampling.detailInspectionBoost ||
+        (mediaSampling.hasVisualMedia && contextCompleteness.needsDetailContext && !contextCompleteness.mediaSummaryAvailable)
+      )
+    });
+    const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
+    const recommendedDecision = (hardBlocked || recheck?.skipRecommended || !effectiveTrafficQualified)
+      ? "skip"
+      : provisionalRecommendedDecision;
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
       ? global.ReplyDropDraftCore.buildDraftPlan(candidate, attributionSummary, { laneKey: lane.key })
       : [];
@@ -3297,6 +3797,7 @@
       String(candidate?.blockReason || "").trim(),
       ...(Array.isArray(recheck?.flags) ? recheck.flags : []),
       ...(Array.isArray(contextCompleteness.flags) ? contextCompleteness.flags : []),
+      mediaSampling.crowdedGrowthBait ? "growth_bait_crowded" : "",
       alreadyReplied ? "already_replied" : ""
     ].filter(Boolean)));
 
@@ -3331,7 +3832,9 @@
           replyRatio: Number(candidate?.trafficReplyRatio || 0),
           capturedAt: Number(candidate?.trafficCapturedAt || 0),
           source: String(candidate?.trafficSource || "").trim(),
-          qualified: Boolean(trafficProfile.qualified)
+          qualified: effectiveTrafficQualified,
+          baseQualified: Boolean(trafficProfile.qualified),
+          overrideEligible: Boolean(mediaSampling.trafficOverrideEligible)
         },
         matchedTopics: Array.isArray(candidate?.matchedTopics) ? candidate.matchedTopics.slice(0, 4).map((item) => String(item || "").trim()).filter(Boolean) : [],
         matchedLanguages: Array.isArray(candidate?.matchedLanguages) ? candidate.matchedLanguages.slice(0, 4).map((item) => String(item || "").trim()).filter(Boolean) : [],
@@ -3345,8 +3848,8 @@
         postBlastScore: Number(candidate?.postBlastScore || candidate?.postScore || candidate?.score || 0),
         reachLikelihood: Number(candidate?.reachLikelihood || 0),
         replyPickupScore: Number(candidate?.replyPickupScore || candidate?.reachLikelihood || 0),
-        executionScore: Number(candidate?.executionScore || candidate?.understandingConfidence || 0),
-        predictedCommentExposure: Number(candidate?.predictedCommentExposure || candidate?.reachLikelihood || 0),
+        executionScore,
+        predictedCommentExposure,
         understandingConfidence: Number(candidate?.understandingConfidence || 0),
         authorFit: Number(candidate?.authorFit || 0),
         finalScore: Number(candidate?.finalScore || candidate?.score || 0),
@@ -3369,7 +3872,10 @@
         laneKey: lane.key,
         laneLabel: lane.label,
         recommendedSlot,
-        recommendedDecision
+        recommendedDecision,
+        trafficOverrideEligible: Boolean(mediaSampling.trafficOverrideEligible),
+        mediaSamplingPromoted: Boolean(mediaSampling.promoteToNow),
+        growthBaitCrowded: Boolean(mediaSampling.crowdedGrowthBait)
       },
       memory: {
         kind: String(attributionSummary?.kind || "").trim(),
@@ -3384,7 +3890,12 @@
         needsVision,
         available: mediaPresent,
         bundleIncluded: false,
-        summary: mediaSummary
+        summary: mediaSummary,
+        highTrafficSignal: Boolean(mediaSampling.highTrafficSignal),
+        growthBaitSignal: Boolean(mediaSampling.growthBaitSignal),
+        growthBaitCrowded: Boolean(mediaSampling.crowdedGrowthBait),
+        unresolvedMedia: Boolean(mediaSampling.unresolvedMedia),
+        detailInspectionBoost: Boolean(mediaSampling.detailInspectionBoost)
       },
       lifecycle: {
         alreadyReplied
@@ -3667,35 +4178,59 @@
     const ageMinutes = Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 999);
     const recommendedDecision = String(context.routing?.recommendedDecision || "").trim();
     const toleratedTimelineInlineDrift = Boolean(context.recheck?.toleratedTimelineInlineDrift);
+    const toleratedDetailInspectionDrift = Boolean(context.recheck?.toleratedDetailInspectionDrift);
+    const toleratedRecheckDrift = toleratedTimelineInlineDrift || toleratedDetailInspectionDrift;
+    const trafficOverrideEligible = Boolean(
+      context.routing?.trafficOverrideEligible ||
+      context.post?.traffic?.overrideEligible
+    );
+    const mediaPreviewTolerance = Boolean(
+      trafficOverrideEligible &&
+      (
+        context.routing?.mediaSamplingPromoted ||
+        context.contextCompleteness?.mediaVelocityInspectionHint ||
+        String(
+          context.execution?.executionRoute ||
+          context.executionRoute ||
+          context.sendability?.executionRoute ||
+          ""
+        ).trim() === "detail_inspect_then_reply"
+      )
+    );
+    const commentExposureFloor = mediaPreviewTolerance
+      ? Math.max(44, displayThreshold - 6)
+      : Math.max(46, displayThreshold - 4);
+    const executionFloor = mediaPreviewTolerance ? 48 : 54;
     const trafficProfile = buildExecutorTrafficProfile({
       views: context.post?.views,
       replies: context.post?.replies,
       velocityPerHour: context.post?.traffic?.velocityPerHour,
       phase: context.post?.traffic?.phase,
-      ageMinutes
+      ageMinutes,
+      mediaKind: context.post?.mediaKind
     });
     if (recommendedDecision && recommendedDecision !== "reply-now") {
       reasons.push(`decision-${recommendedDecision}`);
     }
-    if (context.recheck?.skipRecommended && !toleratedTimelineInlineDrift) {
+    if (context.recheck?.skipRecommended && !toleratedRecheckDrift) {
       reasons.push("skip-recommended");
     }
     if (!isBlueCheckEligibleAuthor(context.author?.verified, context.author?.verificationType)) {
       reasons.push("blue-check-required-auto-block");
     }
-    if (score < displayThreshold) {
+    if (score < displayThreshold && !mediaPreviewTolerance) {
       reasons.push("below-display-floor");
     }
-    if (score < executorSendFloor) {
+    if (score < executorSendFloor && !mediaPreviewTolerance) {
       reasons.push("below-executor-send-floor");
     }
-    if (predictedCommentExposure < Math.max(46, displayThreshold - 4)) {
+    if (predictedCommentExposure < commentExposureFloor) {
       reasons.push("below-comment-exposure-floor");
     }
-    if (executionScore < 54) {
+    if (executionScore < executionFloor) {
       reasons.push("low-execution-score");
     }
-    if (!trafficProfile.qualified) {
+    if (!trafficProfile.qualified && !trafficOverrideEligible) {
       reasons.push("below-traffic-floor");
     }
     if (ageMinutes > EXECUTOR_AUTO_REPLY_MAX_AGE_MINUTES) {
@@ -3709,7 +4244,7 @@
         const normalized = String(flag || "").trim();
         if (normalized && !isReplyDropRouteOnlyFlag(normalized)) {
           if (
-            toleratedTimelineInlineDrift &&
+            toleratedRecheckDrift &&
             (
               normalized === "below-executor-send-floor" ||
               normalized === "below-display-floor" ||
@@ -3821,7 +4356,8 @@
       replies: context.post?.replies,
       velocityPerHour: context.post?.traffic?.velocityPerHour,
       phase: context.post?.traffic?.phase,
-      ageMinutes: Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 0)
+      ageMinutes: Number(context.recheck?.liveAgeMinutes || context.post?.ageMinutes || 0),
+      mediaKind: context.post?.mediaKind
     });
     return {
       tweetId: String(context.tweetId || "").trim(),
@@ -3835,7 +4371,9 @@
       replies: trafficProfile.replies,
       trafficVelocityPerHour: trafficProfile.velocityPerHour,
       trafficPhase: trafficProfile.phase,
-      trafficQualified: trafficProfile.qualified,
+      trafficQualified: Boolean(context.post?.traffic?.qualified || trafficProfile.qualified),
+      trafficOverrideEligible: Boolean(context.routing?.trafficOverrideEligible || context.post?.traffic?.overrideEligible),
+      mediaSamplingPromoted: Boolean(context.routing?.mediaSamplingPromoted),
       recommendedDecision: String(context.routing?.recommendedDecision || "").trim(),
       replyWorthinessState: String((context.sendability || resolveReplyDropContextSendability(context))?.replyWorthinessState || "").trim(),
       executionRoute: String((context.sendability || resolveReplyDropContextSendability(context))?.executionRoute || "").trim(),
@@ -8131,6 +8669,10 @@
 
   function attachCandidateExecutionMeta(candidate = {}, article = null, mediaSummary = null, options = {}) {
     const normalizedCandidate = candidate && typeof candidate === "object" ? { ...candidate } : {};
+    const mediaSummaryText = [
+      String(mediaSummary?.summary || "").trim(),
+      String(mediaSummary?.ocrText || "").trim()
+    ].filter(Boolean).join(" ").trim();
     const contextCompleteness = buildDraftContextCompleteness(normalizedCandidate, article, false, mediaSummary);
     const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, article);
     const executionScore = computeCandidateExecutionScore(
@@ -8149,7 +8691,24 @@
       velocityPerHour: normalizedCandidate?.trafficVelocityPerHour,
       phase: normalizedCandidate?.trafficPhase,
       ageMinutes,
-      timestamp: normalizedCandidate?.timestamp
+      timestamp: normalizedCandidate?.timestamp,
+      mediaKind: normalizedCandidate?.mediaKind
+    });
+    const needsVision = Boolean(
+      hasVisualMediaKind(normalizedCandidate?.mediaKind) &&
+      (
+        normalizedCandidate?.lowSemanticConfidence ||
+        contextCompleteness.mediaContextMissing ||
+        contextCompleteness.mediaVelocityInspectionHint
+      )
+    );
+    const mediaSampling = buildReplyDropMediaSamplingMeta(normalizedCandidate, contextCompleteness, {
+      executionScore,
+      predictedCommentExposure,
+      ageMinutes,
+      trafficProfile,
+      needsVision,
+      mediaSummaryText
     });
     const attributionSummary = (
       options?.attributionModel &&
@@ -8157,23 +8716,32 @@
     )
       ? global.ReplyDropAttributionCore.summarizeCandidateAttribution(normalizedCandidate, options.attributionModel)
       : null;
+    const decisionCandidate = {
+      ...normalizedCandidate,
+      executionScore,
+      predictedCommentExposure,
+      needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
+      mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
+      mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
+      mediaSummaryText,
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
+      timelineInlineReplyEligible
+    };
     const computedRecommendedSlot = getRecommendedQueueSlot(
-      normalizedCandidate,
+      decisionCandidate,
       { uiLanguage: String(options?.uiLanguage || state.uiLanguage || "zh-Hans").trim() || "zh-Hans" },
       attributionSummary
     );
-    const recommendedSlot = String(normalizedCandidate?.recommendedSlot || "").trim() || computedRecommendedSlot;
+    const recommendedSlot = computedRecommendedSlot;
     const hardBlocked = (
       isReplyDropHardBlockReason(normalizedCandidate?.blockReason) ||
       !isBlueCheckEligibleAuthor(normalizedCandidate?.authorVerified, normalizedCandidate?.authorVerificationType)
     );
-    const recommendedDecision = (!trafficProfile.qualified || hardBlocked)
+    const effectiveTrafficQualified = Boolean(trafficProfile.qualified || mediaSampling.trafficOverrideEligible);
+    const recommendedDecision = (!effectiveTrafficQualified || hardBlocked)
       ? "skip"
-      : (String(normalizedCandidate?.recommendedDecision || "").trim() || mapQueueSlotToDecision(recommendedSlot));
-    const needsVision = Boolean(
-      normalizedCandidate?.lowSemanticConfidence &&
-      hasVisualMediaKind(normalizedCandidate?.mediaKind)
-    );
+      : mapQueueSlotToDecision(recommendedSlot);
     const sendability = buildReplyDropSendabilityMeta({
       recommendedDecision,
       timelineInlineReplyEligible,
@@ -8186,21 +8754,32 @@
       mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
       needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
       needsVision,
+      quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
+      detailRewriteInstruction: String(contextCompleteness.detailRewriteInstruction || "").trim(),
       hardBlocked
     });
     return {
       ...normalizedCandidate,
       needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
       mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
       quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
       mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
+      mediaVelocityInspectionHint: Boolean(contextCompleteness.mediaVelocityInspectionHint),
+      growthBaitSignal: Boolean(mediaSampling.growthBaitSignal),
+      growthBaitCrowded: Boolean(mediaSampling.crowdedGrowthBait),
       executionScore,
       predictedCommentExposure,
       timelineInlineReplyEligible,
       preferredOpenMode: sendability.preferredOpenMode,
+      preferredAction: sendability.preferredAction,
       recommendedSlot,
       recommendedDecision,
-      trafficQualified: Boolean(trafficProfile.qualified),
+      trafficQualified: effectiveTrafficQualified,
+      trafficOverrideEligible: Boolean(mediaSampling.trafficOverrideEligible),
+      mediaSamplingPromoted: Boolean(mediaSampling.promoteToNow),
+      highTrafficSignal: Boolean(mediaSampling.highTrafficSignal),
       replyWorthinessState: sendability.replyWorthinessState,
       executionRoute: sendability.executionRoute,
       executionRouteLabel: sendability.routeLabel,
@@ -11343,6 +11922,14 @@
     if (!(editable instanceof HTMLElement) || !value) {
       return false;
     }
+    const normalizedValue = sanitizeSnippet(value, 640);
+    const existingText = readReplyComposerText(editable);
+    if (existingText === normalizedValue) {
+      return true;
+    }
+    if (existingText) {
+      clearReplyComposerText(editable);
+    }
 
     editable.focus();
 
@@ -11360,7 +11947,11 @@
 
     try {
       if (document.execCommand?.("insertText", false, value)) {
-        return sanitizeSnippet(editable.textContent, 640) === sanitizeSnippet(value, 640);
+        const insertedText = readReplyComposerText(editable);
+        if (insertedText === normalizedValue) {
+          return true;
+        }
+        clearReplyComposerText(editable);
       }
     } catch {
       // Fall through to the manual contenteditable update.
@@ -11419,7 +12010,7 @@
     }));
     editable.dispatchEvent(new Event("change", { bubbles: true }));
 
-    return readReplyComposerText(editable) === sanitizeSnippet(value, 640);
+    return readReplyComposerText(editable) === normalizedValue;
   }
 
   function clearReplyComposerText(editor) {
