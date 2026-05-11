@@ -2249,6 +2249,7 @@
       case "vision_required_but_missing":
       case "quote_context_possible":
       case "show_more_possible":
+      case "detail-inspection-pending":
       case "not-timeline-inline-eligible":
       case "timeline-inline-recheck-tolerated":
       case "detail-inspection-recheck-tolerated":
@@ -2286,6 +2287,20 @@
     }
   }
 
+  function isReplyDropInlineQuickDraftEligible(input = {}) {
+    const quickDraftAllowed = Boolean(input?.quickDraftAllowed);
+    const mediaNotInspectedTextSufficient = Boolean(input?.mediaNotInspectedTextSufficient);
+    const mediaContextMissing = Boolean(input?.mediaContextMissing);
+    const detailRewriteInstruction = String(input?.detailRewriteInstruction || "").trim();
+    if (!quickDraftAllowed || !mediaNotInspectedTextSufficient || mediaContextMissing) {
+      return false;
+    }
+    if (!detailRewriteInstruction) {
+      return true;
+    }
+    return /不必阻断主槽|不阻断主槽|不必阻断|无需阻断|可直接主槽|首页文字已足够|do not block|don't block|quick draft|fast lane/i.test(detailRewriteInstruction);
+  }
+
   function buildReplyDropExecutionRouteMeta(input = {}) {
     const timelineInlineReplyEligible = Boolean(input?.timelineInlineReplyEligible);
     const mediaContextMissing = Boolean(input?.mediaContextMissing);
@@ -2296,12 +2311,12 @@
     const detailRewriteInstruction = String(input?.detailRewriteInstruction || "").trim();
     const allowInlineQuickDraft = Boolean(
       timelineInlineReplyEligible &&
-      quickDraftAllowed &&
-      mediaNotInspectedTextSufficient &&
-      (
-        !detailRewriteInstruction ||
-        /不必阻断主槽|不阻断主槽|不必阻断|do not block|don't block/i.test(detailRewriteInstruction)
-      )
+      isReplyDropInlineQuickDraftEligible({
+        quickDraftAllowed,
+        mediaNotInspectedTextSufficient,
+        mediaContextMissing,
+        detailRewriteInstruction
+      })
     );
     const detailInspectionRequired = Boolean(
       !allowInlineQuickDraft && (
@@ -2381,10 +2396,11 @@
           },
       liveContextCompleteness
     );
+    const liveTimelineInlineEligibility = canUseTimelineInlineReply(mergedContextCompleteness, article);
     const liveExecutionRoute = buildReplyDropExecutionRouteMeta({
       timelineInlineReplyEligible: Boolean(
-        candidateRecord?.timelineInlineReplyEligible ??
-        canUseTimelineInlineReply(mergedContextCompleteness, article)
+        liveTimelineInlineEligibility ||
+        candidateRecord?.timelineInlineReplyEligible
       ),
       mediaContextMissing: Boolean(mergedContextCompleteness.mediaContextMissing),
       needsDetailContext: Boolean(mergedContextCompleteness.needsDetailContext),
@@ -2393,17 +2409,19 @@
       mediaNotInspectedTextSufficient: Boolean(mergedContextCompleteness.mediaNotInspectedTextSufficient),
       detailRewriteInstruction: String(mergedContextCompleteness.detailRewriteInstruction || "").trim()
     });
+    const liveTimelineInlineReplyEligible = liveExecutionRoute.executionRoute === "timeline_inline";
     const enrichedCandidateRecord = {
       ...(candidateRecord && typeof candidateRecord === "object" ? candidateRecord : {}),
       url: normalizedTargetUrl || normalizeTweetUrl(candidateRecord?.url || ""),
       tweetId: targetTweetId,
       timelineInlineReplyEligible: Boolean(
-        candidateRecord?.timelineInlineReplyEligible ??
-        liveExecutionRoute.executionRoute === "timeline_inline"
+        liveTimelineInlineReplyEligible ||
+        candidateRecord?.timelineInlineReplyEligible
       ),
       executionRoute: String(
-        candidateRecord?.executionRoute ||
-        liveExecutionRoute.executionRoute
+        liveTimelineInlineReplyEligible
+          ? liveExecutionRoute.executionRoute
+          : (candidateRecord?.executionRoute || liveExecutionRoute.executionRoute)
       ).trim(),
       needsDetailContext: Boolean(mergedContextCompleteness.needsDetailContext),
       mediaContextMissing: Boolean(mergedContextCompleteness.mediaContextMissing),
@@ -2993,6 +3011,16 @@
       candidate?.mediaSamplingPromoted ||
       mediaSampling?.promoteToNow
     );
+    const mediaInspectionStillPending = Boolean(
+      detailInspectionCandidate &&
+      !mediaSummaryAvailable &&
+      (
+        mediaContextMissing ||
+        Boolean(options?.contextCompleteness?.needsDetailContext || candidate?.needsDetailContext) ||
+        Boolean(options?.contextCompleteness?.mediaVelocityInspectionHint || candidate?.mediaVelocityInspectionHint) ||
+        Boolean(candidate?.lowSemanticConfidence)
+      )
+    );
     const sendFloorTolerance = Math.max(2, Math.min(4, Math.round(Math.max(0, executorSendFloor - displayThreshold) / 2) || 3));
     const exposureFloorTolerance = 6;
     const detailInspectionToleranceBoost = Boolean(
@@ -3004,6 +3032,17 @@
         mediaSampling?.trafficOverrideEligible ||
         mediaSampling?.detailInspectionBoost ||
         !mediaContextMissing
+      )
+    );
+    const preInspectionDetailBypass = Boolean(
+      previewDecision === "reply-now" &&
+      mediaInspectionStillPending &&
+      (
+        detailInspectionToleranceBoost ||
+        mediaSamplingPromoted ||
+        mediaSampling?.trafficOverrideEligible ||
+        mediaSampling?.detailInspectionBoost ||
+        candidate?.trafficOverrideEligible
       )
     );
     const detailSendFloorTolerance = detailInspectionToleranceBoost ? 8 : 6;
@@ -3070,13 +3109,20 @@
     }
 
     const skipRecommended = (
-      (belowDisplayThreshold && !toleratedRecheckDrift) ||
-      (belowExecutorSendFloor && !toleratedRecheckDrift) ||
-      (belowExposureFloor && !toleratedRecheckDrift) ||
-      olderThanAutoWindow
+      olderThanAutoWindow ||
+      (
+        !preInspectionDetailBypass &&
+        (
+          (belowDisplayThreshold && !toleratedRecheckDrift) ||
+          (belowExecutorSendFloor && !toleratedRecheckDrift) ||
+          (belowExposureFloor && !toleratedRecheckDrift)
+        )
+      )
     );
     if (skipRecommended) {
       flags.push("skip-recommended");
+    } else if (preInspectionDetailBypass) {
+      flags.push("detail-inspection-pending");
     } else if (toleratedTimelineInlineDrift) {
       flags.push("timeline-inline-recheck-tolerated");
     } else if (toleratedDetailInspectionDrift) {
@@ -3086,6 +3132,8 @@
     let status = "stable";
     if (skipRecommended) {
       status = "skip";
+    } else if (preInspectionDetailBypass) {
+      status = "inspection-pending";
     } else if (meaningfulDrop) {
       status = "degraded";
     } else if (liveScore >= previewScore + 5) {
@@ -3468,7 +3516,23 @@
         return false;
       }
       const url = normalizeTweetUrl(link.href || link.getAttribute("href") || "");
-      return Boolean(url && primaryUrl && url !== primaryUrl);
+      if (!url || !primaryUrl || url === primaryUrl) {
+        return false;
+      }
+      if (link.closest("time") || link.querySelector("time")) {
+        return false;
+      }
+      if (link.closest('[role="group"]')) {
+        return false;
+      }
+      const text = sanitizeSnippet(link.textContent || "", 220);
+      const hasNestedMedia = Boolean(
+        link.querySelector('[data-testid="tweetPhoto"], [data-testid="videoComponent"], img, video')
+      );
+      const hasRichQuotedContent = Boolean(
+        link.querySelector('[data-testid="tweetText"], [data-testid="User-Name"], [data-testid="card.wrapper"]')
+      );
+      return Boolean(hasNestedMedia || hasRichQuotedContent || text.length >= 24);
     });
   }
 
@@ -3506,6 +3570,14 @@
     const hasSummary = Boolean(mediaSummary?.summary || mediaSummary?.ocrText);
     const textCarriesThesis = text.length >= 110 || semanticTokens >= 18;
     const mediaContextMissing = hasVisualMedia && !hasSummary && !textCarriesThesis;
+    const quoteNeedsDetail = Boolean(
+      hasQuote &&
+      !(
+        hasVisualMedia &&
+        textCarriesThesis &&
+        !mediaContextMissing
+      )
+    );
     const mediaVelocityInspectionHint = Boolean(
       hasVisualMedia &&
       !hasSummary &&
@@ -3521,18 +3593,22 @@
       )
     );
     const mediaNotInspectedTextSufficient = Boolean(hasVisualMedia && !hasSummary && textCarriesThesis);
+    const inlineQuickDraftEligible = Boolean(
+      hasVisualMedia &&
+      textCarriesThesis &&
+      !mediaContextMissing
+    );
     const needsDetailContext = Boolean(
       mediaContextMissing ||
-      mediaVelocityInspectionHint ||
-      hasQuote ||
+      quoteNeedsDetail ||
       (hasShowMore && !textCarriesThesis) ||
-      (hasVisualMedia && !hasSummary && !textCarriesThesis)
+      (hasVisualMedia && !hasSummary && !textCarriesThesis) ||
+      (mediaVelocityInspectionHint && !inlineQuickDraftEligible)
     );
     const quickDraftAllowed = Boolean(
       textCarriesThesis &&
       !mediaContextMissing &&
-      !hasQuote &&
-      !mediaVelocityInspectionHint
+      !quoteNeedsDetail
     );
     const flags = [];
     if (mediaContextMissing) flags.push("media_context_missing");
@@ -3552,9 +3628,19 @@
       mediaVelocityInspectionHint,
       draftContextLabel: needsDetailContext ? "quick-preview-draft" : "detail-ready-draft",
       flags,
-      detailRewriteInstruction: needsDetailContext
-        ? "这条首页预览上下文不完整；如果用户打开详情页，应基于展开正文/引用卡/图片OCR/视频首帧重新写一版。"
-        : (quickDraftAllowed && hasShowMore ? "首页文字已足够做快速草稿；若打开详情页可再优化，不必阻断主槽。" : "")
+      detailRewriteInstruction: quickDraftAllowed && mediaNotInspectedTextSufficient
+        ? (
+          hasQuote
+            ? "这条值得立即处理，首页文字已足够先走主槽快回；若后续打开详情页，可再参考引用卡和媒体内容微调，但不要阻断当前发送。"
+            : "这条值得立即处理，首页文字已足够先走主槽快回；若后续打开详情页，可基于媒体内容再微调，但不要阻断当前发送。"
+        )
+        : (needsDetailContext
+          ? (
+            hasQuote
+              ? "这条可能受引用卡上下文影响；如果用户打开详情页，应结合引用卡、展开正文和媒体内容重新写一版。"
+              : "这条首页预览上下文不完整；如果用户打开详情页，应基于展开正文/引用卡/图片OCR/视频首帧重新写一版。"
+          )
+          : (quickDraftAllowed && hasShowMore ? "首页文字已足够做快速草稿；若打开详情页可再优化，不必阻断主槽。" : ""))
     };
   }
 
@@ -3562,13 +3648,46 @@
     if (!(article instanceof Element) || !hasVisibleRect(article)) {
       return false;
     }
-    if (contextCompleteness?.needsDetailContext || contextCompleteness?.mediaContextMissing) {
+    const inlineQuickDraftEligible = isReplyDropInlineQuickDraftEligible(contextCompleteness);
+    if (contextCompleteness?.mediaContextMissing) {
+      return false;
+    }
+    if (contextCompleteness?.needsDetailContext && !inlineQuickDraftEligible) {
       return false;
     }
     return Boolean(
+      inlineQuickDraftEligible ||
       contextCompleteness?.quickDraftAllowed ||
       String(contextCompleteness?.draftContextLabel || "") === "detail-ready-draft"
     );
+  }
+
+  function resolveReplyDropTimelineInlineEligibility(candidate = {}, contextCompleteness = {}, article = null) {
+    if (canUseTimelineInlineReply(contextCompleteness, article)) {
+      return true;
+    }
+    if (article instanceof Element) {
+      return false;
+    }
+    const cachedSendNow = (
+      String(candidate?.recommendedDecision || "").trim() === "reply-now" ||
+      String(candidate?.replyWorthinessState || candidate?.sendabilityState || "").trim() === "send_now"
+    );
+    const cachedInlineRoute = (
+      String(candidate?.executionRoute || "").trim() === "timeline_inline" ||
+      Boolean(candidate?.timelineInlineReplyEligible)
+    );
+    const cachedInlineQuickDraft = isReplyDropInlineQuickDraftEligible({
+      quickDraftAllowed: Boolean(contextCompleteness?.quickDraftAllowed ?? candidate?.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness?.mediaNotInspectedTextSufficient ?? candidate?.mediaNotInspectedTextSufficient),
+      mediaContextMissing: Boolean(contextCompleteness?.mediaContextMissing ?? candidate?.mediaContextMissing),
+      detailRewriteInstruction: String(
+        contextCompleteness?.detailRewriteInstruction ||
+        candidate?.detailRewriteInstruction ||
+        ""
+      ).trim()
+    });
+    return Boolean(cachedSendNow && (cachedInlineRoute || cachedInlineQuickDraft));
   }
 
   function buildReplyDropExecutorCapabilities() {
@@ -3877,7 +3996,7 @@
       ? options.article
       : findTweetArticleByTweetId(tweetId, normalizedUrl);
     const contextCompleteness = buildDraftContextCompleteness(candidate, liveArticle, Boolean(options?.includeMedia), mediaSummary);
-    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, liveArticle);
+    const timelineInlineReplyEligible = resolveReplyDropTimelineInlineEligibility(candidate, contextCompleteness, liveArticle);
     const executionScore = computeCandidateExecutionScore(
       candidate,
       contextCompleteness,
@@ -3904,6 +4023,15 @@
         contextCompleteness.mediaVelocityInspectionHint
       )
     );
+    const executionRouteMeta = buildReplyDropExecutionRouteMeta({
+      timelineInlineReplyEligible,
+      mediaContextMissing: Boolean(contextCompleteness.mediaContextMissing),
+      needsDetailContext: Boolean(contextCompleteness.needsDetailContext),
+      needsVision,
+      quickDraftAllowed: Boolean(contextCompleteness.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
+      detailRewriteInstruction: String(contextCompleteness.detailRewriteInstruction || "").trim()
+    });
     const decisionCandidate = {
       ...candidate,
       executionScore,
@@ -3914,7 +4042,8 @@
       mediaSummaryAvailable: Boolean(contextCompleteness.mediaSummaryAvailable),
       mediaSummaryText,
       mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
-      timelineInlineReplyEligible
+      timelineInlineReplyEligible,
+      executionRoute: executionRouteMeta.executionRoute
     };
     const mediaSampling = buildReplyDropMediaSamplingMeta(decisionCandidate, contextCompleteness, {
       executionScore,
@@ -3943,16 +4072,15 @@
     const recheck = buildLiveCandidateRecheck({
       ...decisionCandidate,
       recommendedDecision: provisionalRecommendedDecision,
-      executionRoute: contextCompleteness.needsDetailContext || needsVision
-        ? "detail_inspect_then_reply"
-        : (timelineInlineReplyEligible ? "timeline_inline" : String(candidate?.executionRoute || "").trim())
+      executionRoute: executionRouteMeta.executionRoute
     }, liveArticle, {
       contextCompleteness,
       mediaSampling,
       previewDecision: provisionalRecommendedDecision,
       timelineInlineReplyEligible,
       detailInspectionCandidate: Boolean(
-        mediaSampling.detailInspectionBoost ||
+        executionRouteMeta.executionRoute === "detail_inspect_then_reply" ||
+        (mediaSampling.detailInspectionBoost && !executionRouteMeta.allowInlineQuickDraft) ||
         (mediaSampling.hasVisualMedia && contextCompleteness.needsDetailContext && !contextCompleteness.mediaSummaryAvailable)
       )
     });
@@ -9105,7 +9233,7 @@
       String(mediaSummary?.ocrText || "").trim()
     ].filter(Boolean).join(" ").trim();
     const contextCompleteness = buildDraftContextCompleteness(normalizedCandidate, article, false, mediaSummary);
-    const timelineInlineReplyEligible = canUseTimelineInlineReply(contextCompleteness, article);
+    const timelineInlineReplyEligible = resolveReplyDropTimelineInlineEligibility(normalizedCandidate, contextCompleteness, article);
     const executionScore = computeCandidateExecutionScore(
       normalizedCandidate,
       contextCompleteness,
@@ -12861,9 +12989,6 @@
     if (!(article instanceof Element)) {
       return false;
     }
-    if (isDialogTweetArticle(article)) {
-      return true;
-    }
     const targetUrl = normalizeTweetUrl(readTweetUrl(article));
     return Boolean(targetUrl && activeReplyTargets instanceof Set && activeReplyTargets.has(targetUrl));
   }
@@ -13251,8 +13376,8 @@
         ""
       ).trim(),
       timelineInlineReplyEligible: Boolean(
-        recheckCandidateRecord?.timelineInlineReplyEligible ??
-        liveRouting.executionRoute.executionRoute === "timeline_inline"
+        liveRouting.executionRoute.executionRoute === "timeline_inline" ||
+        recheckCandidateRecord?.timelineInlineReplyEligible
       ),
       detailInspectionCandidate: Boolean(liveRouting.executionRoute.executionRoute === "detail_inspect_then_reply"),
       contextCompleteness,
@@ -13519,15 +13644,20 @@
         ""
       ).trim(),
       timelineInlineReplyEligible: Boolean(
-        recheckCandidateRecord?.timelineInlineReplyEligible ??
-        recheckCandidateRecord?.execution?.timelineInlineReplyEligible ??
-        liveRouting.executionRoute.executionRoute === "timeline_inline"
+        liveRouting.executionRoute.executionRoute === "timeline_inline" ||
+        recheckCandidateRecord?.timelineInlineReplyEligible ||
+        recheckCandidateRecord?.execution?.timelineInlineReplyEligible
       ),
       detailInspectionCandidate: Boolean(
-        String(recheckCandidateRecord?.executionRoute || recheckCandidateRecord?.execution?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
-        recheckCandidateRecord?.needsDetailContext === true ||
-        recheckCandidateRecord?.contextCompleteness?.needsDetailContext === true ||
-        liveRouting.executionRoute.executionRoute === "detail_inspect_then_reply"
+        liveRouting.executionRoute.executionRoute === "detail_inspect_then_reply" ||
+        (
+          liveRouting.executionRoute.executionRoute !== "timeline_inline" &&
+          (
+            String(recheckCandidateRecord?.executionRoute || recheckCandidateRecord?.execution?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
+            recheckCandidateRecord?.needsDetailContext === true ||
+            recheckCandidateRecord?.contextCompleteness?.needsDetailContext === true
+          )
+        )
       ),
       contextCompleteness: liveRouting.contextCompleteness,
       mediaSampling: liveRouting.mediaSampling

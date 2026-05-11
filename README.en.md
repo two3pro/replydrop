@@ -6,11 +6,11 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.266`
+Current version: `0.2.270`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.266` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, and `0.2.266` hardens reload recovery for both async and direct detail-page reply actions.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.270` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, `0.2.266` hardens reload recovery for both async and direct detail-page reply actions, `0.2.267` pulls the focus back toward throughput by keeping more strong media posts in the timeline fast lane when their visible text is already enough to draft from, `0.2.268` keeps score waterdrops visible when X opens a tweet inside its detail dialog, `0.2.269` keeps rich-caption media posts from slipping back to detail during quote detection or cached candidate re-hydration, and `0.2.270` keeps high-potential media candidates alive long enough to finish detail inspection before judging their value again.
 
-Version `0.2.266` also stays focused on execution, not scoring: reload-interrupted executor actions now wait for a real target-ready state, retry only a narrower set of surface/reload failures, and direct `replyFromTimeline(payload)` calls now get a local handoff too, so a document reload can still resume the action or at least run unified cleanup on the next document.
+Version `0.2.270` is about protecting the real detail route, not forcing every media post back into homepage inline reply. If a candidate is already `reply-now / send_now` but still needs OCR, vision, or media summary, opening detail should keep it alive through inspection instead of killing it early as `value-dropped-on-open`. The detail-dialog waterdrop visibility fix from `0.2.268` stays on this release line too.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -37,6 +37,27 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.270` closes the next batch of pressure-tested workflow gaps:
+
+- high-potential `reply-now / send_now` image and video posts are no longer dropped as `value-dropped-on-open` just because media inspection has not finished yet when detail first opens
+- `detail-inspection-pending` is now treated as route diagnostics instead of a fake hard downgrade, so detail inspection can complete before the post is judged again
+
+Version `0.2.269` closes the next batch of pressure-tested workflow gaps:
+
+- quote/status-link detection is narrower, so rich-caption media posts are less likely to be hard-forced into detail just because the card contains another status URL
+- cached `reply-now / send_now` media candidates now preserve their inline quick-draft eligibility during re-hydration instead of silently falling back to detail when no fresh live article is attached
+
+Version `0.2.268` closes the next batch of pressure-tested workflow gaps:
+
+- opening a tweet into X's detail dialog no longer blanks the score waterdrop just because the article is rendered under a `dialog`
+- score chrome is now suppressed only for genuine active reply-surface contamination risk, not for normal detail-page inspection
+
+Version `0.2.267` closes the next batch of pressure-tested workflow gaps:
+
+- strong media/video posts with enough timeline text no longer default to detail inspection just because they are moving fast; the fast lane can keep more of them in the main send path
+- live routing, candidate context, and send-time recheck now prefer the current page's `timeline_inline` signal when the card is genuinely workable, instead of getting dragged back to detail too easily by stale cache state
+- detail inspection remains available when quote/show-more/media context is genuinely needed, but it is treated as a fallback route rather than the default tax on hot visual posts
 
 Version `0.2.266` closes the next batch of pressure-tested workflow gaps:
 
@@ -215,16 +236,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.266.zip](./downloads/replydrop-p2.266.zip)
+- Chrome / Brave runtime package: [replydrop-p2.270.zip](./downloads/replydrop-p2.270.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.266.zip](./downloads/replydrop-safari-open-source-0.2.266.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.270.zip](./downloads/replydrop-safari-open-source-0.2.270.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.266` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.266`.
+  - Chrome / Brave now uses the `0.2.270` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.270`.
 
 ## Local Install
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.270
+
+- keep high-potential pre-inspection media candidates alive through detail open-stage recheck: when a `reply-now / send_now` image or video post still needs OCR, vision, or media summary, opening detail no longer drops it as `value-dropped-on-open` before the inspection path has a chance to finish
+- mark `detail-inspection-pending` as a route-only diagnostic instead of a hard downgrade: pending media inspection still shows up in flags and status, but it no longer poisons sendability or masquerades as a real value-collapse reason
+
+## 0.2.269
+
+- stop demoting rich-caption media posts back to detail just because a quote/status link is present: quote-card detection is now narrower, and media posts whose visible text already carries the thesis can still stay on the inline quick-draft path instead of being hard-forced into `detail_inspect_then_reply`
+- preserve inline sendability across candidate re-hydration: when a `reply-now / send_now` media candidate is rebuilt from cached runtime state without a fresh live article, ReplyDrop now keeps its inline quick-draft eligibility instead of zeroing `timelineInlineReplyEligible` and silently drifting back to detail
+
+## 0.2.268
+
+- keep score waterdrops visible when opening a tweet into X's detail dialog: detail overlays are no longer blanket-suppressed just because the article lives under a `dialog`, so status-page inspection keeps the same scoring signal instead of going blank
+- only suppress score chrome when the target is actually part of an active reply surface: the decoration guard now stays focused on real reply/composer contamination risk, not normal detail-page browsing
+
+## 0.2.267
+
+- bias strong media posts back toward the fast lane: media/video candidates with enough timeline text no longer fall into detail inspection by default just because they are moving fast; the executor can keep more of them in the main send path for pressure testing
+- make execution-route decisions trust live page context more than stale cache flags: live routing, candidate context, and send-time recheck now prefer the current page's `timeline_inline` signal when the card is really workable, reducing false downgrades back to detail
+- keep detail inspection as a real fallback instead of the default media tax: posts still route to `detail_inspect_then_reply` when text context is genuinely insufficient, quote/show-more context matters, or media context is truly missing, but not for every hot visual post
+
 ## 0.2.266
 
 - keep reload-interrupted async actions recoverable for longer: `resumePersistedReplyDropAsyncHandoff()` now waits for a real target-ready state, retries a narrower set of reload/surface failures instead of immediately settling them, and allows more than one resume attempt before declaring the handoff exhausted
