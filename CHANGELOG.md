@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.264
+
+- stop detail-page `replyFromTimeline(payload)` from self-bouncing to home before fallback: 当显式目标已经锁在当前详情页时，`openReplyDropComposer()` 不会再先跑“清 UI 后重试 timeline”这条恢复分支；`reply-from-timeline` 会更快把 `timeline-inline-required` 交给外层 detail fallback，而不是把浏览器先带回首页空 composer
+- resolve explicit current-page targets by live page URL, not only runtime cache: `runExecutorAction()`、`resolveApiTargetUrlFromPayload()` 和 `skipCandidate()` 现在都会优先用当前详情页 / 可见 article 反解真实 status URL，减少 `i/status` 回退把上下文带偏，也修掉当前页 `skipCandidate(tweetId)` 容易掉 `candidate-not-found` 的问题
+- cool down failed / skipped targets and hide scoring chrome during active reply: 最近失败或显式跳过的目标会进入临时冷却，不再立刻反复回到时间线、水滴面板和 executor 池；当回复框已打开时，当前目标卡片的水滴/草稿装饰也会自动收起，避免污染回复面
+- tighten live draft guidance toward natural replies: 对外 draft schema / AI hints 现在更明确要求短句、具体观察、轻判断，避免总结式评判、说教、二元转折和强行拔高
+
 ## 0.2.263
 
 - keep async reload tickets from hanging in `state="reloading"`: `resumePersistedReplyDropAsyncHandoff()` 现在不会只在 bootstrap 时单次看一眼；如果 reload 后目标详情页还没真正就绪，会自动重排续跑，而不是把 pending handoff 永久卡死

@@ -65,6 +65,7 @@
   const PREPARED_REPLY_COMPOSER_TTL_MS = 6000;
   const HANDOFF_RETRY_DELAY_MS = 420;
   const REPLY_OPEN_FAILURE_TTL_MS = 15000;
+  const REPLY_TARGET_COOLDOWN_TTL_MS = 30 * 60 * 1000;
   const SUCCESS_TEXTS = [
     "your reply was sent",
     "your post was sent",
@@ -255,6 +256,7 @@
     executorReplyTargetUrl: "",
     executorReplyTargetStartedAt: 0,
     timedOutReplyTargets: {},
+    replyTargetCooldowns: {},
     lastReplyOpenFailure: null,
     preparedReplyComposer: null,
     draftPreviewsByUrl: {},
@@ -323,6 +325,14 @@
       return true;
     }
     return !isExecutorRoundTransientFailureReason(reasonCode);
+  }
+
+  function shouldCooldownReplyTargetFailure(payload = {}) {
+    const reasonCode = String(payload?.reasonCode || payload?.reason || "").trim();
+    if (!reasonCode) {
+      return Boolean(payload?.shouldSkipTarget);
+    }
+    return Boolean(payload?.shouldSkipTarget) || !isExecutorRoundTransientFailureReason(reasonCode);
   }
 
   function createExecutorRoundRuntime(identity = {}, now = Date.now()) {
@@ -1247,6 +1257,39 @@
     return candidates
       .map((url) => normalizeTweetUrl(url))
       .find((url) => extractTweetIdFromUrl(url) === normalizedTweetId) || "";
+  }
+
+  function resolveUrlByTweetIdFromVisiblePage(tweetId) {
+    const normalizedTweetId = normalizeApiTweetId(tweetId);
+    if (!normalizedTweetId) {
+      return "";
+    }
+
+    const currentStatusUrl = getCurrentStatusUrl();
+    if (extractTweetIdFromUrl(currentStatusUrl) === normalizedTweetId) {
+      return currentStatusUrl;
+    }
+
+    const article = findTweetArticleByTweetId(normalizedTweetId);
+    return normalizeTweetUrl(readTweetUrl(article));
+  }
+
+  function resolveBestReplyDropTargetUrl(runtimeState, tweetId, directUrl = "") {
+    const normalizedDirectUrl = normalizeTweetUrl(directUrl);
+    if (normalizedDirectUrl) {
+      return normalizedDirectUrl;
+    }
+
+    const normalizedTweetId = normalizeApiTweetId(tweetId || extractTweetIdFromUrl(normalizedDirectUrl));
+    if (!normalizedTweetId) {
+      return "";
+    }
+
+    return (
+      resolveUrlByTweetIdFromState(runtimeState, normalizedTweetId) ||
+      resolveUrlByTweetIdFromVisiblePage(normalizedTweetId) ||
+      `https://x.com/i/status/${normalizedTweetId}`
+    );
   }
 
   function getCandidateByTweetIdFromState(runtimeState, tweetId) {
@@ -3197,7 +3240,7 @@
       version: "replydrop-draft-targets-v2",
       mode: "human-draft",
       workflow: "external-ai-chat-drafts",
-      instruction: "ReplyDrop 只负责筛选和打包当前首页快照里的高分帖；外部 AI agent 按 candidates 顺序立刻在当前聊天窗口输出同语种、非模板、可直接人工复制的正式回复草稿或不建议回原因。不要自动刷新，不自动打开 composer，不自动排队，不自动发送。",
+      instruction: "ReplyDrop 只负责筛选和打包当前首页快照里的高分帖；外部 AI agent 按 candidates 顺序立刻在当前聊天窗口输出同语种、非模板、可直接人工复制的正式回复草稿或不建议回原因。草稿必须像真人当下会发的话，优先短句、具体观察、轻判断；避免总结陈词、说教、二元转折（不是X而是Y）、过度上价值或替对方下结论。不要自动刷新，不自动打开 composer，不自动排队，不自动发送。",
       mediaWorkflow: "若 laneKey=needs_media_summary 或 mediaContextMissing=true，agent 应调用 getMediaBundle(tweetId) 读取图片/视频 poster/首帧 URL，自行跑 OCR/vision，再调用 setMediaSummary({ tweetId, summary, ocrText, confidence }) 回填，然后重读 getDraftContext/getDraftTargets。",
       snapshotPolicy: {
         oneSnapshotOnly: true,
@@ -3439,7 +3482,7 @@
         oneSnapshotOnly: true,
         noAutoRefreshWithoutHumanApproval: true,
         outputDestination: "current-chat",
-        instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。",
+        instruction: "人工写稿模式下，agent 只能基于 getDraftTargets() 返回的当前 snapshot 批量出稿；每个候选必须快速给出可复制草稿或不建议回原因。草稿优先自然口语、具体切点、轻量互动感，避免模板腔、总结式评判、说教和强行拔高。不要为了挑单个最优目标反复刷新或长时间停留；不要自动排队、打开回复框或发送。",
         mediaWorkflow: "当候选 mediaContextMissing=true 时，agent 应调用 getMediaBundle(tweetId) 获取媒体 URL / poster / previewUrl，自行 OCR/vision 后用 setMediaSummary() 回填；回填后再读 getDraftContext/getDraftTargets 生成更可靠草稿。",
         wealthStoryGuidance: "高流速财富/资产故事不应仅因 wealth/hype 相邻而自动跳过；人工预览模式下应保留机会，并用 draftAngleHints 约束为中性行为金融/故事观察角度。只有涉及投资建议、买卖、价格预测、项目推广、喊单或低信息 FOMO 时才跳过或强警告。"
       },
@@ -4492,7 +4535,10 @@
 
   function filterReplyDropExecutorCandidatePool(contexts = [], options = {}) {
     const onlyReplyNow = Boolean(options?.onlyReplyNow);
-    const source = Array.isArray(contexts) ? contexts : [];
+    const source = (Array.isArray(contexts) ? contexts : []).filter((context) => {
+      const targetUrl = normalizeTweetUrl(context?.url || context?.targetUrl || context?.post?.url || "");
+      return !hasReplyTargetCooldown(targetUrl);
+    });
     if (!onlyReplyNow) {
       return source.slice();
     }
@@ -4508,6 +4554,9 @@
       return false;
     }
     if (hasTrackedTweetUrl(state.repliedTweetUrls, targetUrl) || hasTrackedTweetUrl(state.dismissedTweetUrls, targetUrl)) {
+      return false;
+    }
+    if (hasReplyTargetCooldown(targetUrl)) {
       return false;
     }
     if (hasTrackedTweetUrl(runtimeState?.repliedTweets, targetUrl) || hasTrackedTweetUrl(runtimeState?.dismissedTweets, targetUrl)) {
@@ -5236,7 +5285,7 @@
       contextCompleteness: context.contextCompleteness || {},
       aiHints: {
         ...(context.aiHints || {}),
-        writingInstruction: "请根据 post.text / media.summary / media.summary.ocrText / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；不要自动刷新；不要自动排队或发送。laneKey=ready_now 才可直接写正式草稿；needs_media_summary 先调用 getMediaBundle 做 OCR/vision 并 setMediaSummary 后重读；needs_detail_context 先打开详情或展开上下文；do_not_reply 只给跳过原因。若 mediaNotInspectedTextSufficient=true，可以基于文字写，但必须避免断言图片/视频细节。"
+        writingInstruction: "请根据 post.text / media.summary / media.summary.ocrText / scoring / routing / memory / aiHints.draftAngleHints 生成正式回复草稿；同语种回复；不要固定模板；语气尽量像真人当下随手会发的话，优先短句、具体观察、轻量互动；避免总结式评判、说教、二元转折（不是X而是Y）、替作者下结论或强行拔高。不要自动刷新；不要自动排队或发送。laneKey=ready_now 才可直接写正式草稿；needs_media_summary 先调用 getMediaBundle 做 OCR/vision 并 setMediaSummary 后重读；needs_detail_context 先打开详情或展开上下文；do_not_reply 只给跳过原因。若 mediaNotInspectedTextSufficient=true，可以基于文字写，但必须避免断言图片/视频细节。"
       }
     };
   }
@@ -5648,7 +5697,7 @@
     }
 
     const runtimeState = await getApiRuntimeStateSnapshot();
-    const url = resolveUrlByTweetIdFromState(runtimeState, normalizedTweetId);
+    const url = resolveBestReplyDropTargetUrl(runtimeState, normalizedTweetId, payload.url || payload.targetUrl || "");
     if (!url) {
       throw new Error("candidate-not-found");
     }
@@ -5683,7 +5732,36 @@
       return "";
     }
 
-    return resolveUrlByTweetIdFromState(runtimeState, tweetId) || `https://x.com/i/status/${tweetId}`;
+    return resolveBestReplyDropTargetUrl(runtimeState, tweetId);
+  }
+
+  function shouldAttemptReplyOpenRecovery(result = {}, payload = {}, targetUrl = "") {
+    if (!shouldRetryReplyOpenAfterRecovery(result)) {
+      return false;
+    }
+
+    const normalizedTarget = normalizeTweetUrl(targetUrl || payload?.url || payload?.targetUrl || "");
+    const reasonCode = String(result?.reasonCode || result?.reason || "").trim();
+    const currentStatusUrl = getCurrentStatusUrl();
+    const targetTweetId = extractTweetIdFromUrl(normalizedTarget);
+    const currentTweetId = extractTweetIdFromUrl(currentStatusUrl);
+    const onCurrentTargetStatus = Boolean(
+      normalizedTarget &&
+      currentStatusUrl &&
+      (
+        currentStatusUrl === normalizedTarget ||
+        (targetTweetId && currentTweetId && targetTweetId === currentTweetId)
+      )
+    );
+
+    if (
+      payload?.preferDetailPage === true ||
+      (onCurrentTargetStatus && reasonCode === "timeline-inline-required")
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   async function openReplyDropComposer(payload = {}) {
@@ -5702,7 +5780,7 @@
         ...normalizedPayload,
         url: directUrl
       });
-      if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldRetryReplyOpenAfterRecovery(result)) {
+      if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldAttemptReplyOpenRecovery(result, normalizedPayload, directUrl)) {
         await settleFailedTimelineUi();
         result = await openQueueComposerHandoff({
           ...normalizedPayload,
@@ -5743,7 +5821,7 @@
       ...normalizedPayload,
       url: resolvedUrl
     });
-    if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldRetryReplyOpenAfterRecovery(result)) {
+    if (!result?.ok && !normalizedPayload.__replyOpenRetried && shouldAttemptReplyOpenRecovery(result, normalizedPayload, resolvedUrl)) {
       await settleFailedTimelineUi();
       result = await openQueueComposerHandoff({
         ...normalizedPayload,
@@ -5805,12 +5883,18 @@
     }
     const normalizedReasonCode = String(result?.reasonCode || result?.reason || "").trim();
     if (result?.ok) {
+      clearReplyTargetCooldown(targetIdentity.url);
       if (["reply-from-timeline", "inspect-then-reply", "submit-reply", "reply", "mark-shipped"].includes(action)) {
         noteExecutorRoundSuccess(roundState, {
           ...targetIdentity,
           action
         });
       } else if (action === "skip") {
+        noteReplyTargetCooldown(targetIdentity.url, {
+          ...targetIdentity,
+          action,
+          reasonCode: "skip-candidate"
+        });
         noteExecutorRoundSkip(roundState, {
           ...targetIdentity,
           action,
@@ -5818,6 +5902,15 @@
         });
       }
     } else if (isReplyDropExecutorMutationAction(action)) {
+      if (shouldCooldownReplyTargetFailure(result)) {
+        noteReplyTargetCooldown(targetIdentity.url, {
+          ...targetIdentity,
+          action,
+          reason: String(result?.reason || "").trim(),
+          reasonCode: normalizedReasonCode,
+          shouldSkipTarget: Boolean(result?.shouldSkipTarget)
+        });
+      }
       noteExecutorRoundFailure(roundState, {
         ...targetIdentity,
         action,
@@ -5905,9 +5998,9 @@
     if (!resolvedTargetUrl && tweetId) {
       try {
         runtimeState = await getApiRuntimeStateSnapshot();
-        resolvedTargetUrl = resolveUrlByTweetIdFromState(runtimeState, tweetId) || `https://x.com/i/status/${tweetId}`;
+        resolvedTargetUrl = resolveBestReplyDropTargetUrl(runtimeState, tweetId);
       } catch {
-        resolvedTargetUrl = `https://x.com/i/status/${tweetId}`;
+        resolvedTargetUrl = resolveBestReplyDropTargetUrl(null, tweetId);
       }
     }
     if (!runtimeState) {
@@ -9571,7 +9664,7 @@
     return sortApiAgentCandidates(Array.isArray(candidates) ? candidates : [])
       .filter((candidate) => {
         const url = normalizeTweetUrl(candidate?.url);
-        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
+        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url) || hasReplyTargetCooldown(url)) {
           return false;
         }
         return Boolean(candidate?.isImmediateSendable || String(candidate?.sendabilityState || "").trim() === "send_now");
@@ -9582,7 +9675,7 @@
     return sortApiAgentCandidates(Array.isArray(candidates) ? candidates : [])
       .filter((candidate) => {
         const url = normalizeTweetUrl(candidate?.url);
-        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url)) {
+        if (!url || hasTrackedTweetUrl(state.repliedTweetUrls, url) || hasTrackedTweetUrl(state.dismissedTweetUrls, url) || hasReplyTargetCooldown(url)) {
           return false;
         }
         return true;
@@ -10156,10 +10249,23 @@
     let needsFollowUp = false;
     const recentCandidates = [];
     const opportunityContext = buildOpportunityContext();
+    const activeReplySurfaceTargets = getActiveReplySurfaceTargetUrls();
 
     for (const article of articles) {
       try {
         const tweet = getTweetData(article);
+        if (shouldSuppressReplySurfaceDecoration(article, activeReplySurfaceTargets)) {
+          delete article.dataset.xrsCandidate;
+          renderBadge(article, "", "hidden");
+          removeDraftPreview(article);
+          continue;
+        }
+        if (tweet.url && hasReplyTargetCooldown(tweet.url)) {
+          delete article.dataset.xrsCandidate;
+          renderBadge(article, "", "hidden");
+          removeDraftPreview(article);
+          continue;
+        }
         const coreReady = Boolean(tweet.url && tweet.timestamp && (tweet.text || tweet.hasMedia));
         const layoutReady = Boolean(tweet.hasReplyAction);
         const canCache = coreReady && layoutReady;
@@ -11042,6 +11148,67 @@
         delete state.timedOutReplyTargets[url];
       }
     });
+  }
+
+  function pruneReplyTargetCooldowns() {
+    const now = Date.now();
+    Object.entries(state.replyTargetCooldowns || {}).forEach(([url, entry]) => {
+      const expiresAt = Number(entry?.expiresAt || 0);
+      if (!expiresAt || now >= expiresAt) {
+        delete state.replyTargetCooldowns[url];
+      }
+    });
+  }
+
+  function getReplyTargetCooldown(targetUrl = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return null;
+    }
+    pruneReplyTargetCooldowns();
+    const entry = state.replyTargetCooldowns?.[normalizedTarget];
+    if (!entry) {
+      return null;
+    }
+    const expiresAt = Number(entry.expiresAt || 0);
+    if (!expiresAt || Date.now() >= expiresAt) {
+      delete state.replyTargetCooldowns[normalizedTarget];
+      return null;
+    }
+    return entry;
+  }
+
+  function hasReplyTargetCooldown(targetUrl = "") {
+    return Boolean(getReplyTargetCooldown(targetUrl));
+  }
+
+  function clearReplyTargetCooldown(targetUrl = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget || !state.replyTargetCooldowns?.[normalizedTarget]) {
+      return false;
+    }
+    delete state.replyTargetCooldowns[normalizedTarget];
+    return true;
+  }
+
+  function noteReplyTargetCooldown(targetUrl = "", payload = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+    pruneReplyTargetCooldowns();
+    const now = Date.now();
+    const previous = state.replyTargetCooldowns?.[normalizedTarget];
+    state.replyTargetCooldowns[normalizedTarget] = {
+      url: normalizedTarget,
+      tweetId: normalizeApiTweetId(payload?.tweetId || extractTweetIdFromUrl(normalizedTarget)),
+      reasonCode: String(payload?.reasonCode || payload?.reason || "").trim(),
+      action: String(payload?.action || "").trim(),
+      attempts: Math.max(1, Math.floor(Number(previous?.attempts || 0)) + 1),
+      updatedAt: now,
+      expiresAt: now + REPLY_TARGET_COOLDOWN_TTL_MS
+    };
+    return true;
   }
 
   function getReplyTargetStartedAt(targetUrl = "") {
@@ -12248,6 +12415,56 @@
       reason: "context-not-ready",
       reasonCode: "context-not-locked"
     };
+  }
+
+  function getActiveReplySurfaceTargetUrls() {
+    const targets = new Set();
+    const addTarget = (url = "") => {
+      const normalized = normalizeTweetUrl(url);
+      if (normalized) {
+        targets.add(normalized);
+      }
+    };
+
+    const currentStatusUrl = getCurrentStatusUrl();
+    const pendingTargetFresh = Boolean(
+      state.pendingReplyTargetUrl &&
+      Date.now() - Number(state.pendingReplyStartedAt || 0) < 90 * 1000
+    );
+
+    document.querySelectorAll('[data-testid="tweetTextarea_0"], [data-testid="tweetButton"], [data-testid="tweetButtonInline"]')
+      .forEach((node) => {
+        if (!(node instanceof HTMLElement) || !hasVisibleRect(node)) {
+          return;
+        }
+        const editor = resolveReplyComposerEditableNode(node);
+        const context = buildReplyComposerContext({
+          targetUrl: normalizeTweetUrl(state.pendingReplyTargetUrl || currentStatusUrl),
+          editor: editor || null,
+          sendButton: node.matches('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]') ? node : null,
+          scope: node
+        });
+        if (!context.explicitReplyEvidence && !context.composerLocked && !context.pageLocked) {
+          return;
+        }
+        addTarget(context.articleUrl || context.contextStatusUrl || context.targetUrl || currentStatusUrl);
+      });
+
+    if (pendingTargetFresh) {
+      addTarget(state.pendingReplyTargetUrl);
+    }
+    return targets;
+  }
+
+  function shouldSuppressReplySurfaceDecoration(article, activeReplyTargets = null) {
+    if (!(article instanceof Element)) {
+      return false;
+    }
+    if (isDialogTweetArticle(article)) {
+      return true;
+    }
+    const targetUrl = normalizeTweetUrl(readTweetUrl(article));
+    return Boolean(targetUrl && activeReplyTargets instanceof Set && activeReplyTargets.has(targetUrl));
   }
 
   async function waitForReplyArticle(targetUrl, timeoutMs = 12000) {
@@ -13930,6 +14147,7 @@
     } else if (previousTarget && previousTarget !== normalizedTarget) {
       state.pendingReplyMeta = null;
     }
+    scheduleScan();
     return normalizedTarget;
   }
 
