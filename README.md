@@ -6,11 +6,11 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.262`
+当前重置基线版本：`0.2.263`
 
-当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.262` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，而 `0.2.262` 则继续把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实。
+当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.263` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，`0.2.261` 修执行层上下文漂移，`0.2.262` 把“人工当前目标、真实编辑输入、reload 后续跑”这三条执行链打实，而 `0.2.263` 则继续补平“卡在 reloading”和“详情页 direct timeline reply 走错路”这两个已坐实的执行断点。
 
-`0.2.262` 的重点也不是改评分，而是验证并修掉 Win Chrome handoff 里已经坐实的执行层问题：当前详情页手动回复不再被 value recheck 误杀，`getExecutorContext()` 对当前页显式目标不再给空壳，回复文本会写进真正的 contenteditable 节点并在按钮没亮时强制重触发输入生命周期，detail route 的 async ticket 遇到 reload 也会尝试续跑。
+`0.2.263` 的重点也不是改评分，而是继续把 Win Chrome follow-up 里剩下的执行层问题收干净：detail route 的 async ticket 遇到 reload 后，如果目标详情页还没真正挂载出来，会自动重排续跑，不再永久卡在 `reloading`；直接调 `replyFromTimeline(payload)` 也会走和执行器一致的 fallback，不再在当前详情页显式目标上弹回首页空白 composer。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -237,16 +237,16 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.262.zip](./downloads/replydrop-p2.262.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.263.zip](./downloads/replydrop-p2.263.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.262.zip](./downloads/replydrop-safari-open-source-0.2.262.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.263.zip](./downloads/replydrop-safari-open-source-0.2.263.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.262`
-  - Safari 源码公开包当前也同步到 `0.2.262`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.263`
+  - Safari 源码公开包当前也同步到 `0.2.263`
 
 ## 本地安装
 

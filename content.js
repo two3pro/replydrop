@@ -270,7 +270,8 @@
     },
     apiBridgeBound: false,
     trafficBridgeBound: false,
-    asyncHandoffResumeScheduled: false
+    asyncHandoffResumeScheduled: false,
+    asyncHandoffResumeTimer: null
   };
 
   function getExecutorRoundStopLabel(reason = "") {
@@ -6543,9 +6544,9 @@
       case "openComposer":
         return openReplyDropComposer(args[0] || {});
       case "replyFromTimeline":
-        return openReplyDropComposer({
+        return runReplyDropExecutorAction({
           ...(args[0] || {}),
-          timelineFirst: true
+          action: "reply-from-timeline"
         });
       case "inspectThenReply":
         return runReplyDropExecutorAction({
@@ -10805,11 +10806,24 @@
     return true;
   }
 
+  function scheduleReplyDropAsyncHandoffResume(delayMs = HANDOFF_RETRY_DELAY_MS) {
+    const normalizedDelay = Math.max(120, Math.floor(Number(delayMs) || HANDOFF_RETRY_DELAY_MS));
+    if (state.asyncHandoffResumeTimer) {
+      return true;
+    }
+    state.asyncHandoffResumeTimer = global.setTimeout(() => {
+      state.asyncHandoffResumeTimer = null;
+      void resumePersistedReplyDropAsyncHandoff();
+    }, normalizedDelay);
+    return true;
+  }
+
   async function resumePersistedReplyDropAsyncHandoff() {
     if (state.asyncHandoffResumeScheduled) {
       return;
     }
     state.asyncHandoffResumeScheduled = true;
+    let shouldRetry = false;
     try {
       await waitFor(320);
       const handoffs = readReplyDropAsyncHandoffs();
@@ -10838,6 +10852,7 @@
           (targetTweetId && findTweetArticleByTweetId(targetTweetId, targetUrl))
         );
         if (!onTargetPage) {
+          shouldRetry = true;
           continue;
         }
 
@@ -10886,6 +10901,9 @@
       }
     } finally {
       state.asyncHandoffResumeScheduled = false;
+      if (shouldRetry && readReplyDropAsyncHandoffs().length) {
+        scheduleReplyDropAsyncHandoffResume();
+      }
     }
   }
 

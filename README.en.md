@@ -6,9 +6,11 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.262`
+Current version: `0.2.263`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.262` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, and `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.263` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, and `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap.
+
+Version `0.2.263` stays focused on execution, not scoring: pending async detail-route tickets now keep retrying after reload until the target page is actually ready, and direct `replyFromTimeline(payload)` calls now share the same executor fallback path instead of bouncing detail-page explicit targets back to an empty home composer.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +37,11 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.263` finishes the two remaining executor gaps confirmed in the Win Chrome follow-up:
+
+- pending async detail-route tickets no longer hang forever in `state="reloading"` when the target page is still mounting after reload; the resumed handoff now re-schedules itself until the target is actually reachable
+- direct `replyFromTimeline(payload)` calls now share the same executor routing and detail fallback as `runExecutorAction({ action: "reply-from-timeline" })`, so explicit detail-page targets do not bounce back to an empty home composer
 
 Version `0.2.262` turns the verified Win Chrome handoff issues into concrete mainline fixes:
 
@@ -190,16 +197,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.262.zip](./downloads/replydrop-p2.262.zip)
+- Chrome / Brave runtime package: [replydrop-p2.263.zip](./downloads/replydrop-p2.263.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.262.zip](./downloads/replydrop-safari-open-source-0.2.262.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.263.zip](./downloads/replydrop-safari-open-source-0.2.263.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.262` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.262`.
+  - Chrome / Brave now uses the `0.2.263` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.263`.
 
 ## Local Install
 

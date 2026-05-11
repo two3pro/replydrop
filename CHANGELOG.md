@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.263
+
+- keep async reload tickets from hanging in `state="reloading"`: `resumePersistedReplyDropAsyncHandoff()` 现在不会只在 bootstrap 时单次看一眼；如果 reload 后目标详情页还没真正就绪，会自动重排续跑，而不是把 pending handoff 永久卡死
+- route direct `replyFromTimeline(payload)` through the real executor fallback: 直接 API 调用现在和 `runExecutorAction({ action: 'reply-from-timeline' })` 共用同一套分流与 detail fallback；当前就在详情页的显式目标，不会再因为 timeline inline 不可用而掉回首页空 composer
+
 ## 0.2.262
 
 - stop manual current-detail replies from being killed by candidate recheck: 当用户已经明确打开当前详情页并直接要求回复时，`openComposer` 不再因为 `value-dropped-on-open / value-below-send-floor` 这类候选价值回落而拒绝开框；recheck 结果仍保留诊断，但不会误伤人工当前目标
