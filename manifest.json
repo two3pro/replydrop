@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ReplyDrop",
-  "version": "0.2.261",
+  "version": "0.2.262",
   "description": "Find reply-worthy X posts, queue work, and track pickup with a local-first workflow.",
   "icons": {
     "16": "icons/icon16.png",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.262
+
+- stop manual current-detail replies from being killed by candidate recheck: 当用户已经明确打开当前详情页并直接要求回复时，`openComposer` 不再因为 `value-dropped-on-open / value-below-send-floor` 这类候选价值回落而拒绝开框；recheck 结果仍保留诊断，但不会误伤人工当前目标
+- make explicit current-page targets return real executor context: `getCandidateContext / getExecutorContext` 现在会在当前页可见目标不在 recentCandidates / queue 时，直接基于当前页 live article 重新构建候选上下文，而不是只返回 `candidate-not-found` 或零化的 sendability
+- harden real composer input and async detail-route continuity: 回复框只会写入真正的 `contenteditable` 编辑节点；当“文字已显示但发送按钮未亮”时会强制重跑更接近真实粘贴的输入生命周期；`beginExecutorAction()` 的 async ticket 现在会在详情页 reload 后保留 handoff 并在新文档里续跑，减少视频 detail route 被 `replydrop-api-document-reloaded / getAsyncAction-missing` 打断
+
 ## 0.2.261
 
 - carry a stable candidate snapshot through executor actions: `reply-auto` / `open-composer` / `reply-from-timeline` / `inspect-then-reply` / `submit-reply` 现在会把当前候选快照随 action payload 一起传下去，执行阶段不再只靠运行时二次查找目标，降低目标解析漂移和 open/submit 时上下文丢失

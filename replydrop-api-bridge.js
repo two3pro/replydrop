@@ -304,7 +304,9 @@
   const asyncTickets = new Map();
   const MAX_ASYNC_TICKETS = 64;
   const ASYNC_TICKET_STORAGE_KEY = "__ReplyDropAsyncTicketsV2";
+  const ASYNC_HANDOFF_STORAGE_KEY = "__ReplyDropAsyncHandoffsV1";
   const ASYNC_TICKET_MAX_AGE_MS = 30 * 60 * 1000;
+  const ASYNC_HANDOFF_MAX_AGE_MS = 2 * 60 * 1000;
   let sequence = 0;
   let asyncSequence = 0;
 
@@ -365,6 +367,69 @@
     }
   }
 
+  function readPersistedAsyncTicketEntries() {
+    const storage = getAsyncTicketStorage();
+    if (!storage) {
+      return [];
+    }
+    let raw = "";
+    try {
+      raw = String(storage.getItem(ASYNC_TICKET_STORAGE_KEY) || "");
+    } catch {
+      raw = "";
+    }
+    if (!raw) {
+      return [];
+    }
+    let parsed = [];
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = [];
+    }
+    const now = Date.now();
+    return (Array.isArray(parsed) ? parsed : [])
+      .map((entry) => normalizeAsyncTicketEntry(entry))
+      .filter((entry) => entry && now - Number(entry.updatedAt || entry.startedAt || 0) <= ASYNC_TICKET_MAX_AGE_MS);
+  }
+
+  function readRecoverableAsyncHandoffs() {
+    const storage = getAsyncTicketStorage();
+    if (!storage) {
+      return [];
+    }
+    let raw = "";
+    try {
+      raw = String(storage.getItem(ASYNC_HANDOFF_STORAGE_KEY) || "");
+    } catch {
+      raw = "";
+    }
+    if (!raw) {
+      return [];
+    }
+    let parsed = [];
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = [];
+    }
+    const now = Date.now();
+    return (Array.isArray(parsed) ? parsed : [])
+      .map((entry) => ({
+        ticketId: String(entry?.ticketId || "").trim(),
+        updatedAt: Number(entry?.updatedAt || entry?.createdAt || 0)
+      }))
+      .filter((entry) => entry.ticketId && now - Number(entry.updatedAt || 0) <= ASYNC_HANDOFF_MAX_AGE_MS);
+  }
+
+  function hasRecoverableAsyncHandoff(ticketId = "") {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return false;
+    }
+    return readRecoverableAsyncHandoffs().some((entry) => entry.ticketId === normalizedTicketId);
+  }
+
   function normalizeAsyncTicketEntry(entry = {}) {
     const ticketId = String(entry?.ticketId || "").trim();
     if (!ticketId) {
@@ -423,54 +488,54 @@
     }
   }
 
-  function recoverPersistedAsyncTickets() {
-    const storage = getAsyncTicketStorage();
-    if (!storage) {
-      return;
-    }
-    let raw = "";
-    try {
-      raw = String(storage.getItem(ASYNC_TICKET_STORAGE_KEY) || "");
-    } catch {
-      raw = "";
-    }
-    if (!raw) {
-      return;
-    }
-
-    let parsed = [];
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = [];
-    }
-
+  function syncAsyncTicketsFromStorage(options = {}) {
     const now = Date.now();
-    parsed.forEach((entry) => {
-      const normalized = normalizeAsyncTicketEntry(entry);
+    const reloadRecovery = Boolean(options?.reloadRecovery);
+    readPersistedAsyncTicketEntries().forEach((entry) => {
+      let normalized = normalizeAsyncTicketEntry(entry);
       if (!normalized) {
         return;
       }
-      if (now - Number(normalized.updatedAt || normalized.startedAt || 0) > ASYNC_TICKET_MAX_AGE_MS) {
-        return;
-      }
-      if (!normalized.done) {
-        normalized.state = "rejected";
-        normalized.done = true;
-        normalized.ok = false;
-        normalized.updatedAt = now;
-        normalized.error = normalized.error || "replydrop-api-document-reloaded";
-        normalized.result = {
-          ok: false,
-          reason: "replydrop-api-document-reloaded",
-          reasonCode: "replydrop-api-document-reloaded",
-          method: normalized.method,
-          ticketId: normalized.ticketId
-        };
+      if (reloadRecovery && !normalized.done) {
+        if (hasRecoverableAsyncHandoff(normalized.ticketId)) {
+          normalized = {
+            ...normalized,
+            state: "reloading",
+            done: false,
+            ok: false,
+            updatedAt: Math.max(now, Number(normalized.updatedAt || normalized.startedAt || 0)),
+            error: "",
+            result: null
+          };
+        } else {
+          normalized = {
+            ...normalized,
+            state: "rejected",
+            done: true,
+            ok: false,
+            updatedAt: now,
+            error: normalized.error || "replydrop-api-document-reloaded",
+            result: {
+              ok: false,
+              reason: "replydrop-api-document-reloaded",
+              reasonCode: "replydrop-api-document-reloaded",
+              method: normalized.method,
+              ticketId: normalized.ticketId
+            }
+          };
+        }
       }
       asyncTickets.set(normalized.ticketId, normalized);
     });
-    persistAsyncTickets();
+    if (reloadRecovery) {
+      persistAsyncTickets();
+    } else {
+      trimAsyncTickets();
+    }
+  }
+
+  function recoverPersistedAsyncTickets() {
+    syncAsyncTicketsFromStorage({ reloadRecovery: true });
   }
 
   function call(method, ...args) {
@@ -553,7 +618,21 @@
 
   function beginAsyncAction(method, args = []) {
     const entry = createAsyncTicket(method, "action");
-    callAction(method, ...args)
+    const nextArgs = Array.isArray(args) ? args.slice() : [];
+    if (["runExecutorAction", "openComposer", "submitReply"].includes(String(method || "").trim())) {
+      const firstArg = nextArgs[0];
+      if (firstArg && typeof firstArg === "object" && !Array.isArray(firstArg)) {
+        nextArgs[0] = {
+          ...firstArg,
+          __replyDropAsyncTicketId: entry.ticketId
+        };
+      } else {
+        nextArgs[0] = {
+          __replyDropAsyncTicketId: entry.ticketId
+        };
+      }
+    }
+    callAction(method, ...nextArgs)
       .then((result) => {
         const normalizedResult = result == null
           ? {
@@ -593,6 +672,7 @@
   }
 
   function readAsyncAction(ticketId, options = {}) {
+    syncAsyncTicketsFromStorage();
     const normalizedTicketId = String(ticketId || "").trim();
     if (!normalizedTicketId) {
       return {

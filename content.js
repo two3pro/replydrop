@@ -13,6 +13,10 @@
   const STYLE_ID = "xrs-extension-style";
   const API_BRIDGE_CHANNEL = "replydrop-api-v1";
   const TRAFFIC_CHANNEL = "replydrop-traffic-v1";
+  const REPLYDROP_ASYNC_TICKET_STORAGE_KEY = "__ReplyDropAsyncTicketsV2";
+  const REPLYDROP_ASYNC_HANDOFF_STORAGE_KEY = "__ReplyDropAsyncHandoffsV1";
+  const REPLYDROP_ASYNC_HANDOFF_MAX_AGE_MS = 2 * 60 * 1000;
+  const REPLYDROP_MAX_ASYNC_HANDOFFS = 12;
   const ARTICLE_SELECTOR = '[data-testid="tweet"]';
   const REPLY_BUTTON_TEXT = ["reply", "replying", "replies", "回覆", "回复", "返信", "リプライ"];
   const REPLY_CONTEXT_TEXT = ["replying to", "回覆對象", "回复对象", "回覆", "回复", "返信先", "返信"];
@@ -107,6 +111,8 @@
     "draft-language-mismatch": "草稿与主帖语言不匹配，已拦截",
     "draft-topic-mismatch": "草稿与主帖主题不匹配，已拦截",
     "send-button-disabled-but-target-locked": "回复框已锁定但发送按钮仍不可用",
+    "replydrop-api-document-reloaded": "页面重载后原异步动作中断",
+    "replydrop-api-resume-failed": "页面重载后的续跑失败",
     "target-timeout": "单条回复超过20秒",
     "round-stopped": "本轮已停止",
     "target-denied-this-round": "该目标本轮已熔断"
@@ -263,7 +269,8 @@
       visibleCount: 0
     },
     apiBridgeBound: false,
-    trafficBridgeBound: false
+    trafficBridgeBound: false,
+    asyncHandoffResumeScheduled: false
   };
 
   function getExecutorRoundStopLabel(reason = "") {
@@ -3672,7 +3679,8 @@
   }
 
   async function buildReplyDropCandidateContext(candidate = {}, runtimeState = {}, options = {}) {
-    const source = options?.source === "queue" ? "queue" : "candidate";
+    const requestedSource = String(options?.source || "").trim();
+    const source = requestedSource || (options?.source === "queue" ? "queue" : "candidate");
     const normalizedUrl = normalizeTweetUrl(candidate?.url);
     const tweetId = extractTweetIdFromUrl(normalizedUrl);
     if (!tweetId) {
@@ -3942,6 +3950,62 @@
     }
 
     return context;
+  }
+
+  function buildReplyDropExplicitCurrentPageCandidate(runtimeState = {}, tweetId = "", options = {}) {
+    const normalizedTweetId = normalizeApiTweetId(tweetId);
+    if (!normalizedTweetId || typeof global.XReplyScorer?.analyzeTweet !== "function") {
+      return null;
+    }
+
+    const currentStatusUrl = getCurrentStatusUrl();
+    const inferredUrl = normalizeTweetUrl(
+      options?.url ||
+      (extractTweetIdFromUrl(currentStatusUrl) === normalizedTweetId ? currentStatusUrl : "")
+    );
+    const liveArticle = options?.article instanceof Element
+      ? options.article
+      : findTweetArticleByTweetId(normalizedTweetId, inferredUrl);
+    if (!(liveArticle instanceof Element)) {
+      return null;
+    }
+
+    const tweet = getTweetData(liveArticle);
+    const normalizedUrl = normalizeTweetUrl(tweet?.url || inferredUrl || `https://x.com/i/status/${normalizedTweetId}`);
+    if (!normalizedUrl || tweet?.promoted) {
+      return null;
+    }
+
+    const hydratedTweet = {
+      ...(tweet && typeof tweet === "object" ? tweet : {}),
+      url: normalizedUrl,
+      timestamp: Number(tweet?.timestamp || 0) || Date.now(),
+      sourceSurface: String(tweet?.sourceSurface || detectCurrentSourceSurface()).trim()
+    };
+    const baseAnalysis = global.XReplyScorer.analyzeTweet(hydratedTweet, state.settings);
+    const analysis = applyOpportunityAdjustments(
+      hydratedTweet,
+      baseAnalysis,
+      state.settings,
+      buildOpportunityContext()
+    );
+    const effectiveTier = String(analysis?.tier || baseAnalysis?.tier || "candidate").trim() || "candidate";
+    const mediaSummary = getMediaSummaryFromState(runtimeState, normalizedTweetId);
+    const attributionModel = options?.attributionModel || buildApiAttributionModel(runtimeState);
+    const draftCandidate = buildCandidatePayload(hydratedTweet, analysis, effectiveTier);
+    const candidate = attachCandidateExecutionMeta(draftCandidate, liveArticle, mediaSummary, {
+      attributionModel,
+      uiLanguage: runtimeState?.uiLanguage || state.uiLanguage
+    });
+
+    return {
+      candidate: {
+        ...candidate,
+        explicitCurrentPage: true,
+        manualTarget: true
+      },
+      article: liveArticle
+    };
   }
 
   function getScheduledTimestamp(slot) {
@@ -4641,16 +4705,29 @@
     const candidate = getCandidateByTweetIdFromState(runtimeState, normalizedTweetId);
     const queueItem = getQueueItemByTweetIdFromState(runtimeState, normalizedTweetId);
     const sourceRecord = candidate || queueItem;
-    if (!sourceRecord) {
-      throw new Error("candidate-not-found");
+    const attributionModel = buildApiAttributionModel(runtimeState);
+    if (sourceRecord) {
+      return buildReplyDropCandidateContext(sourceRecord, runtimeState, {
+        source: candidate ? "candidate" : "queue",
+        includeMedia: Boolean(options?.includeMedia),
+        attributionModel
+      });
     }
 
-    const attributionModel = buildApiAttributionModel(runtimeState);
-    return buildReplyDropCandidateContext(sourceRecord, runtimeState, {
-      source: candidate ? "candidate" : "queue",
-      includeMedia: Boolean(options?.includeMedia),
+    const explicitCurrentPage = buildReplyDropExplicitCurrentPageCandidate(runtimeState, normalizedTweetId, {
+      url: options?.url,
       attributionModel
     });
+    if (explicitCurrentPage?.candidate) {
+      return buildReplyDropCandidateContext(explicitCurrentPage.candidate, runtimeState, {
+        source: "explicit_current_page",
+        includeMedia: Boolean(options?.includeMedia),
+        attributionModel,
+        article: explicitCurrentPage.article
+      });
+    }
+
+    throw new Error("candidate-not-found");
   }
 
   async function getReplyDropApiAgentInbox(options = {}) {
@@ -5808,6 +5885,13 @@
   async function runReplyDropExecutorAction(payload = {}) {
     const normalizedPayload = payload && typeof payload === "object" ? payload : {};
     const roundRuntime = ensureExecutorRoundRuntime(normalizedPayload);
+    const asyncTicketId = getReplyDropAsyncTicketId(normalizedPayload);
+    const finalizeAsyncTicketResult = (result) => {
+      if (asyncTicketId) {
+        settleReplyDropAsyncHandoff(asyncTicketId, result);
+      }
+      return result;
+    };
     let action = normalizeReplyDropExecutorAction(normalizedPayload.action || normalizedPayload.type);
     const actionStartedAt = Date.now();
     const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
@@ -5876,6 +5960,22 @@
         : (requiresDetailInspection ? "inspect-then-reply" : "reply");
     }
     if (
+      asyncTicketId &&
+      !normalizedPayload.__replyDropResumeNoPersist &&
+      ["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)
+    ) {
+      persistReplyDropAsyncHandoff({
+        ticketId: asyncTicketId,
+        method: "runExecutorAction",
+        targetUrl: resolvedTargetUrl || normalizeTweetUrl(actionPayload?.url || normalizedPayload.url),
+        payload: {
+          ...actionPayload,
+          action
+        },
+        state: normalizedPayload.__replyDropResumedFromReload ? "resuming" : "pending"
+      });
+    }
+    if (
       isReplyDropExecutorMutationAction(action) &&
       isExecutorRoundTargetRecorded(roundRuntime?.denylistTargetKeys, {
         ...actionPayload,
@@ -5891,7 +5991,7 @@
         action,
         reasonCode: "target-denied-this-round"
       });
-      return finalizeReplyDropExecutorRoundAction(
+      return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(
         roundRuntime,
         action,
         actionPayload,
@@ -5905,7 +6005,7 @@
         }),
         resolvedTargetUrl,
         actionStartedAt
-      );
+      ));
     }
     if (["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
@@ -5914,7 +6014,7 @@
         stage: action
       });
       if (timeoutFailure) {
-        return finalizeReplyDropExecutorRoundAction(roundRuntime, action, actionPayload, {
+        return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(roundRuntime, action, actionPayload, {
           ok: false,
           action: action || "unknown",
           stage: "target-timeout",
@@ -5928,7 +6028,7 @@
           timeoutMs: timeoutFailure.timeoutMs,
           actionGoalMs: timeoutFailure.actionGoalMs,
           shouldSkipTarget: true
-        }, targetForDeadline, actionStartedAt);
+        }, targetForDeadline, actionStartedAt));
       }
     }
 
@@ -5956,7 +6056,7 @@
             preferDetailPage: true
           });
           if (!String(actionPayload.draft || "").trim() || !detailOpenResult?.ok) {
-            return detailOpenResult;
+            return finalizeAsyncTicketResult(detailOpenResult);
           }
           const detailSubmitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
             ? actionPayload.submitOptions
@@ -6166,7 +6266,7 @@
       }
     }
 
-    return finalizeReplyDropExecutorRoundAction(
+    return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(
       roundRuntime,
       action,
       {
@@ -6177,7 +6277,7 @@
       actionResult,
       resolvedTargetUrl,
       actionStartedAt
-    );
+    ));
   }
 
   function pickVisibleReplySubmitButton(targetUrl = "") {
@@ -7782,6 +7882,33 @@
     }
 
     return normalizedLinks[0]?.link || null;
+  }
+
+  function findDocumentStatusLinkForTarget(targetUrl = "", tweetId = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const normalizedTweetId = normalizeApiTweetId(tweetId || extractTweetIdFromUrl(normalizedTarget));
+    const links = Array.from(document.querySelectorAll('a[href*="/status/"]'))
+      .map((link) => ({
+        link,
+        url: normalizeTweetUrl(link.href || link.getAttribute("href") || "")
+      }))
+      .filter((entry) => entry.link instanceof HTMLElement && entry.url && hasVisibleRect(entry.link));
+
+    if (normalizedTarget) {
+      const exact = links.find((entry) => entry.url === normalizedTarget);
+      if (exact?.link instanceof HTMLElement) {
+        return exact.link;
+      }
+    }
+
+    if (normalizedTweetId) {
+      const byTweetId = links.find((entry) => extractTweetIdFromUrl(entry.url) === normalizedTweetId);
+      if (byTweetId?.link instanceof HTMLElement) {
+        return byTweetId.link;
+      }
+    }
+
+    return null;
   }
 
   function readAuthorHandle(article) {
@@ -10459,6 +10586,309 @@
     });
   }
 
+  function getReplyDropSessionStorage() {
+    try {
+      return global.sessionStorage || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function cloneReplyDropSerializableValue(value) {
+    if (value == null) {
+      return null;
+    }
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeReplyDropAsyncTicketStorageEntry(entry = {}) {
+    const ticketId = String(entry?.ticketId || "").trim();
+    if (!ticketId) {
+      return null;
+    }
+    const startedAt = Number(entry?.startedAt || Date.now());
+    const updatedAt = Number(entry?.updatedAt || startedAt || Date.now());
+    return {
+      ticketId,
+      method: String(entry?.method || "").trim(),
+      mode: String(entry?.mode || "action").trim() || "action",
+      state: String(entry?.state || "pending").trim() || "pending",
+      done: Boolean(entry?.done),
+      startedAt,
+      updatedAt,
+      ok: Boolean(entry?.ok),
+      result: entry?.result ?? null,
+      error: String(entry?.error || "").trim()
+    };
+  }
+
+  function readReplyDropAsyncTicketStorageEntries() {
+    const storage = getReplyDropSessionStorage();
+    if (!storage) {
+      return [];
+    }
+    let parsed = [];
+    try {
+      parsed = JSON.parse(String(storage.getItem(REPLYDROP_ASYNC_TICKET_STORAGE_KEY) || "[]"));
+    } catch {
+      parsed = [];
+    }
+    const now = Date.now();
+    return (Array.isArray(parsed) ? parsed : [])
+      .map((entry) => normalizeReplyDropAsyncTicketStorageEntry(entry))
+      .filter((entry) => entry && now - Number(entry.updatedAt || entry.startedAt || 0) <= EXECUTOR_ROUND_RUNTIME_TTL_MS);
+  }
+
+  function writeReplyDropAsyncTicketStorageEntries(entries = []) {
+    const storage = getReplyDropSessionStorage();
+    if (!storage) {
+      return false;
+    }
+    const normalized = (Array.isArray(entries) ? entries : [])
+      .map((entry) => normalizeReplyDropAsyncTicketStorageEntry(entry))
+      .filter(Boolean)
+      .sort((left, right) => Number(left.updatedAt || left.startedAt || 0) - Number(right.updatedAt || right.startedAt || 0));
+    try {
+      if (!normalized.length) {
+        storage.removeItem(REPLYDROP_ASYNC_TICKET_STORAGE_KEY);
+      } else {
+        storage.setItem(REPLYDROP_ASYNC_TICKET_STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function patchReplyDropAsyncTicketStorage(ticketId = "", patch = {}) {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return false;
+    }
+    const entries = readReplyDropAsyncTicketStorageEntries();
+    const index = entries.findIndex((entry) => entry.ticketId === normalizedTicketId);
+    if (index < 0) {
+      return false;
+    }
+    const nextEntry = normalizeReplyDropAsyncTicketStorageEntry({
+      ...entries[index],
+      ...patch,
+      ticketId: normalizedTicketId,
+      updatedAt: Date.now()
+    });
+    if (!nextEntry) {
+      return false;
+    }
+    entries[index] = nextEntry;
+    return writeReplyDropAsyncTicketStorageEntries(entries);
+  }
+
+  function normalizeReplyDropAsyncHandoffEntry(entry = {}) {
+    const ticketId = String(entry?.ticketId || "").trim();
+    const method = String(entry?.method || "").trim();
+    if (!ticketId || !method) {
+      return null;
+    }
+    const payload = cloneReplyDropSerializableValue(entry?.payload && typeof entry.payload === "object" ? entry.payload : {}) || {};
+    const targetUrl = normalizeTweetUrl(entry?.targetUrl || payload?.url || "");
+    const createdAt = Number(entry?.createdAt || Date.now());
+    const updatedAt = Number(entry?.updatedAt || createdAt || Date.now());
+    return {
+      ticketId,
+      method,
+      payload,
+      targetUrl,
+      state: String(entry?.state || "pending").trim() || "pending",
+      attempts: Math.max(0, Math.floor(Number(entry?.attempts || 0))),
+      createdAt,
+      updatedAt
+    };
+  }
+
+  function readReplyDropAsyncHandoffs() {
+    const storage = getReplyDropSessionStorage();
+    if (!storage) {
+      return [];
+    }
+    let parsed = [];
+    try {
+      parsed = JSON.parse(String(storage.getItem(REPLYDROP_ASYNC_HANDOFF_STORAGE_KEY) || "[]"));
+    } catch {
+      parsed = [];
+    }
+    const now = Date.now();
+    return (Array.isArray(parsed) ? parsed : [])
+      .map((entry) => normalizeReplyDropAsyncHandoffEntry(entry))
+      .filter((entry) => entry && now - Number(entry.updatedAt || entry.createdAt || 0) <= REPLYDROP_ASYNC_HANDOFF_MAX_AGE_MS)
+      .slice(-REPLYDROP_MAX_ASYNC_HANDOFFS);
+  }
+
+  function writeReplyDropAsyncHandoffs(entries = []) {
+    const storage = getReplyDropSessionStorage();
+    if (!storage) {
+      return false;
+    }
+    const normalized = (Array.isArray(entries) ? entries : [])
+      .map((entry) => normalizeReplyDropAsyncHandoffEntry(entry))
+      .filter(Boolean)
+      .sort((left, right) => Number(left.updatedAt || left.createdAt || 0) - Number(right.updatedAt || right.createdAt || 0))
+      .slice(-REPLYDROP_MAX_ASYNC_HANDOFFS);
+    try {
+      if (!normalized.length) {
+        storage.removeItem(REPLYDROP_ASYNC_HANDOFF_STORAGE_KEY);
+      } else {
+        storage.setItem(REPLYDROP_ASYNC_HANDOFF_STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function getReplyDropAsyncTicketId(payload = {}) {
+    return String(payload?.__replyDropAsyncTicketId || payload?.asyncTicketId || "").trim();
+  }
+
+  function persistReplyDropAsyncHandoff(entry = {}) {
+    const normalized = normalizeReplyDropAsyncHandoffEntry({
+      ...entry,
+      updatedAt: Date.now()
+    });
+    if (!normalized) {
+      return false;
+    }
+    const entries = readReplyDropAsyncHandoffs();
+    const nextEntries = entries.filter((item) => item.ticketId !== normalized.ticketId);
+    nextEntries.push(normalized);
+    return writeReplyDropAsyncHandoffs(nextEntries);
+  }
+
+  function clearReplyDropAsyncHandoff(ticketId = "") {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return false;
+    }
+    const entries = readReplyDropAsyncHandoffs();
+    const nextEntries = entries.filter((entry) => entry.ticketId !== normalizedTicketId);
+    if (nextEntries.length === entries.length) {
+      return false;
+    }
+    return writeReplyDropAsyncHandoffs(nextEntries);
+  }
+
+  function settleReplyDropAsyncHandoff(ticketId = "", result = null) {
+    const normalizedTicketId = String(ticketId || "").trim();
+    if (!normalizedTicketId) {
+      return false;
+    }
+    const normalizedResult = result && typeof result === "object"
+      ? result
+      : {
+          ok: false,
+          reason: "replydrop-api-resume-null-result",
+          reasonCode: "replydrop-api-resume-null-result"
+        };
+    patchReplyDropAsyncTicketStorage(normalizedTicketId, {
+      state: normalizedResult?.ok ? "resolved" : "rejected",
+      done: true,
+      ok: Boolean(normalizedResult?.ok),
+      result: normalizedResult,
+      error: normalizedResult?.ok
+        ? ""
+        : String(normalizedResult?.reasonCode || normalizedResult?.reason || "replydrop-api-resume-failed")
+    });
+    clearReplyDropAsyncHandoff(normalizedTicketId);
+    return true;
+  }
+
+  async function resumePersistedReplyDropAsyncHandoff() {
+    if (state.asyncHandoffResumeScheduled) {
+      return;
+    }
+    state.asyncHandoffResumeScheduled = true;
+    try {
+      await waitFor(320);
+      const handoffs = readReplyDropAsyncHandoffs();
+      for (const handoff of handoffs) {
+        if (!handoff || handoff.attempts >= 2) {
+          if (handoff?.ticketId) {
+            settleReplyDropAsyncHandoff(handoff.ticketId, buildReplyActionFailure({
+              targetUrl: handoff.targetUrl,
+              reason: "replydrop-api-document-reloaded",
+              reasonCode: "replydrop-api-document-reloaded"
+            }));
+          }
+          continue;
+        }
+
+        const targetUrl = normalizeTweetUrl(handoff.targetUrl || resolveApiTargetUrlFromPayload(handoff.payload));
+        const targetTweetId = normalizeApiTweetId(
+          handoff.payload?.tweetId ||
+          handoff.payload?.targetTweetId ||
+          extractTweetIdFromUrl(targetUrl)
+        );
+        const currentStatusUrl = getCurrentStatusUrl();
+        const currentUrl = normalizeTweetUrl(currentStatusUrl || global.location.href);
+        const onTargetPage = Boolean(
+          (targetUrl && (currentUrl === targetUrl || currentStatusUrl === targetUrl)) ||
+          (targetTweetId && findTweetArticleByTweetId(targetTweetId, targetUrl))
+        );
+        if (!onTargetPage) {
+          continue;
+        }
+
+        persistReplyDropAsyncHandoff({
+          ...handoff,
+          targetUrl,
+          attempts: handoff.attempts + 1,
+          state: "resuming"
+        });
+
+        const resumePayload = {
+          ...(handoff.payload && typeof handoff.payload === "object" ? handoff.payload : {}),
+          url: targetUrl || handoff.payload?.url || "",
+          __replyDropAsyncTicketId: handoff.ticketId,
+          __replyDropResumeNoPersist: true,
+          __replyDropResumedFromReload: true
+        };
+        let result = null;
+        try {
+          switch (handoff.method) {
+            case "runExecutorAction":
+              result = await runReplyDropExecutorAction(resumePayload);
+              break;
+            case "openComposer":
+              result = await openReplyDropComposer(resumePayload);
+              break;
+            case "submitReply":
+              result = await submitReplyDropComposer(resumePayload);
+              break;
+            default:
+              result = buildReplyActionFailure({
+                targetUrl,
+                reason: "replydrop-api-document-reloaded",
+                reasonCode: "replydrop-api-document-reloaded"
+              });
+              break;
+          }
+        } catch (error) {
+          result = buildReplyActionFailure({
+            targetUrl,
+            reason: "replydrop-api-resume-failed",
+            reasonCode: String(error?.message || error || "replydrop-api-resume-failed")
+          });
+        }
+        settleReplyDropAsyncHandoff(handoff.ticketId, result);
+      }
+    } finally {
+      state.asyncHandoffResumeScheduled = false;
+    }
+  }
+
   function clearPreparedReplyComposer(targetUrl = "") {
     const cached = state.preparedReplyComposer;
     if (!cached) {
@@ -10931,6 +11361,15 @@
       return true;
     }
 
+    const documentStatusLink = findDocumentStatusLinkForTarget(normalizedTarget, extractTweetIdFromUrl(normalizedTarget));
+    if (documentStatusLink instanceof HTMLElement) {
+      documentStatusLink.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+      await waitFor(120);
+      triggerReplyActionClick(documentStatusLink);
+      await waitFor(Math.max(220, Number(options.settleMs) || 320));
+      return true;
+    }
+
     try {
       global.location.assign(normalizedTarget);
     } catch {
@@ -11125,6 +11564,7 @@
     const expectedDraft = sanitizeSnippet(String(draft || "").trim().slice(0, 560), 640);
     const rewriteDraft = options.rewriteDraft !== false;
     const startedAt = Date.now();
+    let forceRewriteCount = 0;
     let lastState = {
       context: buildReplyComposerContext({ targetUrl: normalizedTarget }),
       editor: null,
@@ -11159,6 +11599,22 @@
 
       const refreshedText = readReplyComposerText(editor);
       const draftReady = !expectedDraft || refreshedText === expectedDraft;
+      const sendButtonEnabled = sendButton instanceof HTMLElement && isReplySubmitButtonEnabled(sendButton);
+      if (
+        rewriteDraft &&
+        expectedDraft &&
+        editor instanceof HTMLElement &&
+        context.composerLocked &&
+        draftReady &&
+        !sendButtonEnabled &&
+        forceRewriteCount < 2
+      ) {
+        forceRewriteCount += 1;
+        setReplyComposerText(editor, draft, {
+          forceRewrite: true,
+          preferPasteLifecycle: true
+        });
+      }
       if (
         expectedDraft &&
         editor instanceof HTMLElement &&
@@ -11191,7 +11647,7 @@
         sendButton instanceof HTMLElement &&
         context.composerLocked &&
         draftReady &&
-        isReplySubmitButtonEnabled(sendButton)
+        sendButtonEnabled
       ) {
         return {
           ok: true,
@@ -11796,7 +12252,7 @@
       return node;
     }
     const nestedEditable = node.querySelector('[contenteditable="true"], div[contenteditable="true"], [data-contents="true"][contenteditable="true"]');
-    return nestedEditable instanceof HTMLElement ? nestedEditable : node;
+    return nestedEditable instanceof HTMLElement ? nestedEditable : null;
   }
 
   function queryReplyComposer(options = {}) {
@@ -11937,15 +12393,62 @@
     });
   }
 
-  function setReplyComposerText(editor, text) {
+  function rewriteReplyComposerDomText(editable, value) {
+    editable.replaceChildren();
+    value.split(/\n/).forEach((line) => {
+      const row = document.createElement("div");
+      if (line) {
+        row.textContent = line;
+      } else {
+        row.appendChild(document.createElement("br"));
+      }
+      editable.appendChild(row);
+    });
+  }
+
+  function dispatchReplyComposerInputLifecycle(editable, value, inputType = "insertText") {
+    const eventData = value == null ? null : String(value);
+    try {
+      editable.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType,
+        data: eventData
+      }));
+    } catch {
+      editable.dispatchEvent(new Event("beforeinput", { bubbles: true, cancelable: true }));
+    }
+    try {
+      editable.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType,
+        data: eventData
+      }));
+    } catch {
+      editable.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    try {
+      editable.dispatchEvent(new Event("textInput", {
+        bubbles: true,
+        cancelable: true
+      }));
+    } catch {
+      // Ignore browsers without textInput support.
+    }
+    editable.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setReplyComposerText(editor, text, options = {}) {
     const editable = resolveReplyComposerEditableNode(editor);
     const value = String(text || "").trim().slice(0, 560);
+    const preferPasteLifecycle = Boolean(options?.preferPasteLifecycle);
+    const forceRewrite = Boolean(options?.forceRewrite);
     if (!(editable instanceof HTMLElement) || !value) {
       return false;
     }
     const normalizedValue = sanitizeSnippet(value, 640);
     const existingText = readReplyComposerText(editable);
-    if (existingText === normalizedValue) {
+    if (!forceRewrite && existingText === normalizedValue) {
       return true;
     }
     if (existingText) {
@@ -11967,7 +12470,7 @@
     }
 
     try {
-      if (document.execCommand?.("insertText", false, value)) {
+      if (!preferPasteLifecycle && document.execCommand?.("insertText", false, value)) {
         const insertedText = readReplyComposerText(editable);
         if (insertedText === normalizedValue) {
           return true;
@@ -11978,16 +12481,7 @@
       // Fall through to the manual contenteditable update.
     }
 
-    editable.replaceChildren();
-    value.split(/\n/).forEach((line) => {
-      const row = document.createElement("div");
-      if (line) {
-        row.textContent = line;
-      } else {
-        row.appendChild(document.createElement("br"));
-      }
-      editable.appendChild(row);
-    });
+    rewriteReplyComposerDomText(editable, value);
 
     try {
       const selection = global.getSelection?.();
@@ -12002,25 +12496,11 @@
       // Ignore caret placement issues.
     }
 
-    try {
-      editable.dispatchEvent(new InputEvent("beforeinput", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: value
-      }));
-    } catch {
-      editable.dispatchEvent(new Event("beforeinput", { bubbles: true, cancelable: true }));
-    }
-    try {
-      editable.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        inputType: "insertText",
-        data: value
-      }));
-    } catch {
-      editable.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    dispatchReplyComposerInputLifecycle(
+      editable,
+      value,
+      preferPasteLifecycle ? "insertFromPaste" : "insertText"
+    );
     editable.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true,
       key: value.slice(-1) || "Unidentified"
@@ -12029,7 +12509,6 @@
       bubbles: true,
       key: value.slice(-1) || "Unidentified"
     }));
-    editable.dispatchEvent(new Event("change", { bubbles: true }));
 
     return readReplyComposerText(editable) === normalizedValue;
   }
@@ -12064,26 +12543,7 @@
 
     editable.replaceChildren();
     editable.appendChild(document.createElement("br"));
-
-    try {
-      editable.dispatchEvent(new InputEvent("beforeinput", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "deleteContentBackward",
-        data: null
-      }));
-    } catch {
-      editable.dispatchEvent(new Event("beforeinput", { bubbles: true, cancelable: true }));
-    }
-    try {
-      editable.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        inputType: "deleteContentBackward",
-        data: null
-      }));
-    } catch {
-      editable.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    dispatchReplyComposerInputLifecycle(editable, null, "deleteContentBackward");
     editable.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true,
       key: "Backspace"
@@ -12092,7 +12552,6 @@
       bubbles: true,
       key: "Backspace"
     }));
-    editable.dispatchEvent(new Event("change", { bubbles: true }));
 
     return readReplyComposerText(editable) === "";
   }
@@ -12384,7 +12843,19 @@
       getCandidateByUrlFromState(runtimeState, targetUrl) ||
       getQueueItemByUrlFromState(runtimeState, targetUrl) ||
       { url: targetUrl };
-    const recheck = buildLiveCandidateRecheck(candidateRecord, article, {
+    const explicitCurrentTarget = Boolean(
+      payload?.manualTarget === true ||
+      payload?.bypassValueRecheck === true ||
+      String(payload?.targetMode || "").trim() === "manual-current-target" ||
+      candidateRecord?.explicitCurrentPage === true ||
+      String(candidateRecord?.source || "").trim() === "explicit_current_page" ||
+      (
+        !candidateSnapshot &&
+        pageContext.contextSource === "status-page" &&
+        pageContext.currentUrl === targetUrl
+      )
+    );
+    let recheck = buildLiveCandidateRecheck(candidateRecord, article, {
       previewDecision: String(
         candidateRecord?.recommendedDecision ||
         candidateRecord?.routing?.recommendedDecision ||
@@ -12416,6 +12887,19 @@
     });
     if (recheckTimeoutFailure) {
       return recheckTimeoutFailure;
+    }
+    if (explicitCurrentTarget && recheck?.skipRecommended) {
+      recheck = {
+        ...recheck,
+        status: "manual-target-bypassed",
+        skipRecommended: false,
+        manualTargetBypass: true,
+        flags: Array.from(new Set([
+          ...(Array.isArray(recheck?.flags) ? recheck.flags : []),
+          "explicit-current-target",
+          "manual-target-recheck-bypassed"
+        ]))
+      };
     }
     if (recheck?.skipRecommended) {
       const belowExecutorSendFloor = Boolean(recheck.belowExecutorSendFloor);
@@ -13544,6 +14028,7 @@
     bindReplyTracking();
     startObserver();
     scheduleScan();
+    void resumePersistedReplyDropAsyncHandoff();
   }
 
   if (document.readyState === "loading") {

@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.261`
+Current version: `0.2.262`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.261` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, and `0.2.261` tightens executor context handoff so route hints survive into the actual open/submit path.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.262` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, and `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.262` turns the verified Win Chrome handoff issues into concrete mainline fixes:
+
+- explicit current-detail manual targets no longer get blocked just because live recheck says `value-dropped-on-open` or `value-below-send-floor`; the diagnostic remains, but it no longer overrides a human who already opened that target
+- `getCandidateContext()` / `getExecutorContext()` now rebuild a usable live context for explicit current-page targets even when the tweet is not in `recentCandidates` or the queue
+- composer writes now require the real `contenteditable` node, re-run a stronger paste-like input lifecycle when text is visible but the send button is still disabled, and async `beginExecutorAction()` tickets now survive detail-page reloads through a resumable handoff path
 
 Version `0.2.261` is an execution-path hotfix that keeps the candidate context stable once a reply action starts:
 
@@ -184,16 +190,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.261.zip](./downloads/replydrop-p2.261.zip)
+- Chrome / Brave runtime package: [replydrop-p2.262.zip](./downloads/replydrop-p2.262.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.261.zip](./downloads/replydrop-safari-open-source-0.2.261.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.262.zip](./downloads/replydrop-safari-open-source-0.2.262.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.261` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.261`.
+  - Chrome / Brave now uses the `0.2.262` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.262`.
 
 ## Local Install
 
