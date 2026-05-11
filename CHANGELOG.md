@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.265
+
+- feed live detail-page context back into open-stage value recheck: detail / media targets now re-run `buildLiveCandidateRecheck()` with current-page `contextCompleteness`, execution-route hints, and live media sampling metadata, so fast-moving video/image samples are less likely to be killed by a stale preview-shaped recheck
+- auto-clean failed reply surfaces instead of leaving an empty disabled composer behind: failed `reply-from-timeline` / `inspect-then-reply` / `reply` / `submit-reply` actions now try to clear text, close the scoped reply surface, and, when the current detail page still stays stuck open, reload the target detail URL back to a clean state
+- keep timeline-to-detail fallback inside the unified failure/cleanup path: direct `replyFromTimeline(payload)` detail fallback no longer short-circuits around the shared executor cleanup path when the detail open step fails or only opens the composer
+
 ## 0.2.264
 
 - stop detail-page `replyFromTimeline(payload)` from self-bouncing to home before fallback: 当显式目标已经锁在当前详情页时，`openReplyDropComposer()` 不会再先跑“清 UI 后重试 timeline”这条恢复分支；`reply-from-timeline` 会更快把 `timeline-inline-required` 交给外层 detail fallback，而不是把浏览器先带回首页空 composer

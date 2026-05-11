@@ -2318,6 +2318,112 @@
     };
   }
 
+  function mergeReplyContextCompleteness(base = {}, live = {}) {
+    return {
+      needsDetailContext: Boolean(base?.needsDetailContext || live?.needsDetailContext),
+      mediaContextMissing: Boolean(base?.mediaContextMissing || live?.mediaContextMissing),
+      mediaNotInspectedTextSufficient: Boolean(base?.mediaNotInspectedTextSufficient || live?.mediaNotInspectedTextSufficient),
+      quickDraftAllowed: Boolean(base?.quickDraftAllowed || live?.quickDraftAllowed),
+      mediaSummaryAvailable: Boolean(base?.mediaSummaryAvailable || live?.mediaSummaryAvailable),
+      mediaVelocityInspectionHint: Boolean(base?.mediaVelocityInspectionHint || live?.mediaVelocityInspectionHint),
+      draftContextLabel: String(live?.draftContextLabel || base?.draftContextLabel || "").trim(),
+      detailRewriteInstruction: String(live?.detailRewriteInstruction || base?.detailRewriteInstruction || "").trim(),
+      flags: Array.from(new Set([
+        ...(Array.isArray(base?.flags) ? base.flags : []),
+        ...(Array.isArray(live?.flags) ? live.flags : [])
+      ].map((flag) => String(flag || "").trim()).filter(Boolean)))
+    };
+  }
+
+  function buildReplyTargetLiveRoutingSnapshot(candidateRecord = {}, article = null, runtimeState = null, options = {}) {
+    const normalizedTargetUrl = normalizeTweetUrl(
+      options?.targetUrl ||
+      candidateRecord?.url ||
+      readTweetUrl(article) ||
+      ""
+    );
+    const targetTweetId = normalizeApiTweetId(
+      options?.tweetId ||
+      candidateRecord?.tweetId ||
+      extractTweetIdFromUrl(normalizedTargetUrl)
+    );
+    const mediaSummary = getMediaSummaryFromState(runtimeState || {}, targetTweetId);
+    const liveContextCompleteness = buildDraftContextCompleteness(candidateRecord, article, false, mediaSummary);
+    const mergedContextCompleteness = mergeReplyContextCompleteness(
+      candidateRecord?.contextCompleteness && typeof candidateRecord.contextCompleteness === "object"
+        ? candidateRecord.contextCompleteness
+        : {
+            needsDetailContext: Boolean(candidateRecord?.needsDetailContext),
+            mediaContextMissing: Boolean(candidateRecord?.mediaContextMissing),
+            mediaNotInspectedTextSufficient: Boolean(candidateRecord?.mediaNotInspectedTextSufficient),
+            quickDraftAllowed: Boolean(candidateRecord?.quickDraftAllowed),
+            mediaSummaryAvailable: Boolean(candidateRecord?.mediaSummaryAvailable),
+            flags: Array.isArray(candidateRecord?.contextFlags) ? candidateRecord.contextFlags : []
+          },
+      liveContextCompleteness
+    );
+    const liveExecutionRoute = buildReplyDropExecutionRouteMeta({
+      timelineInlineReplyEligible: Boolean(
+        candidateRecord?.timelineInlineReplyEligible ??
+        canUseTimelineInlineReply(mergedContextCompleteness, article)
+      ),
+      mediaContextMissing: Boolean(mergedContextCompleteness.mediaContextMissing),
+      needsDetailContext: Boolean(mergedContextCompleteness.needsDetailContext),
+      needsVision: Boolean(candidateRecord?.lowSemanticConfidence),
+      quickDraftAllowed: Boolean(mergedContextCompleteness.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(mergedContextCompleteness.mediaNotInspectedTextSufficient),
+      detailRewriteInstruction: String(mergedContextCompleteness.detailRewriteInstruction || "").trim()
+    });
+    const enrichedCandidateRecord = {
+      ...(candidateRecord && typeof candidateRecord === "object" ? candidateRecord : {}),
+      url: normalizedTargetUrl || normalizeTweetUrl(candidateRecord?.url || ""),
+      tweetId: targetTweetId,
+      timelineInlineReplyEligible: Boolean(
+        candidateRecord?.timelineInlineReplyEligible ??
+        liveExecutionRoute.executionRoute === "timeline_inline"
+      ),
+      executionRoute: String(
+        candidateRecord?.executionRoute ||
+        liveExecutionRoute.executionRoute
+      ).trim(),
+      needsDetailContext: Boolean(mergedContextCompleteness.needsDetailContext),
+      mediaContextMissing: Boolean(mergedContextCompleteness.mediaContextMissing),
+      mediaSummaryAvailable: Boolean(mergedContextCompleteness.mediaSummaryAvailable),
+      mediaNotInspectedTextSufficient: Boolean(mergedContextCompleteness.mediaNotInspectedTextSufficient),
+      quickDraftAllowed: Boolean(mergedContextCompleteness.quickDraftAllowed),
+      contextCompleteness: mergedContextCompleteness
+    };
+    const liveMediaSampling = buildReplyDropMediaSamplingMeta(enrichedCandidateRecord, mergedContextCompleteness, {
+      ageMinutes: Number.isFinite(Number(options?.ageMinutes))
+        ? Math.max(0, Math.round(Number(options.ageMinutes)))
+        : getReplyDropAgeMinutes(candidateRecord?.timestamp || 0),
+      mediaSummaryText: String(mediaSummary?.summary || mediaSummary?.ocrText || "").trim(),
+      mediaSummaryAvailable: Boolean(mergedContextCompleteness.mediaSummaryAvailable),
+      mediaContextMissing: Boolean(mergedContextCompleteness.mediaContextMissing),
+      needsDetailContext: Boolean(mergedContextCompleteness.needsDetailContext),
+      quickDraftAllowed: Boolean(mergedContextCompleteness.quickDraftAllowed),
+      mediaNotInspectedTextSufficient: Boolean(mergedContextCompleteness.mediaNotInspectedTextSufficient),
+      needsVision: Boolean(candidateRecord?.lowSemanticConfidence)
+    });
+    return {
+      mediaSummary,
+      contextCompleteness: mergedContextCompleteness,
+      executionRoute: liveExecutionRoute,
+      mediaSampling: liveMediaSampling,
+      candidateRecord: {
+        ...enrichedCandidateRecord,
+        trafficOverrideEligible: Boolean(
+          candidateRecord?.trafficOverrideEligible ||
+          liveMediaSampling.trafficOverrideEligible
+        ),
+        mediaSamplingPromoted: Boolean(
+          candidateRecord?.mediaSamplingPromoted ||
+          liveMediaSampling.promoteToNow
+        )
+      }
+    };
+  }
+
   function buildReplyDropSendabilityMeta(input = {}) {
     const recommendedDecision = String(input?.recommendedDecision || "").trim();
     const predictedCommentExposure = Math.max(0, Math.min(100, Math.round(Number(input?.predictedCommentExposure || 0))));
@@ -5861,6 +5967,37 @@
     });
   }
 
+  function shouldAutoSettleFailedReplySurface(action = "", result = {}) {
+    if (!result || result.ok) {
+      return false;
+    }
+    const normalizedAction = String(action || "").trim();
+    if (!["reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(normalizedAction)) {
+      return false;
+    }
+    const openResult = result?.open && typeof result.open === "object" ? result.open : null;
+    const submitResult = result?.submit && typeof result.submit === "object" ? result.submit : null;
+    const currentTarget = normalizeTweetUrl(
+      result?.targetUrl ||
+      submitResult?.targetUrl ||
+      openResult?.targetUrl ||
+      resolveReplyTargetUrl() ||
+      ""
+    );
+    if (!currentTarget) {
+      return false;
+    }
+    const composer = queryReplyComposer({
+      targetUrl: currentTarget,
+      replyOnly: false,
+      requireLocked: false
+    });
+    if (composer instanceof HTMLElement) {
+      return true;
+    }
+    return Boolean(isComposePostPath());
+  }
+
   function finalizeReplyDropExecutorRoundAction(roundState, action, payload, result, resolvedTargetUrl = "", actionStartedAt = 0) {
     if (!roundState || typeof roundState !== "object") {
       return result;
@@ -6150,7 +6287,16 @@
             preferDetailPage: true
           });
           if (!String(actionPayload.draft || "").trim() || !detailOpenResult?.ok) {
-            return finalizeAsyncTicketResult(detailOpenResult);
+            actionResult = {
+              ok: Boolean(detailOpenResult?.ok),
+              action: "reply-from-timeline",
+              stage: "open-composer",
+              open: detailOpenResult,
+              submit: null,
+              targetUrl: String(detailOpenResult?.targetUrl || detailOpenResult?.href || resolvedTargetUrl || "").trim(),
+              fallbackFrom: "reply-from-timeline"
+            };
+            break;
           }
           const detailSubmitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
             ? actionPayload.submitOptions
@@ -6358,6 +6504,22 @@
           actionResult.shouldSkipTarget = Boolean(nestedOpen.shouldSkipTarget);
         }
       }
+    }
+
+    if (shouldAutoSettleFailedReplySurface(action, actionResult)) {
+      await settleFailedReplySurface(
+        normalizeTweetUrl(
+          actionResult?.targetUrl ||
+          actionResult?.submit?.targetUrl ||
+          actionResult?.open?.targetUrl ||
+          resolvedTargetUrl ||
+          normalizedPayload?.url ||
+          ""
+        ),
+        {
+          preferStayOnPage: true
+        }
+      );
     }
 
     return finalizeAsyncTicketResult(finalizeReplyDropExecutorRoundAction(
@@ -12179,6 +12341,127 @@
     }
   }
 
+  function findReplyComposerDismissButton(targetUrl = "", editor = null) {
+    const editable = editor instanceof HTMLElement ? editor : queryReplyComposer({
+      targetUrl,
+      replyOnly: false,
+      requireLocked: false
+    });
+    const context = buildReplyComposerContext({
+      targetUrl: normalizeTweetUrl(targetUrl),
+      editor: editable instanceof HTMLElement ? editable : null
+    });
+    const roots = [
+      context.container,
+      getReplyComposerContainer(editable),
+      editable?.closest?.('form'),
+      editable?.closest?.('[data-testid="tweetTextarea_0"]'),
+      editable?.closest?.('[role="dialog"], [data-testid="sheetDialog"], [aria-modal="true"]')
+    ].filter((node, index, array) => node instanceof Element && array.indexOf(node) === index);
+    const dismissKeywords = ["close", "cancel", "discard", "back", "关闭", "關閉", "取消", "戻る", "閉じる", "破棄"];
+    for (const root of roots) {
+      const buttons = Array.from(root.querySelectorAll('button, [role="button"]'));
+      const match = buttons.find((node) => {
+        if (!(node instanceof HTMLElement) || !hasVisibleRect(node)) {
+          return false;
+        }
+        if (node.closest('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]')) {
+          return false;
+        }
+        const label = String(
+          node.getAttribute("aria-label") ||
+          node.getAttribute("title") ||
+          node.textContent ||
+          ""
+        ).trim().toLowerCase();
+        return dismissKeywords.some((keyword) => label.includes(keyword));
+      });
+      if (match instanceof HTMLElement) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  async function settleFailedReplySurface(targetUrl = "", options = {}) {
+    const normalizedTarget = normalizeTweetUrl(targetUrl || resolveReplyTargetUrl() || "");
+    const preferStayOnPage = options?.preferStayOnPage !== false;
+    const editor = queryReplyComposer({
+      targetUrl: normalizedTarget,
+      replyOnly: false,
+      requireLocked: false
+    });
+    if (editor instanceof HTMLElement) {
+      clearReplyComposerText(editor);
+      await waitFor(120);
+    }
+
+    const scopedDismissButton = findReplyComposerDismissButton(normalizedTarget, editor);
+    let dismissed = false;
+    if (scopedDismissButton instanceof HTMLElement) {
+      dismissed = triggerReplyActionClick(scopedDismissButton);
+      if (dismissed) {
+        await waitFor(220);
+      }
+    }
+    if (!dismissed) {
+      dismissed = await dismissGenericComposerDialog();
+      if (dismissed) {
+        await waitFor(220);
+      }
+    }
+
+    const lingeringComposer = queryReplyComposer({
+      targetUrl: normalizedTarget,
+      replyOnly: false,
+      requireLocked: false
+    });
+    const onTargetStatusPage = Boolean(
+      preferStayOnPage &&
+      normalizedTarget &&
+      getCurrentStatusUrl() === normalizedTarget
+    );
+
+    if (
+      onTargetStatusPage &&
+      (
+        lingeringComposer instanceof HTMLElement ||
+        isComposePostPath()
+      )
+    ) {
+      try {
+        global.location.assign(normalizedTarget);
+      } catch {}
+      await waitFor(260);
+      return {
+        ok: true,
+        dismissed,
+        reloadedTarget: true,
+        targetUrl: normalizedTarget,
+        currentUrl: normalizeTweetUrl(global.location.href)
+      };
+    }
+
+    if (lingeringComposer instanceof HTMLElement || isComposePostPath()) {
+      await settleFailedTimelineUi();
+      return {
+        ok: true,
+        dismissed,
+        reloadedTarget: false,
+        targetUrl: normalizedTarget,
+        currentUrl: normalizeTweetUrl(global.location.href)
+      };
+    }
+
+    return {
+      ok: true,
+      dismissed,
+      reloadedTarget: false,
+      targetUrl: normalizedTarget,
+      currentUrl: normalizeTweetUrl(global.location.href)
+    };
+  }
+
   async function settleFailedTimelineUi() {
     const targetUrl = resolveReplyTargetUrl();
     const editor = queryReplyComposer({
@@ -12833,14 +13116,30 @@
       // Keep the visible article as the fallback context.
     }
 
-    const tweetId = extractTweetIdFromUrl(normalizedTarget);
-    const mediaSummary = getMediaSummaryFromState(runtimeState || {}, tweetId);
-    const contextCompleteness = buildDraftContextCompleteness(candidateRecord, article, false, mediaSummary);
+    const liveRouting = buildReplyTargetLiveRoutingSnapshot(candidateRecord, article, runtimeState, {
+      targetUrl: normalizedTarget,
+      tweetId: extractTweetIdFromUrl(normalizedTarget)
+    });
+    const contextCompleteness = liveRouting.contextCompleteness;
+    const recheckCandidateRecord = liveRouting.candidateRecord;
     if (!payload?.forceTimeline && !canUseTimelineInlineReply(contextCompleteness, article)) {
       return null;
     }
 
-    const recheck = buildLiveCandidateRecheck(candidateRecord, article);
+    const recheck = buildLiveCandidateRecheck(recheckCandidateRecord, article, {
+      previewDecision: String(
+        recheckCandidateRecord?.recommendedDecision ||
+        recheckCandidateRecord?.routing?.recommendedDecision ||
+        ""
+      ).trim(),
+      timelineInlineReplyEligible: Boolean(
+        recheckCandidateRecord?.timelineInlineReplyEligible ??
+        liveRouting.executionRoute.executionRoute === "timeline_inline"
+      ),
+      detailInspectionCandidate: Boolean(liveRouting.executionRoute.executionRoute === "detail_inspect_then_reply"),
+      contextCompleteness,
+      mediaSampling: liveRouting.mediaSampling
+    });
     if (recheck?.skipRecommended) {
       const belowExecutorSendFloor = Boolean(recheck.belowExecutorSendFloor);
       return buildReplyActionFailure({
@@ -13078,41 +13377,42 @@
       getCandidateByUrlFromState(runtimeState, targetUrl) ||
       getQueueItemByUrlFromState(runtimeState, targetUrl) ||
       { url: targetUrl };
+    const liveRouting = buildReplyTargetLiveRoutingSnapshot(candidateRecord, article, runtimeState, {
+      targetUrl,
+      tweetId: extractTweetIdFromUrl(targetUrl)
+    });
+    const recheckCandidateRecord = liveRouting.candidateRecord;
     const explicitCurrentTarget = Boolean(
       payload?.manualTarget === true ||
       payload?.bypassValueRecheck === true ||
       String(payload?.targetMode || "").trim() === "manual-current-target" ||
-      candidateRecord?.explicitCurrentPage === true ||
-      String(candidateRecord?.source || "").trim() === "explicit_current_page" ||
+      recheckCandidateRecord?.explicitCurrentPage === true ||
+      String(recheckCandidateRecord?.source || "").trim() === "explicit_current_page" ||
       (
         !candidateSnapshot &&
         pageContext.contextSource === "status-page" &&
         pageContext.currentUrl === targetUrl
       )
     );
-    let recheck = buildLiveCandidateRecheck(candidateRecord, article, {
+    let recheck = buildLiveCandidateRecheck(recheckCandidateRecord, article, {
       previewDecision: String(
-        candidateRecord?.recommendedDecision ||
-        candidateRecord?.routing?.recommendedDecision ||
+        recheckCandidateRecord?.recommendedDecision ||
+        recheckCandidateRecord?.routing?.recommendedDecision ||
         ""
       ).trim(),
       timelineInlineReplyEligible: Boolean(
-        candidateRecord?.timelineInlineReplyEligible ??
-        candidateRecord?.execution?.timelineInlineReplyEligible
+        recheckCandidateRecord?.timelineInlineReplyEligible ??
+        recheckCandidateRecord?.execution?.timelineInlineReplyEligible ??
+        liveRouting.executionRoute.executionRoute === "timeline_inline"
       ),
       detailInspectionCandidate: Boolean(
-        String(candidateRecord?.executionRoute || candidateRecord?.execution?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
-        candidateRecord?.needsDetailContext === true ||
-        candidateRecord?.contextCompleteness?.needsDetailContext === true
+        String(recheckCandidateRecord?.executionRoute || recheckCandidateRecord?.execution?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
+        recheckCandidateRecord?.needsDetailContext === true ||
+        recheckCandidateRecord?.contextCompleteness?.needsDetailContext === true ||
+        liveRouting.executionRoute.executionRoute === "detail_inspect_then_reply"
       ),
-      contextCompleteness: candidateRecord?.contextCompleteness && typeof candidateRecord.contextCompleteness === "object"
-        ? candidateRecord.contextCompleteness
-        : {
-            needsDetailContext: Boolean(candidateRecord?.needsDetailContext),
-            mediaContextMissing: Boolean(candidateRecord?.mediaContextMissing),
-            mediaSummaryAvailable: Boolean(candidateRecord?.mediaSummaryAvailable),
-            mediaNotInspectedTextSufficient: Boolean(candidateRecord?.mediaNotInspectedTextSufficient)
-          }
+      contextCompleteness: liveRouting.contextCompleteness,
+      mediaSampling: liveRouting.mediaSampling
     });
     const recheckTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...pageContext,
