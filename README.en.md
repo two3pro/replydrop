@@ -6,9 +6,9 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.260`
+Current version: `0.2.261`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.260` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, and `0.2.260` keeps high-momentum media posts in the main traffic lane while expanding media diagnostics and transient failure tolerance.
+The Chrome / Brave runtime and the Safari source package now move together on the `0.2.261` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, and `0.2.261` tightens executor context handoff so route hints survive into the actual open/submit path.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -35,6 +35,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.261` is an execution-path hotfix that keeps the candidate context stable once a reply action starts:
+
+- executor actions now carry a `candidateSnapshot`, so `reply-auto`, composer open, timeline reply, detail inspection, and submit no longer depend solely on a second runtime lookup to rediscover the same target
+- `timeline-inline-required` is now treated like a transient routing failure rather than an immediate denylist-worthy failure
+- live recheck now reuses inline/detail/context-completeness hints from the candidate snapshot, reducing route drift after opening the target
 
 Version `0.2.260` keeps strong media candidates in the main traffic lane instead of treating them as fragile edge cases:
 
@@ -178,16 +184,16 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.260.zip](./downloads/replydrop-p2.260.zip)
+- Chrome / Brave runtime package: [replydrop-p2.261.zip](./downloads/replydrop-p2.261.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.260.zip](./downloads/replydrop-safari-open-source-0.2.260.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.261.zip](./downloads/replydrop-safari-open-source-0.2.261.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.260` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.260`.
+  - Chrome / Brave now uses the `0.2.261` public baseline in this repo.
+  - The Safari source package is also synced to `0.2.261`.
 
 ## Local Install
 

@@ -6,11 +6,11 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.260`
+当前重置基线版本：`0.2.261`
 
-当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.260` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，而 `0.2.260` 则继续把高势能媒体帖留在主回复通道里，补齐媒体采样晋升、growth bait 拥挤识别与更宽的瞬时失败容忍。
+当前 Chrome / Brave 与 Safari 源码包现在一起同步到 `0.2.261` 共享 runtime 基线；`0.2.250 / 0.2.251` 已把首页 timing/traffic 调优收紧到 traffic-first 正轨，`0.2.252` 把 reply ledger / pickup performance 跟踪链补完整，`0.2.253` 把 homepage traffic gating 拉回人工实盘节奏，`0.2.254` 把“主帖热度”和“回复位吃流量能力”拆开，`0.2.255` 把“值不值得现在处理”和“怎么处理”拆开，`0.2.256` 收口 `begin-failed / ticket-not-found / send-not-verified` 这一层，`0.2.257` 补齐 `reply-auto / inspect-then-reply / open-composer` 发送链，`0.2.258` 继续收口候选供给与吞吐，`0.2.259` 补上瞬时发送失败容忍、首页 `For You` 自动纠偏和 timeline inline 复核漂移容忍，`0.2.260` 把高势能媒体帖留在主回复通道里，而 `0.2.261` 则继续修执行层上下文漂移，把候选快照、route hint 和 live recheck 重新对齐。
 
-`0.2.260` 的重点不是改题材偏好，而是把“值得现在处理的媒体帖”继续留在流量主路：媒体采样 meta 会主动晋升高动量图片/视频帖，候选摘要会暴露更多媒体与流量诊断字段，而短时复核掉分或打开漂移也更倾向于按瞬时失败处理，不再轻易把整轮执行毒死。
+`0.2.261` 的重点不是改评分，而是补执行链热修：候选快照会随 executor action 一起往下传，`timeline-inline-required` 改按瞬时路由失败处理，live recheck 也会复用候选的 inline/detail 线索，减少“明明是同一条候选，执行时却丢了路线和上下文”的漂移。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -237,16 +237,16 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.260.zip](./downloads/replydrop-p2.260.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.261.zip](./downloads/replydrop-p2.261.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.260.zip](./downloads/replydrop-safari-open-source-0.2.260.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.261.zip](./downloads/replydrop-safari-open-source-0.2.261.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.260`
-  - Safari 源码公开包当前也同步到 `0.2.260`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.261`
+  - Safari 源码公开包当前也同步到 `0.2.261`
 
 ## 本地安装
 

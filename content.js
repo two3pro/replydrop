@@ -4531,6 +4531,7 @@
       "reply-context-missing",
       "reply-target-lost",
       "timeline-article-missing",
+      "timeline-inline-required",
       "composer-not-ready",
       "reply-surface-not-ready",
       "navigating",
@@ -4550,6 +4551,7 @@
       "context-not-locked",
       "reply-context-missing",
       "reply-target-lost",
+      "timeline-inline-required",
       "composer-not-ready",
       "reply-surface-not-ready",
       "generic-composer-opened",
@@ -5811,6 +5813,7 @@
     const tweetId = getApiTargetTweetIdFromPayload(normalizedPayload);
     let runtimeState = null;
     let resolvedTargetUrl = normalizeTweetUrl(normalizedPayload.url);
+    let candidateSnapshot = null;
     if (roundRuntime?.stopReason && action !== "refresh-recommendations") {
       return buildReplyDropRoundStoppedFailure(roundRuntime, normalizedPayload);
     }
@@ -5822,15 +5825,33 @@
         resolvedTargetUrl = `https://x.com/i/status/${tweetId}`;
       }
     }
-    if (action === "reply-auto") {
-      if (!runtimeState) {
-        try {
-          runtimeState = await getApiRuntimeStateSnapshot();
-        } catch {
-          runtimeState = null;
-        }
+    if (!runtimeState) {
+      try {
+        runtimeState = await getApiRuntimeStateSnapshot();
+      } catch {
+        runtimeState = null;
       }
+    }
+    candidateSnapshot = (
+      getCandidateByTweetIdFromState(runtimeState, tweetId) ||
+      getQueueItemByTweetIdFromState(runtimeState, tweetId) ||
+      getCandidateByUrlFromState(runtimeState, resolvedTargetUrl) ||
+      getQueueItemByUrlFromState(runtimeState, resolvedTargetUrl) ||
+      null
+    );
+    const actionPayload = candidateSnapshot
+      ? {
+          ...normalizedPayload,
+          candidateSnapshot: {
+            ...(candidateSnapshot && typeof candidateSnapshot === "object" ? candidateSnapshot : {}),
+            tweetId: normalizeApiTweetId(candidateSnapshot?.tweetId || tweetId),
+            url: normalizeTweetUrl(candidateSnapshot?.url || resolvedTargetUrl)
+          }
+        }
+      : normalizedPayload;
+    if (action === "reply-auto") {
       const candidateRecord = (
+        candidateSnapshot ||
         getCandidateByTweetIdFromState(runtimeState, tweetId) ||
         getQueueItemByTweetIdFromState(runtimeState, tweetId) ||
         getCandidateByUrlFromState(runtimeState, resolvedTargetUrl) ||
@@ -5857,7 +5878,7 @@
     if (
       isReplyDropExecutorMutationAction(action) &&
       isExecutorRoundTargetRecorded(roundRuntime?.denylistTargetKeys, {
-        ...normalizedPayload,
+        ...actionPayload,
         tweetId,
         url: resolvedTargetUrl
       })
@@ -5873,7 +5894,7 @@
       return finalizeReplyDropExecutorRoundAction(
         roundRuntime,
         action,
-        normalizedPayload,
+        actionPayload,
         buildReplyActionFailure({
           targetUrl: resolvedTargetUrl,
           reason: "target-denied-this-round",
@@ -5889,11 +5910,11 @@
     if (["open-composer", "reply-from-timeline", "inspect-then-reply", "submit-reply", "reply"].includes(action)) {
       const targetForDeadline = resolvedTargetUrl || resolveReplyTargetUrl();
       const timeoutFailure = beginReplyTargetAttempt(targetForDeadline, {
-        ...normalizedPayload,
+        ...actionPayload,
         stage: action
       });
       if (timeoutFailure) {
-        return finalizeReplyDropExecutorRoundAction(roundRuntime, action, normalizedPayload, {
+        return finalizeReplyDropExecutorRoundAction(roundRuntime, action, actionPayload, {
           ok: false,
           action: action || "unknown",
           stage: "target-timeout",
@@ -5914,32 +5935,32 @@
     let actionResult;
     switch (action) {
       case "refresh-recommendations":
-        actionResult = await refreshReplyDropRecommendations(normalizedPayload.options || normalizedPayload);
+        actionResult = await refreshReplyDropRecommendations(actionPayload.options || actionPayload);
         break;
       case "queue":
         actionResult = await addReplyDropCandidateToQueue(tweetId);
         break;
       case "open-composer":
-        actionResult = await openReplyDropComposer(normalizedPayload);
+        actionResult = await openReplyDropComposer(actionPayload);
         break;
       case "reply-from-timeline": {
         const openResult = await openReplyDropComposer({
-          ...normalizedPayload,
+          ...actionPayload,
           timelineFirst: true
         });
         if (!openResult?.ok && shouldFallbackReplyDropTimelineToDetail(openResult, resolvedTargetUrl)) {
           const detailOpenResult = await openReplyDropComposer({
-            ...normalizedPayload,
+            ...actionPayload,
             url: resolvedTargetUrl,
             timelineFirst: false,
             preferDetailPage: true
           });
-          if (!String(normalizedPayload.draft || "").trim() || !detailOpenResult?.ok) {
+          if (!String(actionPayload.draft || "").trim() || !detailOpenResult?.ok) {
             return detailOpenResult;
           }
-          const detailSubmitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
-            ? normalizedPayload.submitOptions
-            : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+          const detailSubmitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
+            ? actionPayload.submitOptions
+            : (actionPayload.options && typeof actionPayload.options === "object" ? actionPayload.options : {});
           const detailSubmitResult = await submitReplyDropComposer(detailSubmitOptions);
           if (detailSubmitResult?.ok) {
             clearReplyTargetAttempt(detailSubmitResult?.targetUrl || detailOpenResult?.targetUrl || resolvedTargetUrl);
@@ -5955,13 +5976,13 @@
           };
           break;
         }
-        if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
+        if (!String(actionPayload.draft || "").trim() || !openResult?.ok) {
           actionResult = openResult;
           break;
         }
-        const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
-          ? normalizedPayload.submitOptions
-          : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+        const submitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
+          ? actionPayload.submitOptions
+          : (actionPayload.options && typeof actionPayload.options === "object" ? actionPayload.options : {});
         const submitResult = await submitReplyDropComposer(submitOptions);
         if (submitResult?.ok) {
           clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
@@ -5978,14 +5999,14 @@
       }
       case "inspect-then-reply": {
         const openResult = await openReplyDropComposer({
-          ...normalizedPayload,
+          ...actionPayload,
           url: resolvedTargetUrl || normalizedPayload.url,
           timelineFirst: false,
           preferDetailPage: true,
           preferTimeline: false
         });
         const openTimeoutFailure = checkReplyTargetDeadline(openResult?.targetUrl || resolvedTargetUrl, {
-          ...normalizedPayload,
+          ...actionPayload,
           stage: "open-composer"
         });
         if (openTimeoutFailure) {
@@ -6006,7 +6027,7 @@
           };
           break;
         }
-        if (!String(normalizedPayload.draft || "").trim() || !openResult?.ok) {
+        if (!String(actionPayload.draft || "").trim() || !openResult?.ok) {
           actionResult = {
             ok: Boolean(openResult?.ok),
             action: "inspect-then-reply",
@@ -6017,9 +6038,9 @@
           };
           break;
         }
-        const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
-          ? normalizedPayload.submitOptions
-          : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+        const submitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
+          ? actionPayload.submitOptions
+          : (actionPayload.options && typeof actionPayload.options === "object" ? actionPayload.options : {});
         const submitResult = await submitReplyDropComposer(submitOptions);
         if (submitResult?.ok) {
           clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
@@ -6035,16 +6056,16 @@
         break;
       }
       case "submit-reply": {
-        const submitOptions = normalizedPayload.options && typeof normalizedPayload.options === "object"
-          ? normalizedPayload.options
-          : normalizedPayload;
+        const submitOptions = actionPayload.options && typeof actionPayload.options === "object"
+          ? actionPayload.options
+          : actionPayload;
         actionResult = await submitReplyDropComposer(submitOptions);
         break;
       }
       case "reply": {
-        const openResult = await openReplyDropComposer(normalizedPayload);
+        const openResult = await openReplyDropComposer(actionPayload);
         const openTimeoutFailure = checkReplyTargetDeadline(openResult?.targetUrl || resolvedTargetUrl, {
-          ...normalizedPayload,
+          ...actionPayload,
           stage: "open-composer"
         });
         if (openTimeoutFailure) {
@@ -6076,9 +6097,9 @@
           };
           break;
         }
-        const submitOptions = normalizedPayload.submitOptions && typeof normalizedPayload.submitOptions === "object"
-          ? normalizedPayload.submitOptions
-          : (normalizedPayload.options && typeof normalizedPayload.options === "object" ? normalizedPayload.options : {});
+        const submitOptions = actionPayload.submitOptions && typeof actionPayload.submitOptions === "object"
+          ? actionPayload.submitOptions
+          : (actionPayload.options && typeof actionPayload.options === "object" ? actionPayload.options : {});
         const submitResult = await submitReplyDropComposer(submitOptions);
         if (submitResult?.ok) {
           clearReplyTargetAttempt(submitResult?.targetUrl || openResult?.targetUrl || resolvedTargetUrl);
@@ -6095,7 +6116,7 @@
       }
       case "mark-shipped":
         actionResult = await markReplyDropTweetShipped({
-          ...normalizedPayload,
+          ...actionPayload,
           tweetId
         });
         break;
@@ -6149,7 +6170,7 @@
       roundRuntime,
       action,
       {
-        ...normalizedPayload,
+        ...actionPayload,
         tweetId,
         url: resolvedTargetUrl || normalizedPayload.url
       },
@@ -12356,10 +12377,37 @@
       runtimeState = null;
     }
 
-    const candidateRecord = getCandidateByUrlFromState(runtimeState, targetUrl) ||
+    const candidateSnapshot = payload?.candidateSnapshot && typeof payload.candidateSnapshot === "object"
+      ? payload.candidateSnapshot
+      : null;
+    const candidateRecord = candidateSnapshot ||
+      getCandidateByUrlFromState(runtimeState, targetUrl) ||
       getQueueItemByUrlFromState(runtimeState, targetUrl) ||
       { url: targetUrl };
-    const recheck = buildLiveCandidateRecheck(candidateRecord, article);
+    const recheck = buildLiveCandidateRecheck(candidateRecord, article, {
+      previewDecision: String(
+        candidateRecord?.recommendedDecision ||
+        candidateRecord?.routing?.recommendedDecision ||
+        ""
+      ).trim(),
+      timelineInlineReplyEligible: Boolean(
+        candidateRecord?.timelineInlineReplyEligible ??
+        candidateRecord?.execution?.timelineInlineReplyEligible
+      ),
+      detailInspectionCandidate: Boolean(
+        String(candidateRecord?.executionRoute || candidateRecord?.execution?.executionRoute || "").trim() === "detail_inspect_then_reply" ||
+        candidateRecord?.needsDetailContext === true ||
+        candidateRecord?.contextCompleteness?.needsDetailContext === true
+      ),
+      contextCompleteness: candidateRecord?.contextCompleteness && typeof candidateRecord.contextCompleteness === "object"
+        ? candidateRecord.contextCompleteness
+        : {
+            needsDetailContext: Boolean(candidateRecord?.needsDetailContext),
+            mediaContextMissing: Boolean(candidateRecord?.mediaContextMissing),
+            mediaSummaryAvailable: Boolean(candidateRecord?.mediaSummaryAvailable),
+            mediaNotInspectedTextSufficient: Boolean(candidateRecord?.mediaNotInspectedTextSufficient)
+          }
+    });
     const recheckTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...pageContext,
       retryCount: contextLock.retryCount,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.261
+
+- carry a stable candidate snapshot through executor actions: `reply-auto` / `open-composer` / `reply-from-timeline` / `inspect-then-reply` / `submit-reply` 现在会把当前候选快照随 action payload 一起传下去，执行阶段不再只靠运行时二次查找目标，降低目标解析漂移和 open/submit 时上下文丢失
+- treat `timeline-inline-required` like a transient routing failure instead of a hard denylist event: 这类“本该首页原地回、但当前 surface 临时不满足”的故障现在进入瞬时失败容忍集合，不会轻易把好目标直接毒进本轮 denylist
+- make live recheck reuse execution-route hints from the candidate snapshot: detail / inline / context completeness 这些执行线索会跟着候选快照进入 live recheck，减少打开后因为缺失 preview decision 或 route hint 而误判降级
+
 ## 0.2.260
 
 - keep strong media candidates in the main traffic lane: `content.js` 新增 `buildReplyDropMediaSamplingMeta()`，把高动量媒体帖的采样晋升、route bucket override、growth-bait 拥挤识别和 execution boost 收口到同一层，不再因为需要 detail inspection 就轻易掉出主发送池
