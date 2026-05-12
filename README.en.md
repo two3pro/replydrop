@@ -6,17 +6,18 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.270`
+Current version: `0.2.282`
 
-The Chrome / Brave runtime and the Safari source package now move together on the `0.2.270` shared runtime line; `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, `0.2.266` hardens reload recovery for both async and direct detail-page reply actions, `0.2.267` pulls the focus back toward throughput by keeping more strong media posts in the timeline fast lane when their visible text is already enough to draft from, `0.2.268` keeps score waterdrops visible when X opens a tweet inside its detail dialog, `0.2.269` keeps rich-caption media posts from slipping back to detail during quote detection or cached candidate re-hydration, and `0.2.270` keeps high-potential media candidates alive long enough to finish detail inspection before judging their value again.
+The Chrome / Brave runtime now ships on `0.2.282`, while the Safari source package still remains on `0.2.270` until the next source sync. `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, `0.2.266` hardens reload recovery for both async and direct detail-page reply actions, `0.2.267` pulls the focus back toward throughput by keeping more strong media posts in the timeline fast lane when their visible text is already enough to draft from, `0.2.268` keeps score waterdrops visible when X opens a tweet inside its detail dialog, `0.2.269` keeps rich-caption media posts from slipping back to detail during quote detection or cached candidate re-hydration, `0.2.270` keeps high-potential media candidates alive long enough to finish detail inspection before judging their value again, `0.2.271` hardens the real Brave / OpenClaw reply composer path, `0.2.272` briefly carried the ad hoc Windows guidance files, `0.2.273` cleaned the public zip back up, `0.2.274` further hardened the local Windows runner, `0.2.275` fixes the shipped PowerShell `$Host` collision, `0.2.276` experimented with an attach-only handoff, `0.2.277` restored a single packaged local-runner entry that can reuse the desktop browser session without asking the operator to prewire CDP first, `0.2.278` closed the next live Win gap around tab explosion plus media-heavy context callback timeouts, `0.2.279` closed the next live Win gap where the reused current tab could stay on an old pre-update X document and make \`doctor\` time out before the extension reinjected, `0.2.280` addressed the hash-loss reload case, `0.2.281` removed address-bar injection from the Windows local runner entirely in favor of a fixed localhost bridge, and `0.2.282` closes the next executor gap by clearing stale target-timeout state after failed attempts and guarding cross-target follow-up sends when no cached article candidate is available.
 
-Version `0.2.270` is about protecting the real detail route, not forcing every media post back into homepage inline reply. If a candidate is already `reply-now / send_now` but still needs OCR, vision, or media summary, opening detail should keep it alive through inspection instead of killing it early as `value-dropped-on-open`. The detail-dialog waterdrop visibility fix from `0.2.268` stays on this release line too.
+Version `0.2.282` is not a scoring change. It keeps the real reply executor from carrying stale timeout state into the next send and stops cross-target follow-up sends from crashing when the previous page has no cached candidate node.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
 <p align="center">
   <a href="./SMOKE-TEST.md">Quick Start</a> ·
   <a href="./AUTOMATION.md">ReplyDropAPI</a> ·
+  <a href="./REPLYDROP-API-RUNNER-HANDOFF.md">Windows Runner</a> ·
   <a href="./docs/store/CHROME-WEB-STORE-LISTING.md">Store Listing</a> ·
   <a href="./PRIVACY.md">Privacy</a>
 </p>
@@ -37,6 +38,47 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.282` closes the next executor continuity gap:
+
+- failed send/open attempts now clear stale target timeout state instead of poisoning the next reply
+- cross-target follow-up sends now tolerate pages where no cached article candidate node is available
+
+Version `0.2.281` closes the previous Win pressure-test gap by removing the address-bar lane:
+
+- the runner now serves one command on a fixed localhost bridge at `127.0.0.1:38947`
+- the visible X tab polls that bridge from page-side ReplyDrop code and returns the structured result without any URL injection or SendKeys address-bar automation
+
+Version `0.2.280` closes the previous Win pressure-test gap by fixing the hash-only activation assumption:
+
+- the runner now adds a one-shot navigation marker to force a real X page reload before the localhost callback handshake begins
+- ReplyDrop clears that marker after the callback finishes, so the browser keeps the current-tab flow without leaving runner noise behind in the URL
+
+Version `0.2.278` closes the previous Win pressure-test gap by making the packaged local runner act more like the old stable workflow again:
+
+- it now prefers the already-open Chrome / Brave window and overwrites the current tab URL before it falls back to opening a fresh browser target
+- the local-runner `context` lane now returns a compact structured payload so media-heavy candidates stop timing out the localhost callback path
+
+Version `0.2.277` closes the next Win pressure-test gap by restoring a true single-entry Windows lane:
+
+- the packaged runner can now push one structured local command into the desktop browser session and wait for a localhost callback result
+- the handoff no longer asks fresh sessions to preconfigure `9222` before they can even run `doctor`
+
+Version `0.2.275` closes the previous Win pressure-test gap by fixing the shipped PowerShell wrapper bug and restoring the right attach model:
+
+- `tools/windows/replydrop-cdp-runner.ps1` no longer uses the reserved PowerShell `$Host` variable name for the CDP host parameter
+- the handoff now treats the already-open desktop Chrome / Brave session as the standard target, so fresh sessions stop inventing a separate browser/profile flow
+
+Version `0.2.274` closes the previous Win pressure-test gap by making the fixed local runner lane less ambiguous:
+
+- the launcher now returns the dedicated pressure-browser PID, detects early self-exit, and throws `port-in-use-by-non-pressure-chrome` when a different Chrome already owns `9222`
+- the CDP runner now forces the chosen page back to `https://x.com/home` before `doctor / health / inbox` continue, and includes target metadata in the JSON result
+
+Version `0.2.273` closes the previous Win pressure-test gap by replacing the GUI/Console route with a fixed local runner lane:
+
+- the public package is clean again and no longer ships the ad hoc `WIN-CODEX-START-HERE.md` / `WINDOWS-PRESSURE-TEST.md` files
+- `REPLYDROP-API-RUNNER-HANDOFF.md` plus the Windows scripts now define one standard CDP path for `health`, `capabilities`, `inbox`, `context`, and `send-once`
+- the goal is to keep new sessions on a scriptable `ReplyDropExecutor / ReplyDropAPI` route instead of GUI focus automation
 
 Version `0.2.270` closes the next batch of pressure-tested workflow gaps:
 
@@ -236,16 +278,17 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.270.zip](./downloads/replydrop-p2.270.zip)
+- Chrome / Brave runtime package: [replydrop-p2.282.zip](./downloads/replydrop-p2.282.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
+  - For a fresh Windows pressure-test session, start with [REPLYDROP-API-RUNNER-HANDOFF.md](./REPLYDROP-API-RUNNER-HANDOFF.md) inside the package.
 - Safari for macOS source package: [replydrop-safari-open-source-0.2.270.zip](./downloads/replydrop-safari-open-source-0.2.270.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.270` public baseline in this repo.
-  - The Safari source package is also synced to `0.2.270`.
+  - Chrome / Brave now uses the `0.2.282` public baseline in this repo.
+  - The Safari source package still remains on `0.2.270` until the next source sync.
 
 ## Local Install
 
