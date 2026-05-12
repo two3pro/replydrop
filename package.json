@@ -1,6 +1,6 @@
 {
   "name": "replydrop",
-  "version": "0.2.271",
+  "version": "0.2.282",
   "private": true,
   "description": "Local-first X reply workflow browser extension with store-ready assets.",
   "license": "MIT",
@@ -13,6 +13,7 @@
     "validate": "node scripts/validate-release.mjs",
     "build:safari": "node scripts/build-safari-extension.mjs",
     "package": "bash scripts/package-release.sh",
+    "sync:local-runtime": "bash scripts/sync-local-runtime.sh",
     "export:oss": "bash scripts/export-open-source-tree.sh"
   }
 }

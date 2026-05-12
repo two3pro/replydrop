@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.2.282
+
+- clear stale executor target timers after failed send/open attempts so the next reply no longer starts in a fake `target-timeout` state
+- guard stored-candidate reads when the current page is not the target page, so cross-target follow-up sends stop crashing on `Cannot read properties of null (reading 'dataset')`
+
+## 0.2.281
+
+- remove the broken address-bar injection lane from the packaged Windows local runner: `tools/windows/replydrop-local-runner.js` now serves one command on a fixed localhost bridge (`127.0.0.1:38947`) and waits for ReplyDrop to pull it, instead of activating the browser window and typing a command URL into the address bar
+- make the page-side runner poll that fixed localhost bridge from the visible X tab, reuse the same async send/result path, and keep polling after each command so fresh Windows sessions stop stalling on the same address-bar timeout loop again
+
+## 0.2.280
+
+- stop depending on X preserving the runner hash during a real page reload: the packaged Windows local runner now writes the full activation payload into query params as well as hash, and `content.js` now reads activation from either search or hash so the page-side runner can still start even when X mutates the fragment before `document_idle`
+- clear the full activation query set after the callback finishes, not just the temporary navigation marker, so the current X tab returns to a clean URL after each local-runner command
+
+## 0.2.279
+
+- fix the fresh `doctor` timeout introduced by the current-tab reuse path: the packaged Windows local runner now forces a real navigation when it reuses the current X tab, instead of only swapping the hash on an already-open document that may still be running the pre-update extension runtime
+- clear the forced runner navigation marker after the callback finishes, so the browser keeps the stable current-tab reuse behavior without leaving `replydrop-runner-nav` behind in the address bar
+
+## 0.2.278
+
+- make the packaged Windows local runner stop piling up fresh tabs again: `tools/windows/replydrop-local-runner.js` now tries to reuse the already-open Chrome / Brave window first by activating the current browser window and overwriting the current tab URL, then falls back to the old launch behavior only when no reusable browser window exists
+- shrink the local-runner `context` / `send-once` callback payloads so media-heavy candidates stop timing out the localhost return path: the runner now returns a compact structured context by default, keeps full media/detail work inside ReplyDrop's own page-side execution path, and retries the localhost result post once before giving up
+
+## 0.2.277
+
+- stop making fresh Windows sessions understand CDP/bootstrap details before they can even touch ReplyDrop: the standard packaged runner is now a local browser-session runner that feeds commands into the already-open Chrome / Brave session and waits for structured results, instead of requiring a pre-opened `9222` debugging port
+- add a localhost callback bridge for that lane: the extension can now fetch a short-lived local runner command and post the structured result back, so `doctor / health / inbox / context / send-once` can run from one packaged script without DevTools Console, manual address-bar JS, or a separate browser-launch ritual in the handoff
+
+## 0.2.276
+
+- refresh the packaged Windows runner lane around the restored attach-only flow: the public handoff now treats the already-open desktop Chrome / Brave session as the only standard target, and the runner fails fast with `existing-target-page-not-found` instead of silently creating a fresh `x.com/home` tab
+- keep the public runtime zip clean around that flow: the packaged runtime now ships only the attach-mode handoff plus `replydrop-cdp-runner.js` / `replydrop-cdp-runner.ps1`, without reintroducing a dedicated-browser launcher into the standard install path
+
+## 0.2.275
+
+- fix the shipped Windows PowerShell wrapper so it stops tripping over the built-in `$Host` variable: `tools/windows/replydrop-cdp-runner.ps1` now uses `CdpHost` instead of the reserved PowerShell host variable name
+- move the Windows runner handoff back onto the correct attach model: the standard flow now targets the already-open desktop Chrome / Brave session, and the runner no longer creates a missing `x.com/home` tab behind the operator's back
+
+## 0.2.274
+
+- harden the Windows pressure runner so it stops lying about the wrong target: the CDP runner now forces the chosen page to `https://x.com/home` before `doctor / health / inbox` continue, and includes explicit target metadata in the JSON result
+- harden the Windows launcher so it stops treating any random `9222` listener as success: the dedicated pressure Chrome now records and returns its PID, detects early self-exit, and throws `port-in-use-by-non-pressure-chrome` when another Chrome instance already owns the debugging port
+
+## 0.2.273
+
+- strip the ad hoc Windows guidance files back out of the packaged runtime so the public zip stays clean again: `WIN-CODEX-START-HERE.md` and `WINDOWS-PRESSURE-TEST.md` are no longer shipped inside the extension package
+- replace the old GUI/Console-oriented Windows smoke path with a fixed CDP runner lane: `REPLYDROP-API-RUNNER-HANDOFF.md`, `tools/windows/replydrop-cdp-runner.js`, and the PowerShell launch/wrapper scripts define one standard pressure-test route that talks to `ReplyDropExecutor / ReplyDropAPI` directly without DevTools Console pasting
+
+## 0.2.272
+
+- package the Windows pressure-test guardrails with the runtime: `WINDOWS-PRESSURE-TEST.md` now ships inside the public package so fresh Win sessions stop using address-bar `javascript:` / ValuePattern injection and call the official `window.ReplyDropExecutor` page-world API instead
+- add `tools/windows/replydrop-win-smoke.js`, a small official helper for health checks, reply-now backlog reads, async `beginExecutorAction()` sends, and ticket polling that tolerates double-stringified results instead of assuming the wrapper already parsed them
+- document the real failure boundary for the latest Win pressure-test issues: `ticket-not-found`, blank `begin-failed`, and `replydrop-api-document-reloaded` often come from the external runner tab/context or PowerShell JSON parsing chain, not from ReplyDrop scoring itself
+
 ## 0.2.271
 
 - stop status-page placeholders and stale inline shells from masquerading as real reply composers: timeline/detail open now rejects the empty `tweetTextarea_0` placeholder, prefers real dialog composers, and waits longer before force-rewriting draft text, so Brave detail sends stop dying on the wrong surface
