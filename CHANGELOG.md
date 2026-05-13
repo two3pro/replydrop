@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.285
+
+- merge the newer `content.js` send-layer fixes from the Windows-tested branch instead of only rolling the public version number forward
+- keep detail `inspect-then-reply` on the correct reply layer, suppress active handoff self-refreshes on the current thread page, and prefer native text insertion so draft overlay / wrong-layer submit regressions stop leaking into the store build
+
 ## 0.2.284
 
 - roll the current `0.2.283` runtime forward as the formal Chrome Web Store / outward-launch release number

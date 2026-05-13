@@ -7108,23 +7108,39 @@
     ));
   }
 
-  function pickVisibleReplySubmitButton(targetUrl = "") {
+  function pickVisibleReplySubmitButton(targetUrl = "", options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl);
+    const requireDialog = Boolean(options.requireDialog);
+    const requireInline = Boolean(options.requireInline);
+    const preferInline = Boolean(options.preferInline || requireInline);
+    const allowPlaceholder = Boolean(options.allowPlaceholder);
     const candidates = getVisibleReplySubmitButtons(document);
     const editor = queryReplyComposer({
       targetUrl: normalizedTarget,
       replyOnly: true,
-      requireLocked: true
+      requireLocked: true,
+      requireDialog,
+      requireInline,
+      preferInline,
+      allowPlaceholder
     });
     if (editor instanceof HTMLElement) {
       const container = getReplyComposerContainer(editor);
-      const inContainer = candidates.find((node) => container && getReplyComposerContainer(node) === container && isReplyComposer(node, normalizedTarget));
+      const inContainer = candidates.find((node) => (
+        container &&
+        getReplyComposerContainer(node) === container &&
+        isReplyComposer(node, normalizedTarget, { requireDialog, requireInline, allowPlaceholder })
+      ));
       if (inContainer) {
         return inContainer;
       }
     }
 
-    return candidates.find((node) => isReplyComposer(node, normalizedTarget)) || null;
+    return candidates.find((node) => isReplyComposer(node, normalizedTarget, {
+      requireDialog,
+      requireInline,
+      allowPlaceholder
+    })) || null;
   }
 
   async function submitReplyDropComposer(options = {}) {
@@ -7132,6 +7148,18 @@
     if (!targetUrl) {
       return buildReplyActionFailure({ reason: "missing-target" });
     }
+    const preferInlineComposer = Boolean(
+      options?.preferInlineComposer ||
+      (targetUrl && getCurrentStatusUrl() === targetUrl && !isComposePostPath())
+    );
+    const requireDialogComposer = Boolean(
+      options?.requireDialogComposer &&
+      !preferInlineComposer
+    );
+    const requireInlineComposer = Boolean(
+      options?.requireInlineComposer ||
+      preferInlineComposer
+    );
     const finalizeSubmitResult = (result) => {
       if (!result?.ok) {
         clearReplyTargetAttempt(result?.targetUrl || targetUrl);
@@ -7156,10 +7184,17 @@
       const currentEditor = queryReplyComposer({
         targetUrl,
         replyOnly: true,
-        requireLocked: true
+        requireLocked: true,
+        requireDialog: requireDialogComposer,
+        requireInline: requireInlineComposer,
+        preferInline: requireInlineComposer
       });
       const currentContext = buildReplyComposerContext({ targetUrl, editor: currentEditor });
-      if (!currentContext.composerLocked) {
+      if (
+        !currentContext.composerLocked ||
+        (requireDialogComposer && !currentContext.dialogComposer) ||
+        (requireInlineComposer && currentContext.dialogComposer)
+      ) {
         return finalizeSubmitResult(buildReplyActionFailure(cachedOpenFailure));
       }
       clearReplyOpenFailure(targetUrl);
@@ -7176,7 +7211,20 @@
       await clearRecordedReply(targetUrl);
     }
 
-    const preparedComposer = getPreparedReplyComposer(targetUrl);
+    let preparedComposer = getPreparedReplyComposer(targetUrl);
+    if (
+      preparedComposer &&
+      (
+        (requireDialogComposer && !preparedComposer.context?.dialogComposer) ||
+        (requireInlineComposer && (
+          preparedComposer.context?.dialogComposer ||
+          preparedComposer.context?.inlineStatusPlaceholder
+        ))
+      )
+    ) {
+      clearPreparedReplyComposer(targetUrl);
+      preparedComposer = null;
+    }
     const settledComposer = preparedComposer
       ? {
           ok: true,
@@ -7188,7 +7236,10 @@
       : await waitForReplyComposer(targetUrl, {
           timeoutMs: EXECUTOR_SETTLE_TIMEOUT_MS,
           replyOnly: true,
-          requireLocked: true
+          requireLocked: true,
+          requireDialog: requireDialogComposer,
+          requireInline: requireInlineComposer,
+          preferInline: requireInlineComposer
         });
     const settledTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...options,
@@ -7201,6 +7252,16 @@
       return finalizeSubmitResult(buildReplyActionFailure({
         targetUrl,
         ...buildReplyComposerFailurePayload(targetUrl, settledComposer?.context)
+      }));
+    }
+    if (requireInlineComposer && settledComposer?.context?.dialogComposer) {
+      await dismissGenericComposerDialog();
+      return finalizeSubmitResult(buildReplyActionFailure({
+        targetUrl,
+        currentUrl: normalizeTweetUrl(global.location.href),
+        articleUrl: targetUrl,
+        reason: "reply-composer-wrong-layer",
+        reasonCode: "reply-composer-wrong-layer"
       }));
     }
 
@@ -7221,7 +7282,10 @@
         }
       : await waitForReplySubmitReady(targetUrl, readReplyComposerText(settledComposer.editor), {
           timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS,
-          rewriteDraft: false
+          rewriteDraft: false,
+          requireDialog: requireDialogComposer,
+          requireInline: requireInlineComposer,
+          preferInline: requireInlineComposer
         });
     const readyTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
       ...options,
@@ -7230,7 +7294,11 @@
     if (readyTimeoutFailure) {
       return finalizeSubmitResult(readyTimeoutFailure);
     }
-    const sendButton = readySubmit?.sendButton || pickVisibleReplySubmitButton(targetUrl);
+    const sendButton = readySubmit?.sendButton || pickVisibleReplySubmitButton(targetUrl, {
+      requireDialog: requireDialogComposer,
+      requireInline: requireInlineComposer,
+      preferInline: requireInlineComposer
+    });
     const currentDraftText = readReplyComposerText(readySubmit?.editor || settledComposer?.editor);
     const draftValidation = validateReplyDraftAgainstTarget(targetUrl, currentDraftText);
     if (!draftValidation.ok) {
@@ -7253,7 +7321,10 @@
     }
 
     const sendContext = buildReplyComposerContext({ targetUrl, sendButton });
-    if (!isReplyComposer(sendButton, targetUrl)) {
+    if (!isReplyComposer(sendButton, targetUrl, {
+      requireDialog: requireDialogComposer,
+      requireInline: requireInlineComposer
+    })) {
       return finalizeSubmitResult(buildReplyActionFailure({
         targetUrl,
         ...buildReplyComposerFailurePayload(targetUrl, sendContext),
@@ -7753,7 +7824,9 @@
       action,
       tweetId,
       candidateSnapshot,
-      draft
+      draft,
+      resetRound: true,
+      sessionId: String(activation.requestId || "").trim()
     }]);
     if (!begin?.ok || !begin?.ticketId) {
       return {
@@ -12925,13 +12998,23 @@
       if (!targetUrl) {
         continue;
       }
+      const requireInline = Boolean(
+        targetUrl &&
+        getCurrentStatusUrl() === targetUrl &&
+        !isComposePostPath()
+      );
 
       const editor = queryReplyComposer({
         targetUrl,
         replyOnly: true,
-        requireLocked: true
+        requireLocked: true,
+        requireInline,
+        preferInline: requireInline
       });
-      const sendButton = pickVisibleReplySubmitButton(targetUrl);
+      const sendButton = pickVisibleReplySubmitButton(targetUrl, {
+        requireInline,
+        preferInline: requireInline
+      });
       if (!(editor instanceof HTMLElement) || !(sendButton instanceof HTMLElement)) {
         continue;
       }
@@ -13050,6 +13133,24 @@
       draftLoaded: Boolean(cached.draftLoaded),
       at: Number(cached.at || 0)
     };
+  }
+
+  function hasActiveReplyDropAsyncHandoffForTarget(targetUrl = "") {
+    const normalizedTarget = normalizeTweetUrl(targetUrl);
+    if (!normalizedTarget) {
+      return false;
+    }
+    return readReplyDropAsyncHandoffs().some((entry) => {
+      const entryTarget = normalizeTweetUrl(
+        entry?.targetUrl ||
+        entry?.payload?.url ||
+        ""
+      );
+      return Boolean(
+        entryTarget === normalizedTarget &&
+        ["pending", "reloading", "navigating", "resuming"].includes(String(entry?.state || "").trim())
+      );
+    });
   }
 
   function normalizeApiTimestampMs(value) {
@@ -13733,8 +13834,18 @@
     const timeoutMs = Math.max(200, Number(options.timeoutMs) || 2600);
     const expectedDraft = sanitizeSnippet(String(draft || "").trim().slice(0, 560), 640);
     const rewriteDraft = options.rewriteDraft !== false;
+    const requireDialog = Boolean(options.requireDialog);
+    const requireInline = Boolean(options.requireInline);
+    const preferInline = Boolean(options.preferInline || requireInline);
+    const allowPlaceholder = Boolean(options.allowPlaceholder || requireInline);
+    const maxRewriteCount = rewriteDraft
+      ? Math.max(0, Math.floor(Number(options.maxRewriteCount)))
+      : 0;
+    const boundedRewriteCount = Number.isFinite(maxRewriteCount) ? maxRewriteCount : Number.MAX_SAFE_INTEGER;
+    const preferPasteLifecycle = Boolean(options.preferPasteLifecycle);
     const startedAt = Date.now();
     let forceRewriteCount = 0;
+    let rewriteCount = 0;
     let lastState = {
       context: buildReplyComposerContext({ targetUrl: normalizedTarget }),
       editor: null,
@@ -13749,12 +13860,34 @@
     };
 
     while (Date.now() - startedAt <= timeoutMs) {
+      if (requireInline) {
+        const dialogComposer = queryReplyComposer({
+          targetUrl: normalizedTarget,
+          replyOnly: true,
+          requireLocked: false,
+          requireDialog: true,
+          allowPlaceholder: true
+        });
+        if (dialogComposer instanceof HTMLElement) {
+          await dismissGenericComposerDialog();
+          await waitFor(180);
+        }
+      }
       const editor = queryReplyComposer({
         targetUrl: normalizedTarget,
         replyOnly: true,
-        requireLocked: true
+        requireLocked: true,
+        requireDialog,
+        requireInline,
+        preferInline,
+        allowPlaceholder
       });
-      const sendButton = pickVisibleReplySubmitButton(normalizedTarget);
+      const sendButton = pickVisibleReplySubmitButton(normalizedTarget, {
+        requireDialog,
+        requireInline,
+        preferInline,
+        allowPlaceholder
+      });
       const context = buildReplyComposerContext({ targetUrl: normalizedTarget, editor, sendButton });
       const editorText = readReplyComposerText(editor);
 
@@ -13762,9 +13895,13 @@
         rewriteDraft &&
         expectedDraft &&
         editor instanceof HTMLElement &&
-        editorText !== expectedDraft
+        editorText !== expectedDraft &&
+        rewriteCount < boundedRewriteCount
       ) {
-        setReplyComposerText(editor, draft);
+        rewriteCount += 1;
+        setReplyComposerText(editor, draft, {
+          preferPasteLifecycle
+        });
       }
 
       const refreshedText = readReplyComposerText(editor);
@@ -13778,12 +13915,14 @@
         draftReady &&
         !sendButtonEnabled &&
         forceRewriteCount < 2 &&
+        rewriteCount < boundedRewriteCount &&
         (
           !context.dialogComposer ||
           Date.now() - startedAt >= 1400
         )
       ) {
         forceRewriteCount += 1;
+        rewriteCount += 1;
         setReplyComposerText(editor, draft, {
           forceRewrite: true,
           preferPasteLifecycle: true
@@ -14304,6 +14443,7 @@
       normalizedTarget &&
       getCurrentStatusUrl() === normalizedTarget
     );
+    const activeAsyncHandoff = hasActiveReplyDropAsyncHandoffForTarget(normalizedTarget);
 
     if (
       onTargetStatusPage &&
@@ -14312,6 +14452,16 @@
         isComposePostPath()
       )
     ) {
+      if (activeAsyncHandoff) {
+        return {
+          ok: true,
+          dismissed,
+          reloadedTarget: false,
+          reloadSuppressed: true,
+          targetUrl: normalizedTarget,
+          currentUrl: normalizeTweetUrl(global.location.href)
+        };
+      }
       try {
         global.location.assign(normalizedTarget);
       } catch {}
@@ -14693,6 +14843,10 @@
     const targetUrl = normalizeTweetUrl(options.targetUrl || options.url || "");
     const replyOnly = Boolean(options.replyOnly);
     const requireLocked = Boolean(options.requireLocked);
+    const requireDialog = Boolean(options.requireDialog);
+    const requireInline = Boolean(options.requireInline);
+    const preferInline = Boolean(options.preferInline || requireInline);
+    const allowPlaceholder = Boolean(options.allowPlaceholder);
     const selectors = [
       '[role="dialog"] [data-testid="tweetTextarea_0"] [contenteditable="true"]',
       '[role="dialog"] [data-testid="tweetTextarea_0"] div[contenteditable="true"]',
@@ -14728,7 +14882,13 @@
         if (entry.context.genericComposerOpened) {
           return false;
         }
-        if (isReplyComposerPlaceholderContext(entry.context)) {
+        if (!allowPlaceholder && isReplyComposerPlaceholderContext(entry.context)) {
+          return false;
+        }
+        if (requireDialog && !entry.context.dialogComposer) {
+          return false;
+        }
+        if (requireInline && entry.context.dialogComposer) {
           return false;
         }
         if (requireLocked) {
@@ -14736,15 +14896,24 @@
         }
         if (replyOnly) {
           return targetUrl
-            ? (entry.context.composerLocked || entry.context.explicitReplyEvidence)
+            ? (
+              entry.context.composerLocked ||
+              entry.context.explicitReplyEvidence ||
+              (allowPlaceholder && entry.context.inlineStatusPlaceholder)
+            )
             : entry.context.explicitReplyEvidence;
         }
         return true;
       })
       .sort((left, right) => (
         Number(right.visible) - Number(left.visible) ||
-        Number(right.context.dialogComposer) - Number(left.context.dialogComposer) ||
+        (
+          preferInline
+            ? (Number(left.context.dialogComposer) - Number(right.context.dialogComposer))
+            : (Number(right.context.dialogComposer) - Number(left.context.dialogComposer))
+        ) ||
         Number(right.context.composerLocked) - Number(left.context.composerLocked) ||
+        Number(right.context.inlineStatusPlaceholder) - Number(left.context.inlineStatusPlaceholder) ||
         Number(right.context.explicitReplyEvidence) - Number(left.context.explicitReplyEvidence)
       ));
 
@@ -14756,12 +14925,20 @@
     const timeoutMs = Math.max(200, Number(options.timeoutMs) || 8000);
     const requireLocked = options.requireLocked !== false;
     const replyOnly = options.replyOnly !== false;
+    const requireDialog = Boolean(options.requireDialog);
+    const requireInline = Boolean(options.requireInline);
+    const preferInline = Boolean(options.preferInline || requireInline);
+    const allowPlaceholder = Boolean(options.allowPlaceholder);
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
       const editor = queryReplyComposer({
         targetUrl: normalizedTarget,
         replyOnly,
-        requireLocked
+        requireLocked,
+        requireDialog,
+        requireInline,
+        preferInline,
+        allowPlaceholder
       });
       if (editor instanceof HTMLElement) {
         return {
@@ -14775,7 +14952,10 @@
     const fallbackEditor = queryReplyComposer({
       targetUrl: normalizedTarget,
       replyOnly: false,
-      requireLocked: false
+      requireLocked: false,
+      requireInline,
+      preferInline,
+      allowPlaceholder
     });
     return {
       ok: false,
@@ -14844,6 +15024,54 @@
     });
   }
 
+  function escapeReplyComposerHtmlText(value = "") {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function tryNativeReplyComposerTextInsertion(editable, value, options = {}) {
+    if (!(editable instanceof HTMLElement)) {
+      return false;
+    }
+    const normalizedValue = sanitizeSnippet(String(value || "").trim(), 640);
+    if (!normalizedValue) {
+      return false;
+    }
+
+    const commandAttempts = [
+      {
+        name: "insertText",
+        payload: value
+      },
+      {
+        name: "insertHTML",
+        payload: value
+          .split(/\n/)
+          .map((line) => escapeReplyComposerHtmlText(line))
+          .join("<br>")
+      }
+    ];
+
+    for (const attempt of commandAttempts) {
+      try {
+        if (document.execCommand?.(attempt.name, false, attempt.payload)) {
+          const insertedText = readReplyComposerText(editable);
+          if (insertedText === normalizedValue) {
+            return true;
+          }
+        }
+      } catch {
+        // Fall through to the next native attempt.
+      }
+    }
+
+    return false;
+  }
+
   function dispatchReplyComposerInputLifecycle(editable, value, inputType = "insertText") {
     const eventData = value == null ? null : String(value);
     try {
@@ -14908,12 +15136,8 @@
     }
 
     try {
-      if (!preferPasteLifecycle && document.execCommand?.("insertText", false, value)) {
-        const insertedText = readReplyComposerText(editable);
-        if (insertedText === normalizedValue) {
-          return true;
-        }
-        clearReplyComposerText(editable);
+      if (tryNativeReplyComposerTextInsertion(editable, value, options)) {
+        return true;
       }
     } catch {
       // Fall through to the manual contenteditable update.
@@ -15224,15 +15448,24 @@
       resumedComposerContext.dialogComposer
     ) {
       resumedComposer.focus();
-      const draftLoaded = draft ? setReplyComposerText(resumedComposer, draft) : Boolean(readReplyComposerText(resumedComposer));
+      const draftLoaded = draft
+        ? setReplyComposerText(resumedComposer, draft, {
+            preferPasteLifecycle: true
+          })
+        : Boolean(readReplyComposerText(resumedComposer));
       const submitReadyState = draft
         ? await waitForReplySubmitReady(targetUrl, draft, {
-            timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS
-          })
+          timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS,
+          preferPasteLifecycle: true,
+          requireDialog: true,
+          maxRewriteCount: 1
+        })
         : {
             ok: true,
             editor: resumedComposer,
-            sendButton: pickVisibleReplySubmitButton(targetUrl),
+            sendButton: pickVisibleReplySubmitButton(targetUrl, {
+              requireDialog: true
+            }),
             context: buildReplyComposerContext({ targetUrl, editor: resumedComposer }),
             editorText: readReplyComposerText(resumedComposer),
             editorFound: true,
@@ -15456,10 +15689,21 @@
     state.pendingReplyStartedAt = Date.now();
     state.pendingReplyMeta = buildReplyMetaFromArticle(article);
 
+    const preferInlineStatusComposer = Boolean(
+      targetUrl &&
+      getCurrentStatusUrl() === targetUrl &&
+      !isComposePostPath()
+    );
+    if (preferInlineStatusComposer) {
+      await dismissGenericComposerDialog();
+    }
     let editor = queryReplyComposer({
       targetUrl,
       replyOnly: true,
-      requireLocked: true
+      requireLocked: !preferInlineStatusComposer,
+      requireInline: preferInlineStatusComposer,
+      preferInline: preferInlineStatusComposer,
+      allowPlaceholder: preferInlineStatusComposer
     });
     let composerState = editor instanceof HTMLElement
       ? {
@@ -15468,7 +15712,75 @@
           context: buildReplyComposerContext({ targetUrl, editor })
         }
       : null;
-    if (!(editor instanceof HTMLElement)) {
+    if (!(editor instanceof HTMLElement) && preferInlineStatusComposer) {
+      composerState = await waitForReplyComposer(targetUrl, {
+        timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
+        replyOnly: true,
+        requireLocked: false,
+        requireInline: true,
+        preferInline: true,
+        allowPlaceholder: true
+      });
+      editor = composerState?.editor || null;
+    }
+
+    if (preferInlineStatusComposer) {
+      let inlineContext = buildReplyComposerContext({ targetUrl, editor });
+      if (
+        !(editor instanceof HTMLElement) ||
+        inlineContext.inlineStatusPlaceholder ||
+        !inlineContext.composerLocked
+      ) {
+        if (editor instanceof HTMLElement) {
+          editor.scrollIntoView({ block: "center", behavior: "auto" });
+          try {
+            editor.click();
+          } catch {}
+          try {
+            editor.focus();
+          } catch {}
+          await waitFor(180);
+        }
+        composerState = await waitForReplyComposer(targetUrl, {
+          timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
+          replyOnly: true,
+          requireLocked: false,
+          requireInline: true,
+          preferInline: true,
+          allowPlaceholder: true
+        });
+        const inlineComposerTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
+          ...pageContext,
+          retryCount: contextLock.retryCount,
+          retried: contextLock.retried,
+          stage: "activate-inline-reply-composer"
+        });
+        if (inlineComposerTimeoutFailure) {
+          return inlineComposerTimeoutFailure;
+        }
+        editor = composerState?.editor || null;
+        inlineContext = buildReplyComposerContext({ targetUrl, editor });
+        if (inlineContext.dialogComposer) {
+          await dismissGenericComposerDialog();
+          await waitFor(180);
+          editor = null;
+          composerState = null;
+        }
+      }
+      if (!(editor instanceof HTMLElement)) {
+        return buildReplyActionFailure({
+          ...pageContext,
+          retryCount: contextLock.retryCount,
+          retried: contextLock.retried,
+          currentUrl: normalizeTweetUrl(global.location.href),
+          articleUrl: targetUrl,
+          reason: "inline-reply-composer-not-activated",
+          reasonCode: "inline-reply-composer-not-activated"
+        });
+      }
+    }
+
+    if (!(editor instanceof HTMLElement) && !preferInlineStatusComposer) {
       const replyButton = queryPrimaryArticleActionNode(article, ["reply"]);
       if (!(replyButton instanceof HTMLElement)) {
         return buildReplyActionFailure({
@@ -15482,7 +15794,8 @@
       composerState = await waitForReplyComposer(targetUrl, {
         timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
         replyOnly: true,
-        requireLocked: true
+        requireLocked: true,
+        requireDialog: true
       });
       const composerTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
         ...pageContext,
@@ -15506,7 +15819,8 @@
           composerState = await waitForReplyComposer(targetUrl, {
             timeoutMs: EXECUTOR_DETAIL_COMPOSER_TIMEOUT_MS,
             replyOnly: true,
-            requireLocked: true
+            requireLocked: true,
+            requireDialog: true
           });
           const retryComposerTimeoutFailure = checkReplyTargetDeadline(targetUrl, {
             ...pageContext,
@@ -15533,7 +15847,7 @@
     }
 
     const editorContext = buildReplyComposerContext({ targetUrl, editor });
-    if (!editorContext.composerLocked) {
+    if (!editorContext.composerLocked && !editorContext.inlineStatusPlaceholder) {
       return buildReplyActionFailure({
         ...pageContext,
         retryCount: contextLock.retryCount,
@@ -15543,13 +15857,28 @@
     }
 
     editor.focus();
-    const draftLoaded = draft ? setReplyComposerText(editor, draft) : false;
+    const draftLoaded = draft
+      ? setReplyComposerText(editor, draft, {
+          preferPasteLifecycle: true
+        })
+      : false;
     const submitReadyState = draft
-      ? await waitForReplySubmitReady(targetUrl, draft, { timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS })
+      ? await waitForReplySubmitReady(targetUrl, draft, {
+          timeoutMs: EXECUTOR_DETAIL_READY_TIMEOUT_MS,
+          preferPasteLifecycle: true,
+          requireInline: preferInlineStatusComposer,
+          preferInline: preferInlineStatusComposer,
+          allowPlaceholder: preferInlineStatusComposer,
+          maxRewriteCount: 1
+        })
       : {
           ok: true,
           editor,
-          sendButton: pickVisibleReplySubmitButton(targetUrl),
+          sendButton: pickVisibleReplySubmitButton(targetUrl, {
+            requireInline: preferInlineStatusComposer,
+            preferInline: preferInlineStatusComposer,
+            allowPlaceholder: preferInlineStatusComposer
+          }),
           context: buildReplyComposerContext({ targetUrl, editor }),
           editorText: readReplyComposerText(editor)
         };
@@ -16435,13 +16764,19 @@
     };
   }
 
-  function isReplyComposer(sendButton, targetUrl = "") {
+  function isReplyComposer(sendButton, targetUrl = "", options = {}) {
     const normalizedTarget = normalizeTweetUrl(targetUrl || resolveReplyTargetUrl());
     const context = buildReplyComposerContext({
       targetUrl: normalizedTarget,
       sendButton
     });
-    if (context.genericComposerOpened || isReplyComposerPlaceholderContext(context)) {
+    if (context.genericComposerOpened || (!options?.allowPlaceholder && isReplyComposerPlaceholderContext(context))) {
+      return false;
+    }
+    if (options?.requireDialog && !context.dialogComposer) {
+      return false;
+    }
+    if (options?.requireInline && context.dialogComposer) {
       return false;
     }
     if (normalizedTarget) {

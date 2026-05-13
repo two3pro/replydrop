@@ -6,11 +6,11 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.284`
+Current version: `0.2.285`
 
-The Chrome / Brave runtime and the Safari source package are now both synced to `0.2.284`. This is a formal outward-launch / Chrome Web Store submission version lift on top of the already-validated `0.2.283` runtime, so the public-facing version number is cleaner without forking the code path again. The `0.2.283` fixes around scoring-versus-interception drift and async reload resume continuity remain intact.
+The Chrome / Brave runtime and the Safari source package are now both synced to `0.2.285`. This release is not only a public version-number lift. It also merges the newer `content.js` send-layer fixes that were verified on the Windows pressure-test side and would otherwise leave the store build behind the real behavior branch.
 
-Version `0.2.284` is a release-number roll forward rather than a fresh feature split.
+Version `0.2.285` is the first public build that carries those newer detail-send fixes into the mainline package.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -38,6 +38,12 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 - It does not call a remote AI model, upload timeline data to ReplyDrop servers, or run a background auto-posting service.
 
 ## Latest Updates
+
+Version `0.2.285` closes the next real send-layer gap:
+
+- detail `inspect-then-reply` stays on the correct reply layer instead of bouncing into the wrong composer layer
+- active async handoffs stop hard-refreshing the current thread page mid-flight
+- inline thread replies and draft injection now prefer the more native text-insertion path, reducing draft ghosting and wrong-layer submit failures
 
 Version `0.2.284` is the formal outward-launch release number:
 
@@ -289,17 +295,17 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.284.zip](./downloads/replydrop-p2.284.zip)
+- Chrome / Brave runtime package: [replydrop-p2.285.zip](./downloads/replydrop-p2.285.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
   - For a fresh Windows pressure-test session, start with [REPLYDROP-API-RUNNER-HANDOFF.md](./REPLYDROP-API-RUNNER-HANDOFF.md) inside the package.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.284.zip](./downloads/replydrop-safari-open-source-0.2.284.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.285.zip](./downloads/replydrop-safari-open-source-0.2.285.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.284` public baseline in this repo.
-  - The Safari source package is now also synced to `0.2.284`.
+  - Chrome / Brave now uses the `0.2.285` public baseline in this repo.
+  - The Safari source package is now also synced to `0.2.285`.
 
 ## Local Install
 
