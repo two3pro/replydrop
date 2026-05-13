@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.284
+
+- roll the current `0.2.283` runtime forward as the formal Chrome Web Store / outward-launch release number
+- keep the code path unchanged while aligning packaged Chrome / Brave and Safari source artifacts on the new public-facing version
+
 ## 0.2.283
 
 - align outward `recommendedDecision` with the final sendability state so reply-now candidates stop fighting the executor's interception/gating layer after refresh or rehydration

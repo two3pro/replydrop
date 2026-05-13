@@ -6,11 +6,11 @@ ReplyDrop 是一个浏览器扩展，实时给你 X 时间线上的每条帖子�
 
 开源免费，本地运行，零数据上传。
 
-当前重置基线版本：`0.2.283`
+当前重置基线版本：`0.2.284`
 
-当前 Chrome / Brave 运行时包和 Safari 源码公开包都已同步到 `0.2.283`。`0.2.283` 这一版主要补的是“评分系统”和“拦截/续跑系统”之间的打架：对外 `recommendedDecision` 会重新对齐最终 sendability，避免 `reply-now` 候选在 refresh、rehydrate 或 executor 复核时又被旧决策拖回去；同时 async reload handoff 会更积极地自动续跑，遇到可重试的 reload 失败不会过早判死。此前 `0.2.250` 到 `0.2.282` 的 traffic-first、媒体路由、Windows runner 与真实发送链修正仍全部保留。
+当前 Chrome / Brave 运行时包和 Safari 源码公开包都已同步到 `0.2.284`。`0.2.284` 不是另开一轮功能改造，而是把当前已经验证好的 `0.2.283` 运行时正式抬成对外发布号，方便 Chrome 应用商店提交和 X 上对外同步口径。`0.2.283` 里“评分系统”和“拦截/续跑系统”之间的打架修正仍完整保留：对外 `recommendedDecision` 会重新对齐最终 sendability，避免 `reply-now` 候选在 refresh、rehydrate 或 executor 复核时又被旧决策拖回去；同时 async reload handoff 会更积极地自动续跑，遇到可重试的 reload 失败不会过早判死。
 
-`0.2.283` 的重点不是再改一轮大评分框架，而是把 Win 侧这次实测提到的“评分推荐”和“执行拦截”冲突补平，并继续加固 reload 后续跑。当前 Chrome / Brave 安装包名为 `replydrop-p2.283.zip`，Safari 源码公开包名为 `replydrop-safari-open-source-0.2.283.zip`。
+`0.2.284` 的重点是发布口径统一，不是功能再分叉。当前 Chrome / Brave 安装包名为 `replydrop-p2.284.zip`，Safari 源码公开包名为 `replydrop-safari-open-source-0.2.284.zip`。
 
 这个仓库目标是把 ReplyDrop 打磨成一个够稳、够清晰、能接收社区贡献的开源版本。
 
@@ -238,17 +238,17 @@ await page.evaluate(async () => {
 
 ## 下载
 
-- Chrome / Brave 运行时包：[replydrop-p2.283.zip](./downloads/replydrop-p2.283.zip)
+- Chrome / Brave 运行时包：[replydrop-p2.284.zip](./downloads/replydrop-p2.284.zip)
   - 面向 Chrome / Brave / Edge 等 Chromium 浏览器的运行时安装包
   - 先解压，再到 `chrome://extensions` 用“加载已解压的扩展程序”安装
   - Windows 新会话压测前，先看包内 [REPLYDROP-API-RUNNER-HANDOFF.md](./REPLYDROP-API-RUNNER-HANDOFF.md)
-- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.283.zip](./downloads/replydrop-safari-open-source-0.2.283.zip)
+- Safari for macOS 源码包：[replydrop-safari-open-source-0.2.284.zip](./downloads/replydrop-safari-open-source-0.2.284.zip)
   - 内含 Safari 扩展源码、Xcode 工程、MIT 许可证和安装说明
   - 这是“源码公开 + 本地自签名安装”包，不提供官方签名安装 app
   - 需要你自己的 Apple ID / Team 在本机签名，具体步骤见包内 `INSTALL.md`
 - 版本说明：
-  - Chrome / Brave 当前公开基线版本已同步到 `0.2.283`
-  - Safari 源码公开包当前也已同步到 `0.2.283`
+  - Chrome / Brave 当前公开基线版本已同步到 `0.2.284`
+  - Safari 源码公开包当前也已同步到 `0.2.284`
 
 ## 本地安装
 
