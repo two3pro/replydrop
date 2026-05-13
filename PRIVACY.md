@@ -61,7 +61,14 @@ ReplyDrop 当前版本默认按“本地优先、最小外发、可解释状态�
 
 ### `host_permissions`
 
-只对 `https://x.com/*` 和 `https://twitter.com/*` 生效。
+当前版本会请求这些 host permissions：
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+- `http://127.0.0.1/*`
+- `http://localhost/*`
+
+前两个用于在 X 页面注入评分、水滴提示、popup API 和本地工作流状态；后两个只用于可选的本地自动化 / localhost bridge 场景，不会连接 ReplyDrop 自己的远端服务器。
 
 ## 风险边界
 

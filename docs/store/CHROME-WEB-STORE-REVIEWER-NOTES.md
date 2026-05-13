@@ -28,6 +28,8 @@ ReplyDrop 只请求：
 
 - `https://x.com/*`
 - `https://twitter.com/*`
+- `http://127.0.0.1/*`
+- `http://localhost/*`
 
 原因是扩展必须在这些页面注入内容脚本，才能：
 
@@ -35,6 +37,8 @@ ReplyDrop 只请求：
 - 在回复入口旁边显示水滴提示
 - 打开页内面板与本地工作流状态
 - 暴露 `window.ReplyDropAPI` 给本地自动化脚本
+
+`127.0.0.1 / localhost` 只用于可选的本地 bridge / runner 路径，让用户自己的本地自动化脚本与扩展页内 API 协作，不会连接开发者自有远端服务器。
 
 ## Why `storage` Is Needed
 
