@@ -17,6 +17,7 @@ SECURITY.md
 SMOKE-TEST.md
 SPEC.md
 SUPPORT.md
+REPLYDROP-API-RUNNER-HANDOFF.md
 downloads
 icons
 background.js
@@ -49,5 +50,7 @@ scripts/generate-store-assets.py
 scripts/open-source-files.txt
 scripts/package-release.sh
 scripts/runtime-files.txt
+scripts/sync-local-runtime.sh
+tools
 scripts/validate-release.mjs
 tests

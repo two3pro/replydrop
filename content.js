@@ -2570,6 +2570,33 @@
     };
   }
 
+  function alignReplyDropRecommendedDecision(input = {}) {
+    const sendabilityState = String(
+      input?.sendabilityState ||
+      input?.replyWorthinessState ||
+      ""
+    ).trim();
+    const recommendedDecision = String(input?.recommendedDecision || "").trim();
+    const recommendedSlot = String(input?.recommendedSlot || "").trim();
+
+    if (sendabilityState === "send_now") {
+      return "reply-now";
+    }
+    if (sendabilityState === "skip") {
+      return "skip";
+    }
+    if (recommendedSlot === "tomorrow" || recommendedDecision === "queue-tomorrow") {
+      return "queue-tomorrow";
+    }
+    if (recommendedSlot === "tonight" || recommendedDecision === "queue-tonight") {
+      return "queue-tonight";
+    }
+    if (recommendedDecision && recommendedDecision !== "reply-now") {
+      return recommendedDecision;
+    }
+    return "queue-tonight";
+  }
+
   function getReplyDropAutoReplyAgeLimitMinutes(input = {}) {
     const explicit = Number(input?.autoReplyAgeLimitMinutes);
     if (Number.isFinite(explicit) && explicit > 0) {
@@ -4207,9 +4234,16 @@
       )
     });
     const alreadyReplied = hasRecordedReplyInRuntime(runtimeState, normalizedUrl);
-    const recommendedDecision = (hardBlocked || recheck?.skipRecommended || !effectiveTrafficQualified)
+    const gatingRecommendedDecision = (hardBlocked || recheck?.skipRecommended || !effectiveTrafficQualified)
       ? "skip"
       : provisionalRecommendedDecision;
+    const riskFlags = Array.from(new Set([
+      String(candidate?.blockReason || "").trim(),
+      ...(Array.isArray(recheck?.flags) ? recheck.flags : []),
+      ...(Array.isArray(contextCompleteness.flags) ? contextCompleteness.flags : []),
+      mediaSampling.crowdedGrowthBait ? "growth_bait_crowded" : "",
+      alreadyReplied ? "already_replied" : ""
+    ].filter(Boolean)));
     const draftPlans = typeof global.ReplyDropDraftCore?.buildDraftPlan === "function"
       ? global.ReplyDropDraftCore.buildDraftPlan(candidate, attributionSummary, { laneKey: lane.key })
       : [];
@@ -4220,14 +4254,6 @@
           availableDraftKeys: draftPlans.map((plan) => plan?.key).filter(Boolean)
         })
       : [];
-    const riskFlags = Array.from(new Set([
-      String(candidate?.blockReason || "").trim(),
-      ...(Array.isArray(recheck?.flags) ? recheck.flags : []),
-      ...(Array.isArray(contextCompleteness.flags) ? contextCompleteness.flags : []),
-      mediaSampling.crowdedGrowthBait ? "growth_bait_crowded" : "",
-      alreadyReplied ? "already_replied" : ""
-    ].filter(Boolean)));
-
     const context = {
       version: "replydrop-candidate-context-v1",
       source,
@@ -4299,7 +4325,7 @@
         laneKey: lane.key,
         laneLabel: lane.label,
         recommendedSlot,
-        recommendedDecision,
+        recommendedDecision: gatingRecommendedDecision,
         trafficOverrideEligible: Boolean(mediaSampling.trafficOverrideEligible),
         mediaSamplingPromoted: Boolean(mediaSampling.promoteToNow),
         growthBaitCrowded: Boolean(mediaSampling.crowdedGrowthBait)
@@ -4346,6 +4372,11 @@
       executionPolicy: buildReplyDropExecutionPolicy(options?.targetStartedAt || options?.generatedAt || Date.now())
     };
     context.sendability = resolveReplyDropContextSendability(context);
+    context.routing.recommendedDecision = alignReplyDropRecommendedDecision({
+      recommendedDecision: context.routing.recommendedDecision,
+      recommendedSlot: context.routing.recommendedSlot,
+      sendabilityState: context.sendability.sendabilityState
+    });
     context.replyWorthinessState = context.sendability.replyWorthinessState;
     context.executionRoute = context.sendability.executionRoute;
     context.execution.preferredOpenMode = context.sendability.preferredOpenMode;
@@ -5384,6 +5415,11 @@
     contexts.forEach((context) => {
       context.autoSafety = getReplyDropAutoSafety(context, runtimeState, selectedAuthorCounts);
       context.sendability = resolveReplyDropContextSendability(context);
+      context.routing.recommendedDecision = alignReplyDropRecommendedDecision({
+        recommendedDecision: context.routing?.recommendedDecision,
+        recommendedSlot: context.routing?.recommendedSlot,
+        sendabilityState: context.sendability?.sendabilityState
+      });
       if (context.autoSafety.tier === "auto_safe") {
         const handle = normalizeHandle(context.author?.handle || "");
         if (handle) {
@@ -6328,7 +6364,8 @@
     const actionHandoffId = getReplyDropHandoffTicketId(normalizedPayload);
     const manageAsyncHandoff = Boolean(
       actionHandoffId &&
-      !normalizedPayload.__replyDropNestedExecutorAction
+      !normalizedPayload.__replyDropNestedExecutorAction &&
+      !normalizedPayload.__replyDropResumeNoPersist
     );
     const finalizeOpenComposerResult = (result, fallbackTargetUrl = "") => {
       if (manageAsyncHandoff) {
@@ -6608,7 +6645,7 @@
     const roundRuntime = ensureExecutorRoundRuntime(normalizedPayload);
     let actionHandoffId = getReplyDropHandoffTicketId(normalizedPayload);
     const finalizeActionHandoffResult = (result) => {
-      if (actionHandoffId) {
+      if (actionHandoffId && !normalizedPayload.__replyDropResumeNoPersist) {
         settleReplyDropAsyncHandoff(actionHandoffId, result);
       }
       return result;
@@ -7811,10 +7848,25 @@
     }
     const status = readReplyDropApiAsyncAction(currentState.ticketId, { consume: false });
     if (!status?.ok) {
+      scheduleReplyDropAsyncHandoffResume(160);
       scheduleReplyDropLocalRunnerPoll();
       return true;
     }
     if (!status.done) {
+      scheduleReplyDropAsyncHandoffResume(160);
+      scheduleReplyDropLocalRunnerPoll();
+      return true;
+    }
+    const resumableReloadResult = status?.result && shouldRetryReplyDropAsyncResumeResult(status.result);
+    if (resumableReloadResult) {
+      patchReplyDropAsyncTicketStorage(currentState.ticketId, {
+        state: "reloading",
+        done: false,
+        ok: false,
+        error: "",
+        result: null
+      });
+      scheduleReplyDropAsyncHandoffResume(160);
       scheduleReplyDropLocalRunnerPoll();
       return true;
     }
@@ -10263,11 +10315,11 @@
       !isBlueCheckEligibleAuthor(normalizedCandidate?.authorVerified, normalizedCandidate?.authorVerificationType)
     );
     const effectiveTrafficQualified = Boolean(trafficProfile.qualified || mediaSampling.trafficOverrideEligible);
-    const recommendedDecision = (!effectiveTrafficQualified || hardBlocked)
+    const gatingRecommendedDecision = (!effectiveTrafficQualified || hardBlocked)
       ? "skip"
       : mapQueueSlotToDecision(recommendedSlot);
     const sendability = buildReplyDropSendabilityMeta({
-      recommendedDecision,
+      recommendedDecision: gatingRecommendedDecision,
       timelineInlineReplyEligible,
       predictedCommentExposure,
       executionScore,
@@ -10292,6 +10344,11 @@
       mediaNotInspectedTextSufficient: Boolean(contextCompleteness.mediaNotInspectedTextSufficient),
       detailRewriteInstruction: String(contextCompleteness.detailRewriteInstruction || "").trim(),
       hardBlocked
+    });
+    const recommendedDecision = alignReplyDropRecommendedDecision({
+      recommendedDecision: gatingRecommendedDecision,
+      recommendedSlot,
+      sendabilityState: sendability.sendabilityState
     });
     return {
       ...normalizedCandidate,
@@ -12548,7 +12605,11 @@
     const entries = readReplyDropAsyncHandoffs();
     const nextEntries = entries.filter((item) => item.ticketId !== normalized.ticketId);
     nextEntries.push(normalized);
-    return writeReplyDropAsyncHandoffs(nextEntries);
+    const written = writeReplyDropAsyncHandoffs(nextEntries);
+    if (written) {
+      scheduleReplyDropAsyncHandoffResume(160);
+    }
+    return written;
   }
 
   function clearReplyDropAsyncHandoff(ticketId = "") {
@@ -12576,6 +12637,17 @@
           reason: "replydrop-api-resume-null-result",
           reasonCode: "replydrop-api-resume-null-result"
         };
+    const normalizedReasonCode = String(
+      normalizedResult?.reasonCode ||
+      normalizedResult?.reason ||
+      normalizedResult?.error ||
+      ""
+    ).trim();
+    const shouldPreserveHandoffForRetry = Boolean(
+      !normalizedResult?.ok &&
+      normalizedReasonCode &&
+      REPLYDROP_ASYNC_RESUME_RETRY_REASON_CODES.has(normalizedReasonCode)
+    );
     patchReplyDropAsyncTicketStorage(normalizedTicketId, {
       state: normalizedResult?.ok ? "resolved" : "rejected",
       done: true,
@@ -12585,7 +12657,9 @@
         ? ""
         : String(normalizedResult?.reasonCode || normalizedResult?.reason || "replydrop-api-resume-failed")
     });
-    clearReplyDropAsyncHandoff(normalizedTicketId);
+    if (!shouldPreserveHandoffForRetry) {
+      clearReplyDropAsyncHandoff(normalizedTicketId);
+    }
     return true;
   }
 
@@ -12724,6 +12798,17 @@
             settleMs: 320
           });
           return;
+        }
+
+        const targetPageStillLoading = Boolean(
+          targetState.onTargetPage &&
+          document.readyState !== "complete" &&
+          !targetState.composeResumeReady &&
+          !(targetState.targetArticle instanceof Element)
+        );
+        if (targetPageStillLoading) {
+          shouldRetry = true;
+          continue;
         }
 
         const canResumeOnTargetContext = Boolean(

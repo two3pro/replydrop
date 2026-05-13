@@ -1,4 +1,4 @@
-# Extension runtime files only
+# Packaged runtime files plus the local Windows runner lane
 manifest.json
 icons/icon16.png
 icons/icon32.png
@@ -22,3 +22,6 @@ replydrop-queue-core.js
 replydrop-feedback-core.js
 replydrop-popup-ui-core.js
 replydrop-growth-core.js
+REPLYDROP-API-RUNNER-HANDOFF.md
+tools/windows/replydrop-local-runner.js
+tools/windows/replydrop-local-runner.ps1

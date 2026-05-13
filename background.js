@@ -2330,6 +2330,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  if (message.type === "X_REPLY_SCORER_LOCAL_RUNNER_FETCH") {
+    const requestUrl = String(message.url || "").trim();
+    const method = String(message.method || "GET").trim().toUpperCase() || "GET";
+    const headers = message.headers && typeof message.headers === "object" ? message.headers : {};
+    const body = typeof message.body === "string" ? message.body : "";
+    fetch(requestUrl, {
+      method,
+      headers,
+      body: method === "GET" || method === "HEAD" ? undefined : body
+    }).then(async (response) => {
+      const text = await response.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      sendResponse({
+        ok: response.ok,
+        status: response.status,
+        text,
+        json
+      });
+    }).catch((error) => {
+      sendResponse({
+        ok: false,
+        error: String(error?.message || error || "local-runner-fetch-failed")
+      });
+    });
+    return true;
+  }
+
   if (message.type === "X_REPLY_SCORER_GET_STATE") {
     sendResponse({ state: getPublicState() });
     return true;

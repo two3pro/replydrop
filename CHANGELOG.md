@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.283
+
+- align outward `recommendedDecision` with the final sendability state so reply-now candidates stop fighting the executor's interception/gating layer after refresh or rehydration
+- keep async reload handoffs alive longer by auto-rescheduling resume, preserving retryable reload failures, and waiting for the target detail page to finish loading before a resumed open/reply action settles
+- sync the Safari source-open package to `0.2.283`
+
 ## 0.2.282
 
 - clear stale executor target timers after failed send/open attempts so the next reply no longer starts in a fake `target-timeout` state

@@ -4,8 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-node scripts/validate-release.mjs
-
 VERSION="$(node -e 'process.stdout.write(require("./manifest.json").version)')"
 SHORT_VERSION="${VERSION#0.}"
 ZIP_NAME="replydrop-p${SHORT_VERSION}.zip"
@@ -24,6 +22,8 @@ rm -f "$ZIP_PATH"
 zip -q -X "$ZIP_PATH" "${RUNTIME_FILES[@]}"
 mkdir -p "$DOWNLOADS_DIR"
 cp "$ZIP_PATH" "$DOWNLOADS_ZIP_PATH"
+
+node scripts/validate-release.mjs
 
 INNER_VERSION="$(unzip -p "$ZIP_PATH" manifest.json | node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(manifest.version)')"
 if [[ "$INNER_VERSION" != "$VERSION" ]]; then

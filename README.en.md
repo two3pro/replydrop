@@ -6,11 +6,11 @@ ReplyDrop is a local-first browser extension for X. It scores already-visible po
 
 Open source, free, local-first, and zero data upload by default.
 
-Current version: `0.2.282`
+Current version: `0.2.283`
 
-The Chrome / Brave runtime now ships on `0.2.282`, while the Safari source package still remains on `0.2.270` until the next source sync. `0.2.250 / 0.2.251` restore the traffic-first homepage timing windows, `0.2.252` completes the reply ledger plus pickup-performance tracking path, `0.2.253` tightens homepage traffic gating again, `0.2.254` separates post heat from reply-slot pickup quality, `0.2.255` separates reply worthiness from execution route, `0.2.256` hardens the send path, `0.2.257` fixes reply-auto / inspect-then-reply routing, `0.2.258` improves candidate supply throughput, `0.2.259` adds transient-failure tolerance plus automatic For You feed correction before executor scans, `0.2.260` keeps high-momentum media posts in the main traffic lane, `0.2.261` tightens executor context handoff, `0.2.262` fixes verified manual-target, composer-input, and reload-resume gaps from live Win Chrome pressure testing, `0.2.263` closes the confirmed `reloading` stall plus direct detail-page timeline fallback gap, `0.2.264` fixes the next pressure-tested layer around detail-page direct replies, repeated resurfacing, and reply-surface UI contamination, `0.2.265` finishes the next executor cleanup around detail-page recheck drift and failed-composer cleanup, `0.2.266` hardens reload recovery for both async and direct detail-page reply actions, `0.2.267` pulls the focus back toward throughput by keeping more strong media posts in the timeline fast lane when their visible text is already enough to draft from, `0.2.268` keeps score waterdrops visible when X opens a tweet inside its detail dialog, `0.2.269` keeps rich-caption media posts from slipping back to detail during quote detection or cached candidate re-hydration, `0.2.270` keeps high-potential media candidates alive long enough to finish detail inspection before judging their value again, `0.2.271` hardens the real Brave / OpenClaw reply composer path, `0.2.272` briefly carried the ad hoc Windows guidance files, `0.2.273` cleaned the public zip back up, `0.2.274` further hardened the local Windows runner, `0.2.275` fixes the shipped PowerShell `$Host` collision, `0.2.276` experimented with an attach-only handoff, `0.2.277` restored a single packaged local-runner entry that can reuse the desktop browser session without asking the operator to prewire CDP first, `0.2.278` closed the next live Win gap around tab explosion plus media-heavy context callback timeouts, `0.2.279` closed the next live Win gap where the reused current tab could stay on an old pre-update X document and make \`doctor\` time out before the extension reinjected, `0.2.280` addressed the hash-loss reload case, `0.2.281` removed address-bar injection from the Windows local runner entirely in favor of a fixed localhost bridge, and `0.2.282` closes the next executor gap by clearing stale target-timeout state after failed attempts and guarding cross-target follow-up sends when no cached article candidate is available.
+The Chrome / Brave runtime and the Safari source package are now both synced to `0.2.283`. This release mainly fixes the fight between scoring output and the interception/resume layer: outward `recommendedDecision` now realigns with the final sendability state so `reply-now` candidates stop drifting backward after refresh, rehydration, or executor recheck, and async reload handoffs keep resuming more aggressively instead of dying too early on retryable reload failures. The traffic-first, media-route, Windows-runner, and real-send fixes from `0.2.250` through `0.2.282` all remain in place.
 
-Version `0.2.282` is not a scoring change. It keeps the real reply executor from carrying stale timeout state into the next send and stops cross-target follow-up sends from crashing when the previous page has no cached candidate node.
+Version `0.2.283` is not a fresh scoring rewrite. It tightens the contract between scoring and execution, then hardens reload resume continuity around the real reply path.
 
 ![ReplyDrop GitHub hero](./docs/assets/replydrop-github-hero.png)
 
@@ -39,7 +39,13 @@ ReplyDrop is not a cloud dashboard and not an unattended mass-posting bot. It is
 
 ## Latest Updates
 
-Version `0.2.282` closes the next executor continuity gap:
+Version `0.2.283` closes the next scoring-versus-interception gap:
+
+- outward `recommendedDecision` is now re-aligned from final sendability state, so `reply-now` candidates stop colliding with stale queue/skip decisions after refresh or rehydration
+- async reload handoffs now auto-reschedule resume sooner, preserve retryable reload failures, and wait for the target detail page to finish mounting before settling a resumed action
+- the Safari source-open package is now synced to `0.2.283`
+
+Version `0.2.282` closes the previous executor continuity gap:
 
 - failed send/open attempts now clear stale target timeout state instead of poisoning the next reply
 - cross-target follow-up sends now tolerate pages where no cached article candidate node is available
@@ -278,17 +284,17 @@ See [AUTOMATION.md](./AUTOMATION.md) for return shapes, failure reasons, CDP exa
 
 ## Downloads
 
-- Chrome / Brave runtime package: [replydrop-p2.282.zip](./downloads/replydrop-p2.282.zip)
+- Chrome / Brave runtime package: [replydrop-p2.283.zip](./downloads/replydrop-p2.283.zip)
   - Runtime package for Chrome, Brave, Edge, and other Chromium browsers.
   - Unzip it first, then load the extracted folder through `chrome://extensions`.
   - For a fresh Windows pressure-test session, start with [REPLYDROP-API-RUNNER-HANDOFF.md](./REPLYDROP-API-RUNNER-HANDOFF.md) inside the package.
-- Safari for macOS source package: [replydrop-safari-open-source-0.2.270.zip](./downloads/replydrop-safari-open-source-0.2.270.zip)
+- Safari for macOS source package: [replydrop-safari-open-source-0.2.283.zip](./downloads/replydrop-safari-open-source-0.2.283.zip)
   - Includes the Safari extension source, Xcode project, MIT license, and install notes.
   - This is a source-open / local self-sign package, not an official signed app download.
   - You need your own Apple ID / Team to sign locally. See `INSTALL.md` inside the package.
 - Version note:
-  - Chrome / Brave now uses the `0.2.282` public baseline in this repo.
-  - The Safari source package still remains on `0.2.270` until the next source sync.
+  - Chrome / Brave now uses the `0.2.283` public baseline in this repo.
+  - The Safari source package is now also synced to `0.2.283`.
 
 ## Local Install
 

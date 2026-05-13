@@ -46,7 +46,9 @@ function shouldSkipTarget(target) {
     target.startsWith("http://") ||
     target.startsWith("https://") ||
     target.startsWith("mailto:") ||
-    target.startsWith("data:");
+    target.startsWith("data:") ||
+    target.startsWith("/") ||
+    /^[A-Za-z]:[\\/]/.test(target);
 }
 
 assert(fs.existsSync(exportListPath), "scripts/open-source-files.txt is missing");
